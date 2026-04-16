@@ -1,0 +1,1 @@
+Analyze these {{.ImageCount}} SCP character reference images for {{.SCPID}}. Extract visual details: texture, material quality, color palette, proportions, distinguishing anatomical features, surface finish. Output a concise visual descriptor paragraph suitable for image generation prompts.
