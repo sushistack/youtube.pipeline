@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* youtube.pipeline design tokens — dark-only theme */
+/* Story 6.1 will populate the full token system */
+:root {
+  color-scheme: dark;
+  background: #0F1117;
+  color: #E4E4E7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+}
