@@ -1,0 +1,24 @@
+# Build artifacts
+bin/
+internal/web/dist/*
+!internal/web/dist/.gitkeep
+/pipeline
+tmp/
+
+# Frontend
+web/node_modules/
+e2e/node_modules/
+
+# Secrets
+.env
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm
+
+# IDE / tool
+.claude
+.agent
+.gemini
+_bmad

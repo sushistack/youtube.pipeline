@@ -1,0 +1,23 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "CGO_ENABLED=0 go build -o ./bin/pipeline ./cmd/pipeline"
+  bin = "./bin/pipeline"
+  args_bin = ["serve", "--dev"]
+  include_ext = ["go"]
+  include_dir = ["cmd", "internal", "migrations"]
+  exclude_dir = ["vendor", "web", "e2e", "testdata"]
+  delay = 1000
+
+[log]
+  time = false
+
+[color]
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  clean_on_exit = true
