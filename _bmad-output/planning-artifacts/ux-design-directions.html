@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>youtube.pipeline — Batch Review UX Directions</title>
+<style>
+  /* ===== RESET & BASE ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; font-size: 15px; }
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0b0f;
+    color: #E4E4E7;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ===== DESIGN TOKENS ===== */
+  :root {
+    --bg: #0F1117;
+    --card-bg: #18181B;
+    --subtle-bg: #13151D;
+    --border: #27272A;
+    --active-border: #3F3F46;
+    --text-primary: #E4E4E7;
+    --text-muted: #71717A;
+    --accent: #5B8DEF;
+    --accent-hover: #7BA4F4;
+    --amber: #F59E0B;
+    --green: #22C55E;
+    --red: #EF4444;
+    --font-body: 15px;
+    --font-label: 14px;
+    --font-caption: 12px;
+    --spacing: 4px;
+    --card-padding: 16px;
+    --card-gap: 32px;
+    --sidebar-w: 220px;
+    --header-h: 48px;
+    --statusbar-h: 36px;
+  }
+
+  /* ===== DIRECTION NAV (sticky top) ===== */
+  .dir-nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    height: 44px;
+    background: rgba(15, 17, 23, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 0 24px;
+  }
+  .dir-nav a {
+    color: var(--text-muted); text-decoration: none;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.04em;
+    padding: 6px 16px; border-radius: 6px;
+    transition: all 0.15s;
+  }
+  .dir-nav a:hover { color: var(--text-primary); background: rgba(91,141,239,0.1); }
+  .dir-nav a.active, .dir-nav a:target { color: var(--accent); background: rgba(91,141,239,0.12); }
+  .dir-nav .sep { color: var(--border); font-size: 11px; }
+
+  /* ===== DIRECTION SECTION ===== */
+  .direction {
+    min-height: 100vh;
+    padding-top: 44px; /* nav offset */
+    display: flex; flex-direction: column;
+    border-bottom: 2px solid var(--border);
+    position: relative;
+  }
+
+  /* ===== DIRECTION LABEL ===== */
+  .dir-label {
+    position: absolute; top: 52px; right: 24px; z-index: 50;
+    background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.06em; padding: 4px 12px; border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  /* ===== APP SHELL (per direction) ===== */
+  .app-shell {
+    display: flex; flex: 1; min-height: calc(100vh - 44px);
+    background: var(--bg);
+  }
+
+  /* ===== SIDEBAR ===== */
+  .sidebar {
+    width: var(--sidebar-w); min-width: var(--sidebar-w);
+    background: var(--subtle-bg);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+  }
+  .sidebar-logo {
+    padding: 14px 16px;
+    font-size: 14px; font-weight: 700; color: var(--accent);
+    letter-spacing: -0.02em;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sidebar-logo svg { flex-shrink: 0; }
+  .sidebar-nav { padding: 8px 0; }
+  .sidebar-nav a {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; font-size: var(--font-label); color: var(--text-muted);
+    text-decoration: none; transition: all 0.12s;
+    border-left: 2px solid transparent;
+  }
+  .sidebar-nav a:hover { color: var(--text-primary); background: rgba(255,255,255,0.03); }
+  .sidebar-nav a.active {
+    color: var(--accent); background: rgba(91,141,239,0.08);
+    border-left-color: var(--accent);
+  }
+  .sidebar-nav a svg { opacity: 0.6; }
+  .sidebar-nav a.active svg { opacity: 1; }
+  .sidebar-section-title {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 16px 16px 6px; opacity: 0.7;
+  }
+  .run-list { padding: 4px 8px; }
+  .run-item {
+    padding: 7px 10px; border-radius: 6px; font-size: 13px; color: var(--text-muted);
+    cursor: pointer; transition: all 0.12s; display: flex; align-items: center; gap: 8px;
+  }
+  .run-item:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
+  .run-item.active { background: rgba(91,141,239,0.12); color: var(--accent); }
+  .run-item .run-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }
+  .run-item .run-dot.green { background: var(--green); }
+  .run-item .run-dot.amber { background: var(--amber); }
+  .run-item .run-dot.blue { background: var(--accent); }
+
+  /* ===== MAIN AREA ===== */
+  .main-area {
+    flex: 1; display: flex; flex-direction: column; min-width: 0;
+    overflow: hidden;
+  }
+
+  /* ===== HEADER ===== */
+  .app-header {
+    height: var(--header-h); min-height: var(--header-h);
+    background: var(--subtle-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 20px;
+    gap: 20px;
+  }
+  .run-title {
+    font-size: 15px; font-weight: 600; color: var(--text-primary);
+    white-space: nowrap;
+  }
+  .stepper {
+    display: flex; align-items: center; gap: 0; margin-left: 12px;
+    flex: 1;
+  }
+  .stepper-step {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500; white-space: nowrap;
+    padding: 4px 0;
+  }
+  .stepper-step .dot {
+    width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+    border: 2px solid var(--border); color: var(--text-muted);
+    transition: all 0.2s; flex-shrink: 0;
+  }
+  .stepper-step.completed .dot {
+    background: var(--green); border-color: var(--green); color: #fff;
+  }
+  .stepper-step.active .dot {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+    box-shadow: 0 0 0 3px rgba(91,141,239,0.25);
+  }
+  .stepper-step.completed .step-label { color: var(--green); }
+  .stepper-step.active .step-label { color: var(--accent); font-weight: 600; }
+  .stepper-step .step-label { color: var(--text-muted); }
+  .stepper-line {
+    width: 28px; height: 2px; background: var(--border); margin: 0 4px;
+    flex-shrink: 0;
+  }
+  .stepper-line.completed { background: var(--green); }
+  .stepper-line.active { background: var(--accent); }
+
+  /* ===== STATUS BAR ===== */
+  .status-bar {
+    height: var(--statusbar-h); min-height: var(--statusbar-h);
+    background: var(--subtle-bg);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 20px;
+    font-size: var(--font-caption); color: var(--text-muted);
+    justify-content: space-between;
+  }
+  .status-bar .status-default { display: flex; align-items: center; gap: 12px; }
+  .status-bar .status-hover { display: none; align-items: center; gap: 12px; }
+  .status-bar:hover .status-default { display: none; }
+  .status-bar:hover .status-hover { display: flex; }
+  .status-pill {
+    padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+  }
+  .status-pill.stage { background: rgba(91,141,239,0.15); color: var(--accent); }
+
+  /* ===== CONTENT AREA ===== */
+  .content-area {
+    flex: 1; overflow-y: auto; padding: 20px;
+    background: var(--bg);
+  }
+
+  /* ===== SCORE BADGE ===== */
+  .score-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 36px; height: 24px; border-radius: 6px;
+    font-size: 12px; font-weight: 700; padding: 0 8px;
+  }
+  .score-badge.green { background: rgba(34,197,94,0.15); color: var(--green); }
+  .score-badge.amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .score-badge.red { background: rgba(239,68,68,0.15); color: var(--red); }
+
+  /* ===== STATUS TAG ===== */
+  .status-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600; padding: 2px 8px;
+    border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .status-tag.approved { background: rgba(34,197,94,0.12); color: var(--green); }
+  .status-tag.pending { background: rgba(245,158,11,0.12); color: var(--amber); }
+  .status-tag.rejected { background: rgba(239,68,68,0.12); color: var(--red); }
+
+  /* ===== THUMBNAIL PLACEHOLDER ===== */
+  .thumb {
+    background: #1e1f26; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 12px; font-weight: 600;
+    overflow: hidden; position: relative;
+    border: 1px solid var(--border);
+  }
+  .thumb::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(91,141,239,0.06) 0%, rgba(91,141,239,0) 60%);
+    pointer-events: none;
+  }
+
+  /* ===== KBD HINTS ===== */
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 22px; height: 20px; padding: 0 5px;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+    border-radius: 4px; font-size: 11px; font-weight: 600;
+    color: var(--text-muted); font-family: system-ui;
+  }
+  .kbd-hint {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; color: var(--text-muted);
+  }
+
+  /* ===== ACTION BAR ===== */
+  .action-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding-top: 12px; border-top: 1px solid var(--border);
+    margin-top: 12px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-primary); font-size: 13px;
+    font-weight: 500; cursor: pointer; transition: all 0.12s;
+    font-family: inherit;
+  }
+  .btn:hover { background: rgba(255,255,255,0.06); border-color: var(--active-border); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn.danger { border-color: rgba(239,68,68,0.4); color: var(--red); }
+  .btn.danger:hover { background: rgba(239,68,68,0.1); }
+
+  /* ===== NARRATION TEXT ===== */
+  .narration {
+    font-size: var(--font-label); color: var(--text-primary);
+    line-height: 1.65; letter-spacing: -0.01em;
+  }
+
+  /* ====================================================================
+     DIRECTION A — VERTICAL STACK
+     ==================================================================== */
+  .dir-a .content-area { max-width: 900px; margin: 0 auto; padding: 24px 32px; }
+  .card-stack { display: flex; flex-direction: column; gap: 8px; }
+
+  .stack-card {
+    background: var(--card-bg); border-radius: 10px;
+    border: 1px solid var(--border); border-left: 3px solid transparent;
+    transition: all 0.15s; cursor: pointer;
+  }
+  .stack-card:hover { border-color: var(--active-border); border-left-color: var(--active-border); }
+  .stack-card.selected {
+    border-left-color: var(--accent) !important;
+    border-color: rgba(91,141,239,0.3);
+    background: rgba(91,141,239,0.04);
+  }
+
+  /* Collapsed card */
+  .stack-card.collapsed .card-collapsed {
+    display: flex; align-items: center; gap: 14px; padding: 10px 16px;
+  }
+  .stack-card.collapsed .card-expanded { display: none; }
+  .stack-card.collapsed .thumb { width: 48px; height: 36px; flex-shrink: 0; border-radius: 4px; font-size: 9px; }
+  .stack-card.collapsed .card-title { flex: 1; font-size: 14px; color: var(--text-primary); font-weight: 500; }
+
+  /* Expanded card */
+  .stack-card.expanded .card-collapsed { display: none; }
+  .stack-card.expanded .card-expanded { display: block; padding: var(--card-padding); }
+  .stack-card.expanded .thumb { width: 100%; height: 200px; border-radius: 6px; margin-bottom: 14px; }
+  .stack-card.expanded .card-header-row {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+  }
+  .stack-card.expanded .card-scene-num { font-size: 13px; font-weight: 700; color: var(--accent); }
+
+  /* ====================================================================
+     DIRECTION B — MASTER-DETAIL SPLIT
+     ==================================================================== */
+  .dir-b .split-layout { display: flex; flex: 1; overflow: hidden; }
+  .dir-b .split-left {
+    width: 40%; border-right: 1px solid var(--border);
+    overflow-y: auto; background: var(--bg);
+  }
+  .dir-b .split-right {
+    width: 60%; overflow-y: auto; background: var(--bg);
+    padding: 24px;
+  }
+
+  .compact-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; transition: all 0.12s;
+  }
+  .compact-item:hover { background: rgba(255,255,255,0.02); }
+  .compact-item.selected {
+    background: rgba(91,141,239,0.08);
+    border-right: 2px solid var(--accent);
+  }
+  .compact-item .thumb { width: 56px; height: 42px; flex-shrink: 0; border-radius: 4px; font-size: 9px; }
+  .compact-item .item-info { flex: 1; min-width: 0; }
+  .compact-item .item-title { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .compact-item .item-excerpt { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+
+  .detail-panel .detail-thumb { width: 100%; height: 320px; border-radius: 8px; margin-bottom: 20px; font-size: 16px; }
+  .detail-panel .detail-title { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+  .detail-panel .detail-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+  .detail-panel .detail-narration { margin-bottom: 20px; }
+  .detail-panel .subscore-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;
+  }
+  .subscore {
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; text-align: center;
+  }
+  .subscore-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .subscore-val { font-size: 18px; font-weight: 700; }
+  .audio-placeholder {
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 13px;
+  }
+  .audio-bar { flex: 1; height: 4px; background: var(--border); border-radius: 2px; position: relative; }
+  .audio-bar::after { content: ''; position: absolute; left: 0; top: 0; width: 35%; height: 100%; background: var(--accent); border-radius: 2px; }
+
+  /* ====================================================================
+     DIRECTION C — GRID OVERVIEW
+     ==================================================================== */
+  .dir-c .content-area { padding: 20px 24px; }
+  .grid-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid-card {
+    background: var(--card-bg); border-radius: 10px;
+    border: 1px solid var(--border); overflow: hidden;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .grid-card:hover { border-color: var(--active-border); transform: translateY(-1px); }
+  .grid-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(91,141,239,0.25), 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .grid-card .thumb { width: 100%; height: 140px; border-radius: 0; border: none; border-bottom: 1px solid var(--border); }
+  .grid-card .card-body { padding: 12px 14px; }
+  .grid-card .card-top-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .grid-card .scene-label { font-size: 12px; font-weight: 700; color: var(--accent); }
+  .grid-card .narration-excerpt { font-size: 12px; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; }
+  .grid-card .card-footer-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+
+  /* Inline expand */
+  .grid-expand {
+    grid-column: 1 / -1;
+    background: var(--card-bg); border-radius: 10px;
+    border: 1px solid var(--accent);
+    padding: 20px;
+    display: flex; gap: 24px;
+    animation: expandIn 0.2s ease-out;
+  }
+  @keyframes expandIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .grid-expand .thumb { width: 360px; height: 220px; flex-shrink: 0; }
+  .grid-expand .expand-info { flex: 1; display: flex; flex-direction: column; }
+  .grid-expand .expand-title { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+
+  /* ====================================================================
+     DIRECTION D — FILMSTRIP + FOCUS
+     ==================================================================== */
+  .dir-d .filmstrip-layout { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+  .filmstrip-track {
+    height: 110px; min-height: 110px;
+    background: var(--subtle-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 10px 16px; gap: 10px;
+    overflow-x: auto;
+  }
+  .filmstrip-track::-webkit-scrollbar { height: 4px; }
+  .filmstrip-track::-webkit-scrollbar-track { background: transparent; }
+  .filmstrip-track::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .film-thumb {
+    width: 110px; min-width: 110px; height: 80px;
+    border-radius: 6px; cursor: pointer;
+    position: relative; transition: all 0.15s;
+    border: 2px solid transparent;
+  }
+  .film-thumb:hover { border-color: var(--active-border); }
+  .film-thumb.selected {
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px rgba(91,141,239,0.25);
+  }
+  .film-thumb.selected::after {
+    content: ''; position: absolute; bottom: -7px; left: 50%; transform: translateX(-50%);
+    width: 40px; height: 3px; background: var(--accent); border-radius: 2px;
+  }
+  .film-thumb .thumb { width: 100%; height: 100%; border: none; border-radius: 4px; font-size: 9px; }
+  .film-thumb .score-overlay {
+    position: absolute; top: 4px; right: 4px;
+  }
+  .film-thumb .score-overlay .score-badge { height: 20px; font-size: 10px; min-width: 30px; }
+
+  .focus-area {
+    flex: 1; overflow-y: auto; padding: 28px 32px;
+    display: flex; gap: 28px;
+  }
+  .focus-thumb { width: 480px; min-width: 480px; height: 320px; border-radius: 10px; }
+  .focus-info { flex: 1; display: flex; flex-direction: column; }
+  .focus-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .focus-meta { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+  .focus-narration { margin-bottom: 20px; line-height: 1.75; }
+
+  /* ===== SCROLLBAR ===== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--active-border); }
+
+  /* ===== UTILITIES ===== */
+  .flex-center { display: flex; align-items: center; }
+  .gap-4 { gap: 4px; } .gap-6 { gap: 6px; } .gap-8 { gap: 8px; } .gap-10 { gap: 10px; } .gap-12 { gap: 12px; }
+  .ml-auto { margin-left: auto; }
+  .mt-8 { margin-top: 8px; }
+  .mb-4 { margin-bottom: 4px; }
+  .text-muted { color: var(--text-muted); }
+  .fw-600 { font-weight: 600; }
+  .fs-12 { font-size: 12px; }
+  .fs-13 { font-size: 13px; }
+</style>
+</head>
+<body>
+
+<!-- ===== STICKY DIRECTION NAV ===== -->
+<nav class="dir-nav" id="topnav">
+  <a href="#dir-a" class="active" onclick="activateNav(this)">A &mdash; Vertical Stack</a>
+  <span class="sep">/</span>
+  <a href="#dir-b" onclick="activateNav(this)">B &mdash; Master-Detail</a>
+  <span class="sep">/</span>
+  <a href="#dir-c" onclick="activateNav(this)">C &mdash; Grid Overview</a>
+  <span class="sep">/</span>
+  <a href="#dir-d" onclick="activateNav(this)">D &mdash; Filmstrip</a>
+</nav>
+
+<script>
+function activateNav(el) {
+  document.querySelectorAll('.dir-nav a').forEach(a => a.classList.remove('active'));
+  el.classList.add('active');
+}
+// Update active nav on scroll
+const sections = ['dir-a','dir-b','dir-c','dir-d'];
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      document.querySelectorAll('.dir-nav a').forEach(a => a.classList.remove('active'));
+      const link = document.querySelector(`.dir-nav a[href="#${e.target.id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}, { threshold: 0.3 });
+window.addEventListener('DOMContentLoaded', () => {
+  sections.forEach(id => { const el = document.getElementById(id); if (el) observer.observe(el); });
+});
+
+// Scene data
+const scenes = [
+  { num: 1, title: 'Scene 1 — 첫 번째 접촉', score: 92, status: 'approved', narration: 'SCP-049는 흑사병 의사의 복장을 착용한 인간형 개체로, 1.83m의 키에 검은 로브와 도자기 마스크를 착용하고 있다. 이 개체는 중세 프랑스어를 구사하며, 자신이 "치료사"라고 주장한다.' },
+  { num: 2, title: 'Scene 2 — 격리실 내부', score: 87, status: 'approved', narration: '격리실은 5m x 5m 크기의 표준 인간형 격리 공간으로 구성되어 있다. SCP-049는 자발적으로 격리에 응하였으나, "대역병"에 대한 연구를 계속하겠다는 조건을 제시하였다.' },
+  { num: 3, title: 'Scene 3 — 면담 기록', score: 78, status: 'pending', narration: '면담관: "당신이 말하는 \'대역병\'이란 정확히 무엇입니까?" SCP-049: "당신들은 느끼지 못하는가? 이 세상 곳곳에 퍼져 있는 그것을... 나는 그것을 감지할 수 있다."' },
+  { num: 4, title: 'Scene 4 — 실험 기록 049-1', score: 85, status: 'approved', narration: 'D-9847을 대상으로 한 실험에서 SCP-049는 대상에게 접촉하여 즉사시킨 후, 가방 안의 도구들을 사용하여 약 2시간에 걸쳐 "시술"을 진행하였다.' },
+  { num: 5, title: 'Scene 5 — SCP-049-2 발생', score: 45, status: 'rejected', narration: '시술이 완료된 후 D-9847의 신체가 재활성화되었다. SCP-049-2로 지정된 이 개체는 기초적인 운동 능력만을 보이며, 이전의 인격이나 기억은 완전히 소실된 상태였다.' },
+  { num: 6, title: 'Scene 6 — 탈주 사건', score: 91, status: 'approved', narration: '20██년 ██월 ██일, 기지 내 정전 사태로 인해 SCP-049의 격리가 일시적으로 해제되었다. 개체는 의료동을 향해 이동하며 마주치는 인원들에게 "치료"를 시도하였다.' },
+  { num: 7, title: 'Scene 7 — 재격리 작전', score: 88, status: 'approved', narration: '기동특무부대 엡실론-11 "구미호"가 투입되어 SCP-049를 추적하였다. 개체는 저항 없이 재격리에 응하였으며, "아직 치료가 완성되지 않았다"라고 진술하였다.' },
+  { num: 8, title: 'Scene 8 — 에필로그', score: 72, status: 'pending', narration: '현재 SCP-049는 사이트-19에 격리되어 있으며, 제한적인 연구 활동이 허가되어 있다. 개체의 "대역병" 감지 능력에 대한 추가 연구가 진행 중이다.' },
+];
+
+function scoreClass(s) { return s >= 80 ? 'green' : s >= 50 ? 'amber' : 'red'; }
+function statusLabel(s) { return s === 'approved' ? 'Auto-Approved' : s === 'pending' ? 'Pending' : 'Rejected'; }
+</script>
+
+
+<!-- ======================================================================
+     DIRECTION A — VERTICAL STACK (Linear-style)
+     ====================================================================== -->
+<section class="direction" id="dir-a">
+  <div class="dir-label">Direction A &mdash; Vertical Stack</div>
+  <div class="app-shell dir-a">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar-a"></aside>
+    <div class="main-area">
+      <!-- Header -->
+      <header class="app-header" id="header-a"></header>
+      <!-- Content -->
+      <div class="content-area">
+        <div style="margin-bottom:16px; display:flex; align-items:center; justify-content:space-between;">
+          <div>
+            <span style="font-size:16px; font-weight:700;">Batch Review</span>
+            <span style="font-size:13px; color:var(--text-muted); margin-left:10px;">8 scenes &middot; 5 auto-approved &middot; 2 pending &middot; 1 rejected</span>
+          </div>
+          <div class="flex-center gap-8">
+            <span class="kbd-hint"><span class="kbd">J</span> Next</span>
+            <span class="kbd-hint"><span class="kbd">K</span> Prev</span>
+          </div>
+        </div>
+        <div class="card-stack" id="stack-a"></div>
+      </div>
+      <!-- Status Bar -->
+      <div class="status-bar" id="statusbar-a"></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ======================================================================
+     DIRECTION B — MASTER-DETAIL SPLIT
+     ====================================================================== -->
+<section class="direction" id="dir-b">
+  <div class="dir-label">Direction B &mdash; Master-Detail Split</div>
+  <div class="app-shell dir-b">
+    <aside class="sidebar" id="sidebar-b"></aside>
+    <div class="main-area">
+      <header class="app-header" id="header-b"></header>
+      <div class="split-layout" style="flex:1; overflow:hidden;">
+        <!-- Left: compact list -->
+        <div class="split-left" id="list-b"></div>
+        <!-- Right: detail -->
+        <div class="split-right">
+          <div class="detail-panel" id="detail-b"></div>
+        </div>
+      </div>
+      <div class="status-bar" id="statusbar-b"></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ======================================================================
+     DIRECTION C — GRID OVERVIEW
+     ====================================================================== -->
+<section class="direction" id="dir-c">
+  <div class="dir-label">Direction C &mdash; Grid Overview</div>
+  <div class="app-shell dir-c">
+    <aside class="sidebar" id="sidebar-c"></aside>
+    <div class="main-area">
+      <header class="app-header" id="header-c"></header>
+      <div class="content-area">
+        <div style="margin-bottom:16px; display:flex; align-items:center; justify-content:space-between;">
+          <div>
+            <span style="font-size:16px; font-weight:700;">Batch Review</span>
+            <span style="font-size:13px; color:var(--text-muted); margin-left:10px;">8 scenes</span>
+          </div>
+          <div class="flex-center gap-8">
+            <span class="kbd-hint"><span class="kbd">J</span> Next</span>
+            <span class="kbd-hint"><span class="kbd">K</span> Prev</span>
+            <span class="kbd-hint"><span class="kbd">Enter</span> Approve</span>
+            <span class="kbd-hint"><span class="kbd">Esc</span> Reject</span>
+          </div>
+        </div>
+        <div class="grid-container" id="grid-c"></div>
+      </div>
+      <div class="status-bar" id="statusbar-c"></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ======================================================================
+     DIRECTION D — FILMSTRIP + FOCUS
+     ====================================================================== -->
+<section class="direction" id="dir-d">
+  <div class="dir-label">Direction D &mdash; Filmstrip + Focus</div>
+  <div class="app-shell dir-d">
+    <aside class="sidebar" id="sidebar-d"></aside>
+    <div class="main-area">
+      <header class="app-header" id="header-d"></header>
+      <div class="filmstrip-layout">
+        <!-- Filmstrip -->
+        <div class="filmstrip-track" id="filmstrip-d"></div>
+        <!-- Focus area -->
+        <div class="focus-area" id="focus-d"></div>
+      </div>
+      <div class="status-bar" id="statusbar-d"></div>
+    </div>
+  </div>
+</section>
+
+
+<script>
+// ===== SHARED COMPONENT RENDERERS =====
+
+function renderSidebar(containerId) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = `
+    <div class="sidebar-logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B8DEF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      youtube.pipeline
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="active">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Production
+      </a>
+      <a href="#">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Tuning
+      </a>
+      <a href="#">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+        Settings
+      </a>
+    </nav>
+    <div class="sidebar-section-title">Recent Runs</div>
+    <div class="run-list">
+      <div class="run-item active"><span class="run-dot blue"></span>SCP-049 Run #12</div>
+      <div class="run-item"><span class="run-dot green"></span>SCP-049 Run #11</div>
+      <div class="run-item"><span class="run-dot green"></span>SCP-173 Run #8</div>
+      <div class="run-item"><span class="run-dot amber"></span>SCP-096 Run #5</div>
+      <div class="run-item"><span class="run-dot green"></span>SCP-682 Run #3</div>
+    </div>
+  `;
+}
+
+function renderHeader(containerId) {
+  const stages = [
+    { label: 'Pending', state: 'completed' },
+    { label: 'Scenario', state: 'completed' },
+    { label: 'Character', state: 'completed' },
+    { label: 'Assets', state: 'active' },
+    { label: 'Assemble', state: '' },
+    { label: 'Complete', state: '' },
+  ];
+  let stepsHtml = '';
+  stages.forEach((s, i) => {
+    const num = i + 1;
+    const checkmark = s.state === 'completed' ? '&#10003;' : num;
+    stepsHtml += `<div class="stepper-step ${s.state}"><span class="dot">${checkmark}</span><span class="step-label">${s.label}</span></div>`;
+    if (i < stages.length - 1) {
+      const lineClass = s.state === 'completed' ? 'completed' : (s.state === 'active' ? 'active' : '');
+      stepsHtml += `<div class="stepper-line ${lineClass}"></div>`;
+    }
+  });
+  const el = document.getElementById(containerId);
+  el.innerHTML = `
+    <span class="run-title">SCP-049 Run #12</span>
+    <div class="stepper">${stepsHtml}</div>
+  `;
+}
+
+function renderStatusBar(containerId) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = `
+    <div class="status-default">
+      <span class="status-pill stage">Stage 4/6 &mdash; Assets</span>
+      <span>Elapsed: 14m 32s</span>
+      <span>&middot;</span>
+      <span>5 approved &middot; 2 pending &middot; 1 rejected</span>
+    </div>
+    <div class="status-hover">
+      <span style="color:var(--text-primary); font-weight:600;">Run ID: run_049_012_20260414</span>
+      <span>&middot;</span>
+      <span>Cost: $0.47 (Qwen VL $0.31 + TTS $0.16)</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span class="kbd-hint"><span class="kbd">&#8984;K</span> Command</span>
+    </div>
+  `;
+}
+
+// ===== RENDER ALL SHELLS =====
+['a','b','c','d'].forEach(d => {
+  renderSidebar('sidebar-' + d);
+  renderHeader('header-' + d);
+  renderStatusBar('statusbar-' + d);
+});
+
+
+// ===== DIRECTION A: VERTICAL STACK =====
+(function() {
+  const container = document.getElementById('stack-a');
+  let html = '';
+  scenes.forEach((s, i) => {
+    const isSelected = i === 2; // Scene 3 selected (pending)
+    const isExpanded = s.status !== 'approved' || isSelected;
+    const cls = isExpanded ? 'expanded' : 'collapsed';
+    const sel = isSelected ? 'selected' : '';
+
+    html += `<div class="stack-card ${cls} ${sel}">`;
+
+    // Collapsed view
+    html += `<div class="card-collapsed">
+      <div class="thumb">${s.title.split(' — ')[0]}</div>
+      <span class="card-title">${s.title}</span>
+      <span class="score-badge ${scoreClass(s.score)}">${s.score}</span>
+      <span class="status-tag ${s.status}">${statusLabel(s.status)}</span>
+    </div>`;
+
+    // Expanded view
+    html += `<div class="card-expanded">
+      <div class="card-header-row">
+        <span class="card-scene-num">${s.title.split(' — ')[0]}</span>
+        <span style="font-size:14px; font-weight:600;">${s.title.split(' — ')[1] || ''}</span>
+        <span class="ml-auto"></span>
+        <span class="score-badge ${scoreClass(s.score)}">${s.score}</span>
+        <span class="status-tag ${s.status}">${statusLabel(s.status)}</span>
+      </div>
+      <div class="thumb" style="width:100%; height:200px;">${s.title.split(' — ')[0]}</div>
+      <div class="narration" style="margin-top:14px;">${s.narration}</div>
+      ${isSelected ? `<div class="action-bar">
+        <button class="btn primary"><span class="kbd" style="background:rgba(255,255,255,0.15); border-color:rgba(255,255,255,0.2); color:#fff;">Enter</span> Approve</button>
+        <button class="btn danger"><span class="kbd">Esc</span> Reject</button>
+        <span class="ml-auto"></span>
+        <span class="kbd-hint"><span class="kbd">J</span> Next</span>
+        <span class="kbd-hint"><span class="kbd">K</span> Prev</span>
+      </div>` : `<div class="action-bar">
+        <button class="btn">Approve</button>
+        <button class="btn danger">Reject</button>
+      </div>`}
+    </div>`;
+
+    html += `</div>`;
+  });
+  container.innerHTML = html;
+})();
+
+
+// ===== DIRECTION B: MASTER-DETAIL SPLIT =====
+(function() {
+  const listEl = document.getElementById('list-b');
+  const detailEl = document.getElementById('detail-b');
+  const selectedIdx = 5; // Scene 6
+
+  // Compact list
+  let listHtml = '<div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;"><span style="font-size:14px; font-weight:700;">Scenes</span><span style="font-size:12px; color:var(--text-muted);">8 total</span></div>';
+  scenes.forEach((s, i) => {
+    const sel = i === selectedIdx ? 'selected' : '';
+    listHtml += `<div class="compact-item ${sel}">
+      <div class="thumb">${s.title.split(' — ')[0].replace('Scene ','S')}</div>
+      <div class="item-info">
+        <div class="item-title">${s.title}</div>
+        <div class="item-excerpt">${s.narration.substring(0, 60)}...</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+        <span class="score-badge ${scoreClass(s.score)}" style="min-width:32px; height:22px; font-size:11px;">${s.score}</span>
+        <span class="status-tag ${s.status}" style="font-size:9px; padding:1px 6px;">${statusLabel(s.status)}</span>
+      </div>
+    </div>`;
+  });
+  listEl.innerHTML = listHtml;
+
+  // Detail panel
+  const s = scenes[selectedIdx];
+  detailEl.innerHTML = `
+    <div class="detail-thumb thumb">${s.title.split(' — ')[0]}</div>
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px;">
+      <span class="detail-title">${s.title}</span>
+      <span class="score-badge ${scoreClass(s.score)}">${s.score}</span>
+      <span class="status-tag ${s.status}">${statusLabel(s.status)}</span>
+    </div>
+    <div class="detail-subtitle">SCP-049 Run #12 &middot; Stage 4: Assets &middot; Generated 2m ago</div>
+    <div class="subscore-grid">
+      <div class="subscore"><div class="subscore-label">Visual</div><div class="subscore-val" style="color:var(--green);">94</div></div>
+      <div class="subscore"><div class="subscore-label">Narration</div><div class="subscore-val" style="color:var(--green);">89</div></div>
+      <div class="subscore"><div class="subscore-label">Coherence</div><div class="subscore-val" style="color:var(--green);">90</div></div>
+      <div class="subscore"><div class="subscore-label">Pacing</div><div class="subscore-val" style="color:var(--green);">88</div></div>
+      <div class="subscore"><div class="subscore-label">SCP Accuracy</div><div class="subscore-val" style="color:var(--green);">93</div></div>
+      <div class="subscore"><div class="subscore-label">Audio</div><div class="subscore-val" style="color:var(--green);">86</div></div>
+    </div>
+    <div class="detail-narration narration" style="margin-bottom:16px;">${s.narration}</div>
+    <div class="audio-placeholder">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <div class="audio-bar"></div>
+      <span>1:24</span>
+    </div>
+    <div class="action-bar" style="border-top:none; padding-top:0; margin-top:4px;">
+      <button class="btn primary"><span class="kbd" style="background:rgba(255,255,255,0.15); border-color:rgba(255,255,255,0.2); color:#fff;">Enter</span> Approve</button>
+      <button class="btn danger"><span class="kbd">Esc</span> Reject</button>
+      <span class="ml-auto"></span>
+      <span class="kbd-hint"><span class="kbd">J</span> Next</span>
+      <span class="kbd-hint"><span class="kbd">K</span> Prev</span>
+    </div>
+  `;
+})();
+
+
+// ===== DIRECTION C: GRID OVERVIEW =====
+(function() {
+  const container = document.getElementById('grid-c');
+  const selectedIdx = 3; // Scene 4
+  let html = '';
+
+  scenes.forEach((s, i) => {
+    const sel = i === selectedIdx ? 'selected' : '';
+    html += `<div class="grid-card ${sel}">
+      <div class="thumb" style="width:100%;height:140px;border-radius:0;border:none;border-bottom:1px solid var(--border);">${s.title.split(' — ')[0]}</div>
+      <div class="card-body">
+        <div class="card-top-row">
+          <span class="scene-label">${s.title.split(' — ')[0]}</span>
+          <span class="score-badge ${scoreClass(s.score)}" style="height:22px; font-size:11px;">${s.score}</span>
+        </div>
+        <div class="narration-excerpt">${s.narration}</div>
+        <div class="card-footer-row">
+          <span class="status-tag ${s.status}" style="font-size:10px;">${statusLabel(s.status)}</span>
+        </div>
+      </div>
+    </div>`;
+
+    // Insert expand panel after the row containing the selected item
+    // Grid is 3-col, so expand after index 5 (end of row containing index 3)
+    if (i === 5) {
+      const es = scenes[selectedIdx];
+      html += `<div class="grid-expand">
+        <div class="thumb" style="width:360px;min-width:360px;height:220px;">${es.title.split(' — ')[0]}</div>
+        <div class="expand-info">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+            <span class="expand-title">${es.title}</span>
+            <span class="score-badge ${scoreClass(es.score)}">${es.score}</span>
+            <span class="status-tag ${es.status}">${statusLabel(es.status)}</span>
+          </div>
+          <div class="narration" style="flex:1; margin-bottom:12px;">${es.narration}</div>
+          <div class="audio-placeholder" style="margin-bottom:12px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <div class="audio-bar"></div>
+            <span>0:58</span>
+          </div>
+          <div class="action-bar" style="margin-top:auto;">
+            <button class="btn primary"><span class="kbd" style="background:rgba(255,255,255,0.15); border-color:rgba(255,255,255,0.2); color:#fff;">Enter</span> Approve</button>
+            <button class="btn danger"><span class="kbd">Esc</span> Reject</button>
+            <span class="ml-auto"></span>
+            <span class="kbd-hint"><span class="kbd">J</span> Next</span>
+            <span class="kbd-hint"><span class="kbd">K</span> Prev</span>
+          </div>
+        </div>
+      </div>`;
+    }
+  });
+  container.innerHTML = html;
+})();
+
+
+// ===== DIRECTION D: FILMSTRIP + FOCUS =====
+(function() {
+  const filmstripEl = document.getElementById('filmstrip-d');
+  const focusEl = document.getElementById('focus-d');
+  const selectedIdx = 6; // Scene 7
+
+  // Filmstrip
+  let filmHtml = '';
+  scenes.forEach((s, i) => {
+    const sel = i === selectedIdx ? 'selected' : '';
+    filmHtml += `<div class="film-thumb ${sel}">
+      <div class="thumb">${s.title.split(' — ')[0].replace('Scene ','S')}</div>
+      <div class="score-overlay"><span class="score-badge ${scoreClass(s.score)}">${s.score}</span></div>
+    </div>`;
+  });
+  filmstripEl.innerHTML = filmHtml;
+
+  // Focus
+  const s = scenes[selectedIdx];
+  focusEl.innerHTML = `
+    <div class="focus-thumb thumb">${s.title.split(' — ')[0]}</div>
+    <div class="focus-info">
+      <div class="focus-title">${s.title}</div>
+      <div class="focus-meta">
+        <span class="score-badge ${scoreClass(s.score)}">${s.score}</span>
+        <span class="status-tag ${s.status}">${statusLabel(s.status)}</span>
+        <span style="color:var(--text-muted);">Scene 7 of 8</span>
+      </div>
+      <div class="focus-narration narration">${s.narration}</div>
+      <div class="audio-placeholder" style="margin-bottom:16px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <div class="audio-bar"></div>
+        <span>1:12</span>
+      </div>
+      <div class="subscore-grid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px;">
+        <div class="subscore"><div class="subscore-label">Visual</div><div class="subscore-val" style="color:var(--green);">91</div></div>
+        <div class="subscore"><div class="subscore-label">Narration</div><div class="subscore-val" style="color:var(--green);">86</div></div>
+        <div class="subscore"><div class="subscore-label">Coherence</div><div class="subscore-val" style="color:var(--green);">88</div></div>
+      </div>
+      <div class="action-bar" style="margin-top:auto; border-top:1px solid var(--border); padding-top:16px;">
+        <button class="btn primary"><span class="kbd" style="background:rgba(255,255,255,0.15); border-color:rgba(255,255,255,0.2); color:#fff;">Enter</span> Approve</button>
+        <button class="btn danger"><span class="kbd">Esc</span> Reject</button>
+        <span class="ml-auto"></span>
+        <span class="kbd-hint"><span class="kbd">J</span> Next</span>
+        <span class="kbd-hint"><span class="kbd">K</span> Prev</span>
+      </div>
+    </div>
+  `;
+})();
+</script>
+
+</body>
+</html>
