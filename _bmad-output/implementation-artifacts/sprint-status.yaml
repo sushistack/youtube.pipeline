@@ -1,5 +1,5 @@
 # generated: 2026-04-16
-# last_updated: 2026-04-16
+# last_updated: 2026-04-17 # Story 2-4 created
 # project: youtube.pipeline
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-16
-last_updated: 2026-04-16
+last_updated: 2026-04-18 # Story 2-4 review
 project: youtube.pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -46,19 +46,19 @@ development_status:
   epic-1: in-progress
   1-1-go-react-spa-project-scaffolding-build-chain: done
   1-2-sqlite-database-migration-infrastructure: done
-  1-3-domain-types-error-system-architecture-interfaces: backlog
-  1-4-test-infrastructure-external-api-isolation: backlog
-  1-5-cli-foundation-init-doctor-commands: backlog
-  1-6-cli-renderer-output-formatting: backlog
-  1-7-ci-pipeline-e2e-smoke-test: backlog
+  1-3-domain-types-error-system-architecture-interfaces: done
+  1-4-test-infrastructure-external-api-isolation: done
+  1-5-cli-foundation-init-doctor-commands: done
+  1-6-cli-renderer-output-formatting: done
+  1-7-ci-pipeline-e2e-smoke-test: done
   epic-1-retrospective: optional
 
   # ── Epic 2: Pipeline Lifecycle & State Machine ───────────────────────────
-  epic-2: backlog
-  2-1-state-machine-core-stage-transitions: backlog
-  2-2-run-create-cancel-inspect: backlog
-  2-3-stage-level-resume-artifact-lifecycle: backlog
-  2-4-per-stage-observability-cost-tracking: backlog
+  epic-2: in-progress
+  2-1-state-machine-core-stage-transitions: done
+  2-2-run-create-cancel-inspect: done
+  2-3-stage-level-resume-artifact-lifecycle: done
+  2-4-per-stage-observability-cost-tracking: review
   2-5-anti-progress-detection: backlog
   2-6-hitl-session-pause-resume-change-diff: backlog
   2-7-pipeline-metrics-cli-report: backlog

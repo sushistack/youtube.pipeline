@@ -1,4 +1,4 @@
-.PHONY: build web-build go-build test test-go test-web test-e2e dev clean
+.PHONY: build web-build go-build test test-go test-web test-e2e dev clean lint-layers check-fr-coverage ci
 
 build: web-build go-build
 
@@ -24,6 +24,14 @@ dev:
 	@cd web && npm run dev & VITE_PID=$$!; \
 	trap "kill $$VITE_PID 2>/dev/null" EXIT; \
 	air -- serve --dev
+
+lint-layers:
+	CGO_ENABLED=0 go run ./scripts/lintlayers/
+
+check-fr-coverage:
+	CGO_ENABLED=0 go run ./scripts/frcoverage/
+
+ci: test lint-layers check-fr-coverage build
 
 clean:
 	rm -rf bin/

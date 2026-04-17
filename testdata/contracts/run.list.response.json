@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "data": {
+    "items": [
+      {
+        "id": "scp-049-run-1",
+        "scp_id": "049",
+        "stage": "pending",
+        "status": "pending",
+        "retry_count": 0,
+        "cost_usd": 0.0,
+        "created_at": "2026-04-17T00:00:00Z",
+        "updated_at": "2026-04-17T00:00:00Z"
+      }
+    ],
+    "total": 1
+  }
+}

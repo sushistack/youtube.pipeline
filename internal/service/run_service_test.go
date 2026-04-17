@@ -1,0 +1,166 @@
+package service_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/sushistack/youtube.pipeline/internal/db"
+	"github.com/sushistack/youtube.pipeline/internal/domain"
+	"github.com/sushistack/youtube.pipeline/internal/pipeline"
+	"github.com/sushistack/youtube.pipeline/internal/service"
+	"github.com/sushistack/youtube.pipeline/internal/testutil"
+)
+
+func newTestService(t testing.TB) *service.RunService {
+	t.Helper()
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	return service.NewRunService(store, nil)
+}
+
+func TestRunService_Create_Valid(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	svc := newTestService(t)
+	outDir := t.TempDir()
+
+	run, err := svc.Create(context.Background(), "049", outDir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	testutil.AssertEqual(t, run.ID, "scp-049-run-1")
+	testutil.AssertEqual(t, run.Status, domain.StatusPending)
+	testutil.AssertEqual(t, run.Stage, domain.StagePending)
+}
+
+func TestRunService_Create_EmptySCPID(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	svc := newTestService(t)
+
+	_, err := svc.Create(context.Background(), "", t.TempDir())
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestRunService_Create_InvalidSCPID(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	svc := newTestService(t)
+	outDir := t.TempDir()
+
+	badIDs := []string{
+		"../etc",
+		"foo/bar",
+		"scp 049",
+		"scp;rm -rf",
+		"foo.bar",
+		"\x00null",
+	}
+	for _, id := range badIDs {
+		if _, err := svc.Create(context.Background(), id, outDir); !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("scp_id %q: expected ErrValidation, got %v", id, err)
+		}
+	}
+}
+
+func TestRunService_Get_NotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	svc := newTestService(t)
+
+	_, err := svc.Get(context.Background(), "scp-999-run-1")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestRunService_Cancel_Conflict(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	svc := newTestService(t)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := svc.Create(ctx, "049", outDir)
+
+	// Pending status → ErrConflict
+	err := svc.Cancel(ctx, run.ID)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestRunService_List_Empty(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	svc := newTestService(t)
+
+	runs, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	testutil.AssertEqual(t, len(runs), 0)
+}
+
+// --- Resume --------------------------------------------------------------
+
+type fakeResumer struct {
+	calls     []resumeCall
+	returnErr error
+	report    *domain.InconsistencyReport
+}
+
+type resumeCall struct {
+	runID string
+	opts  pipeline.ResumeOptions
+}
+
+func (f *fakeResumer) ResumeWithOptions(ctx context.Context, runID string, opts pipeline.ResumeOptions) (*domain.InconsistencyReport, error) {
+	f.calls = append(f.calls, resumeCall{runID: runID, opts: opts})
+	return f.report, f.returnErr
+}
+
+func TestRunService_Resume_NoResumer_Validation(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	svc := newTestService(t) // nil resumer
+	_, _, err := svc.Resume(context.Background(), "scp-049-run-1", false)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("expected ErrValidation when resumer is nil; got %v", err)
+	}
+}
+
+func TestRunService_Resume_ForwardsForceFlag(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	fr := &fakeResumer{}
+	svc := service.NewRunService(store, fr)
+
+	outDir := t.TempDir()
+	run, _ := svc.Create(context.Background(), "049", outDir)
+	database.ExecContext(context.Background(),
+		`UPDATE runs SET status = 'failed' WHERE id = ?`, run.ID)
+
+	if _, _, err := svc.Resume(context.Background(), run.ID, true); err != nil {
+		t.Fatalf("Resume(force=true): %v", err)
+	}
+	if len(fr.calls) != 1 {
+		t.Fatalf("expected 1 resumer call, got %d", len(fr.calls))
+	}
+	if fr.calls[0].runID != run.ID {
+		t.Errorf("runID forwarded = %q, want %q", fr.calls[0].runID, run.ID)
+	}
+	if !fr.calls[0].opts.Force {
+		t.Errorf("force flag not forwarded to resumer")
+	}
+}
+
+func TestRunService_Resume_PropagatesResumerError(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	fr := &fakeResumer{returnErr: domain.ErrConflict}
+	svc := service.NewRunService(store, fr)
+
+	_, _, err := svc.Resume(context.Background(), "scp-049-run-1", false)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("expected ErrConflict propagation; got %v", err)
+	}
+}

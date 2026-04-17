@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.7'
+          cache: true
+      # -race requires CGO; ncruces/go-sqlite3 is pure Go, no CGO needed.
+      # See deferred-work.md (Story 1.1): -race excluded from CI.
+      - name: Run Go tests
+        run: CGO_ENABLED=0 go test ./cmd/... ./internal/... ./migrations/... -count=1 -timeout=120s
+      - name: Layer-import lint (NFR-M4)
+        run: CGO_ENABLED=0 go run ./scripts/lintlayers/
+      - name: FR coverage check (grace mode)
+        run: CGO_ENABLED=0 go run ./scripts/frcoverage/
+
+  test-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+      - name: Install dependencies
+        run: cd web && npm ci
+      - name: Run Vitest
+        run: cd web && npx vitest run
+
+  test-e2e:
+    needs: [test-go, test-web]
+    runs-on: ubuntu-latest
+    # pipeline serve not yet implemented (Epic 6); e2e/smoke.spec.ts uses test.todo() which skips.
+    # Remove continue-on-error once serve command exists.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: 'e2e/package-lock.json'
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('e2e/package-lock.json') }}
+      - name: Install E2E dependencies
+        run: cd e2e && npm ci
+      - name: Install Playwright Chromium
+        run: cd e2e && npx playwright install --with-deps chromium
+      - name: Run Playwright tests
+        run: cd e2e && npx playwright test
+        env:
+          # No API keys — Layer 3 defense
+          CI: true
+
+  build:
+    needs: [test-go, test-web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.7'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+      - name: Install web dependencies
+        run: cd web && npm ci
+      - name: Build
+        run: CGO_ENABLED=0 make build

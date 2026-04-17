@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "grace": true,
+    "total_frs": 48,
+    "last_updated": "2026-04-18"
+  },
+  "coverage": [
+    {
+      "fr_id": "FR5",
+      "test_ids": ["TestRunStore_RecordStageObservation_AccumulatesColumns", "TestRecorder_Record_Happy", "TestRunStore_RecordStageObservation_HumanOverrideSticky"],
+      "annotation": "8-column observability persistence via Recorder (NFR-O1, NFR-C3)"
+    },
+    {
+      "fr_id": "FR6",
+      "test_ids": ["TestRunStore_RecordStageObservation_NullableOverwrite", "TestRecorder_RecordRetry_Shape", "TestIntegration_429Backoff_DoesNotAdvanceStage"],
+      "annotation": "per-stage observability captured (NFR-P3 retry_reason, NFR-C1/C2 cost caps)"
+    },
+    {
+      "fr_id": "FR38",
+      "test_ids": ["TestInitCmd_CreatesDirectoryTree", "TestInitCmd_Idempotent"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR39",
+      "test_ids": ["TestDoctorCmd_PassesWithValidSetup", "TestDoctorCmd_FailsOnMissingKey"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR42",
+      "test_ids": [],
+      "annotation": "not-directly-testable, covered by AC-JSON in Story 1.6"
+    },
+    {
+      "fr_id": "FR43",
+      "test_ids": [],
+      "annotation": "not-directly-testable, covered by AC-HUMAN in Story 1.6"
+    },
+    {
+      "fr_id": "FR46",
+      "test_ids": ["TestWriterCriticCheck_SameProvider"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR51",
+      "test_ids": ["TestContract_PipelineState", "TestLoadFixture_ContractFile", "TestLoadRunStateFixture_QueryRun", "TestBlockExternalHTTP_ExternalBlocked", "TestCILockout_PanicsWithAPIKeys"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR52",
+      "test_ids": ["TestE2E_FullPipeline"],
+      "annotation": null
+    }
+  ]
+}
