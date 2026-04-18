@@ -112,7 +112,7 @@ func newEngine(t *testing.T, runs pipeline.RunStore, segments pipeline.SegmentSt
 	t.Helper()
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{}))
-	return pipeline.NewEngine(runs, segments, clock.RealClock{}, outputDir, logger)
+	return pipeline.NewEngine(runs, segments, nil, clock.RealClock{}, outputDir, logger)
 }
 
 // --- tests -----------------------------------------------------------------

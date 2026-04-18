@@ -26,6 +26,16 @@ type SegmentStore interface {
 	ClearClipPathsByRunID(ctx context.Context, runID string) (int64, error)
 }
 
+// HITLSessionCleaner is the narrow persistence surface the Engine uses to
+// drop stale hitl_sessions rows when a run exits HITL state on Resume.
+// *db.DecisionStore satisfies this interface structurally. Story 2.6
+// invariant: hitl_sessions row exists iff run.status=waiting AND
+// run.stage ∈ HITL stages. Resume that transitions the run out of that
+// state must clean the row.
+type HITLSessionCleaner interface {
+	DeleteSession(ctx context.Context, runID string) error
+}
+
 // ResumeOptions controls optional Resume behavior.
 type ResumeOptions struct {
 	// Force bypasses the FS/DB inconsistency abort. Warnings are still logged.
@@ -38,6 +48,7 @@ type ResumeOptions struct {
 type Engine struct {
 	runs      RunStore
 	segments  SegmentStore
+	sessions  HITLSessionCleaner
 	clock     clock.Clock
 	outputDir string
 	logger    *slog.Logger
@@ -45,13 +56,16 @@ type Engine struct {
 
 // NewEngine constructs an Engine. outputDir is the base output path
 // ({cfg.OutputDir}); per-run directories are joined by run ID.
-func NewEngine(runs RunStore, segments SegmentStore, clk clock.Clock, outputDir string, logger *slog.Logger) *Engine {
+// sessions MAY be nil for call paths that never Resume a HITL run
+// (tests, tools); nil skips the Story 2.6 session-cleanup step.
+func NewEngine(runs RunStore, segments SegmentStore, sessions HITLSessionCleaner, clk clock.Clock, outputDir string, logger *slog.Logger) *Engine {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Engine{
 		runs:      runs,
 		segments:  segments,
+		sessions:  sessions,
 		clock:     clk,
 		outputDir: outputDir,
 		logger:    logger,
@@ -161,6 +175,19 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 	newStatus := StatusForStage(run.Stage)
 	if err := e.runs.ResetForResume(ctx, runID, newStatus); err != nil {
 		return report, fmt.Errorf("resume %s: reset: %w", runID, err)
+	}
+
+	// Story 2.6 cleanup: drop the hitl_sessions row when the run exits HITL
+	// state (new status != waiting). If still waiting (e.g. retry within the
+	// same HITL stage), the session row stays and is updated by the next
+	// decision event.
+	if e.sessions != nil && newStatus != domain.StatusWaiting {
+		if err := e.sessions.DeleteSession(ctx, runID); err != nil {
+			// Non-fatal: log and continue. Invariant repair happens on next
+			// Cancel or new decision-capture upsert.
+			e.logger.Warn("resume: delete hitl_session failed",
+				"run_id", runID, "error", err.Error())
+		}
 	}
 
 	e.logger.Info("run resumed",

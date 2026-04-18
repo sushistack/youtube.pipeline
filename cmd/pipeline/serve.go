@@ -62,15 +62,17 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 
 	store := db.NewRunStore(database)
 	segStore := db.NewSegmentStore(database)
+	decisionStore := db.NewDecisionStore(database)
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	engine := pipeline.NewEngine(store, segStore, clock.RealClock{}, cfg.OutputDir, logger)
+	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
 	svc := service.NewRunService(store, engine)
+	hitlSvc := service.NewHITLService(store, decisionStore, logger)
 
 	mux := http.NewServeMux()
 
-	deps := api.NewDependencies(svc, cfg.OutputDir, logger, web.FS)
+	deps := api.NewDependencies(svc, hitlSvc, cfg.OutputDir, logger, web.FS)
 	if devMode {
 		// In dev mode replace the SPA catch-all with a Vite reverse proxy.
 		deps.WebFS = nil

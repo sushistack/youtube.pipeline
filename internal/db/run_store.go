@@ -17,6 +17,17 @@ type RunStore struct {
 	db *sql.DB
 }
 
+// RunMetricsRow is the per-run observability slice required by Day-90 metrics.
+type RunMetricsRow struct {
+	ID            string
+	Status        string
+	CriticScore   *float64
+	HumanOverride bool
+	RetryCount    int
+	RetryReason   *string
+	CreatedAt     string
+}
+
 // NewRunStore creates a RunStore backed by the provided *sql.DB.
 func NewRunStore(db *sql.DB) *RunStore {
 	return &RunStore{db: db}
@@ -270,13 +281,25 @@ func (s *RunStore) RecordStageObservation(ctx context.Context, runID string, obs
 	return nil
 }
 
-// Cancel sets a run's status to cancelled.
-// Returns domain.ErrNotFound if the run does not exist.
-// Returns domain.ErrConflict if the run exists but is not in a cancellable state.
-// The UPDATE + existence check are ordered so a deleted row does not masquerade
-// as a conflict: if RowsAffected is 0 we re-Get to disambiguate missing vs. terminal.
+// Cancel sets a run's status to cancelled and removes any HITL session
+// row in the same transaction. Returns domain.ErrNotFound if the run does
+// not exist. Returns domain.ErrConflict if the run exists but is not in a
+// cancellable state. The UPDATE + existence check are ordered so a deleted
+// row does not masquerade as a conflict: if RowsAffected is 0 we re-Get to
+// disambiguate missing vs. terminal.
+//
+// The hitl_sessions DELETE is unconditional within the tx: if the run was
+// not paused the DELETE is a no-op (0 rows affected). Wrapping both ops in
+// one transaction preserves the invariant "hitl_sessions row exists iff
+// run.status=waiting AND run.stage ∈ HITL stages" even across crashes.
 func (s *RunStore) Cancel(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("cancel run %s: begin tx: %w", id, err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx,
 		`UPDATE runs SET status = ? WHERE id = ? AND status IN (?, ?)`,
 		string(domain.StatusCancelled), id,
 		string(domain.StatusRunning), string(domain.StatusWaiting),
@@ -289,16 +312,133 @@ func (s *RunStore) Cancel(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("cancel run %s rows affected: %w", id, err)
 	}
-	if n > 0 {
-		return nil
+	if n == 0 {
+		// Zero rows affected — either the row does not exist (ErrNotFound)
+		// or it exists but is already terminal (ErrConflict). Roll the tx
+		// back FIRST so the subsequent Get can acquire the lone connection
+		// (MaxOpenConns=1 serializes tx + plain query).
+		_ = tx.Rollback() // release connection before disambiguation Get (MaxOpenConns=1)
+		if _, err := s.Get(ctx, id); err != nil {
+			return err
+		}
+		return fmt.Errorf("cancel run %s: %w", id, domain.ErrConflict)
 	}
 
-	// Zero rows affected — either the row does not exist (ErrNotFound) or it
-	// exists but is already terminal (ErrConflict). Disambiguate with a Get.
-	if _, err := s.Get(ctx, id); err != nil {
-		return err
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM hitl_sessions WHERE run_id = ?`, id); err != nil {
+		return fmt.Errorf("cancel run %s: delete hitl_session: %w", id, err)
 	}
-	return fmt.Errorf("cancel run %s: %w", id, domain.ErrConflict)
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("cancel run %s: commit: %w", id, err)
+	}
+	return nil
+}
+
+// AntiProgressStats summarizes anti-progress events over the N most recent
+// runs that tripped the detector. Inputs to NFR-R2's V1.5 ≤5% gate.
+type AntiProgressStats struct {
+	Total            int  // runs with retry_reason='anti_progress' in the window
+	OperatorOverride int  // of Total, runs where human_override=1 (FP proxy in V1)
+	Provisional      bool // true when Total < window (insufficient data)
+}
+
+// AntiProgressFalsePositiveStats counts anti-progress events over the last
+// `window` runs (ordered by created_at DESC) that carry
+// retry_reason='anti_progress'. The "false-positive" definition in V1 is
+// a proxy: runs where the operator intervened post-escalation
+// (human_override=1) are treated as FP candidates. V1.5 will promote this
+// to a ground-truth signal (e.g., a subsequent successful auto-retry).
+//
+// The subquery uses idx_runs_retry_reason_created_at (Migration 004)
+// to avoid a full table scan: it seeks the selective retry_reason value,
+// then walks the index backwards to satisfy ORDER BY created_at DESC.
+// Provisional = (Total < window).
+//
+// Returns ErrValidation if window <= 0.
+func (s *RunStore) AntiProgressFalsePositiveStats(
+	ctx context.Context,
+	window int,
+) (AntiProgressStats, error) {
+	if window <= 0 {
+		return AntiProgressStats{}, fmt.Errorf("anti-progress stats: window %d must be > 0: %w", window, domain.ErrValidation)
+	}
+
+	const q = `
+SELECT COUNT(*)                                              AS total,
+       SUM(CASE WHEN human_override = 1 THEN 1 ELSE 0 END)   AS overridden
+FROM (
+    SELECT human_override
+    FROM runs
+    WHERE retry_reason = 'anti_progress'
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+);
+`
+
+	var total int
+	var overridden sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, q, window).Scan(&total, &overridden); err != nil {
+		return AntiProgressStats{}, fmt.Errorf("anti-progress stats query: %w", err)
+	}
+
+	return AntiProgressStats{
+		Total:            total,
+		OperatorOverride: int(overridden.Int64),
+		Provisional:      total < window,
+	}, nil
+}
+
+// RecentCompletedRunsForMetrics returns up to window most-recent completed
+// runs, ordered by created_at DESC then id DESC for deterministic ties.
+func (s *RunStore) RecentCompletedRunsForMetrics(ctx context.Context, window int) ([]RunMetricsRow, error) {
+	if window <= 0 {
+		return nil, fmt.Errorf("recent completed runs for metrics: window %d must be > 0: %w", window, domain.ErrValidation)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, status, critic_score, human_override, retry_count, retry_reason, created_at
+  FROM runs
+ WHERE status = ?
+ ORDER BY created_at DESC, id DESC
+ LIMIT ?`,
+		string(domain.StatusCompleted), window,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("recent completed runs for metrics: %w", err)
+	}
+	defer rows.Close()
+
+	var out []RunMetricsRow
+	for rows.Next() {
+		var (
+			row           RunMetricsRow
+			criticScore   sql.NullFloat64
+			humanOverride int
+			retryReason   sql.NullString
+		)
+		if err := rows.Scan(
+			&row.ID, &row.Status, &criticScore, &humanOverride,
+			&row.RetryCount, &retryReason, &row.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("recent completed runs for metrics scan: %w", err)
+		}
+		row.HumanOverride = humanOverride != 0
+		if criticScore.Valid {
+			row.CriticScore = &criticScore.Float64
+		}
+		if retryReason.Valid {
+			row.RetryReason = &retryReason.String
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("recent completed runs for metrics iterate: %w", err)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // scanner abstracts *sql.Row and *sql.Rows for scanRun.

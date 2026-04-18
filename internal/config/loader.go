@@ -47,6 +47,8 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("cost_cap_image", cfg.CostCapImage)
 	v.SetDefault("cost_cap_tts", cfg.CostCapTTS)
 	v.SetDefault("cost_cap_assemble", cfg.CostCapAssemble)
+	v.SetDefault("cost_cap_per_run", cfg.CostCapPerRun)
+	v.SetDefault("anti_progress_threshold", cfg.AntiProgressThreshold)
 
 	// Read config.yaml if it exists.
 	if cfgPath != "" {

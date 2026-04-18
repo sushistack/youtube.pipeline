@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestOpenDB_WALMode(t *testing.T) {
@@ -80,8 +81,8 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 3 {
-		t.Errorf("user_version = %d, want %d", version, 3)
+	if version != 5 {
+		t.Errorf("user_version = %d, want %d", version, 5)
 	}
 
 	db.Close()
@@ -99,8 +100,8 @@ func TestMigrate_UserVersion(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 3 {
-		t.Errorf("user_version = %d, want %d", version, 3)
+	if version != 5 {
+		t.Errorf("user_version = %d, want %d", version, 5)
 	}
 }
 
@@ -112,7 +113,7 @@ func TestSchema_TablesExist(t *testing.T) {
 	}
 	defer db.Close()
 
-	tables := []string{"runs", "decisions", "segments"}
+	tables := []string{"runs", "decisions", "segments", "hitl_sessions"}
 	for _, table := range tables {
 		var name string
 		err := db.QueryRow(
@@ -121,6 +122,62 @@ func TestSchema_TablesExist(t *testing.T) {
 		if err != nil {
 			t.Errorf("table %q not found: %v", table, err)
 		}
+	}
+}
+
+func TestSchema_HITLSessionsColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	expected := map[string]string{
+		"run_id":                     "TEXT",
+		"stage":                      "TEXT",
+		"scene_index":                "INTEGER",
+		"last_interaction_timestamp": "TEXT",
+		"snapshot_json":              "TEXT",
+		"created_at":                 "TEXT",
+		"updated_at":                 "TEXT",
+	}
+	assertTableColumns(t, db, "hitl_sessions", expected)
+}
+
+func TestSchema_HITLSessionsUpdatedAtTrigger(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	// Seed a run so the FK is satisfied.
+	if _, err := db.Exec("INSERT INTO runs (id, scp_id) VALUES ('scp-049-run-1', '049')"); err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO hitl_sessions (run_id, stage, scene_index, last_interaction_timestamp, snapshot_json, created_at, updated_at)
+		VALUES ('scp-049-run-1', 'batch_review', 0, '2026-01-01T00:00:00Z', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatalf("insert hitl_session: %v", err)
+	}
+
+	var before string
+	if err := db.QueryRow("SELECT updated_at FROM hitl_sessions WHERE run_id = 'scp-049-run-1'").Scan(&before); err != nil {
+		t.Fatalf("select before: %v", err)
+	}
+	// SQLite datetime resolution is 1 second — sleep to guarantee advancement.
+	time.Sleep(1100 * time.Millisecond)
+	if _, err := db.Exec("UPDATE hitl_sessions SET scene_index = 4 WHERE run_id = 'scp-049-run-1'"); err != nil {
+		t.Fatalf("update scene_index: %v", err)
+	}
+	var after string
+	if err := db.QueryRow("SELECT updated_at FROM hitl_sessions WHERE run_id = 'scp-049-run-1'").Scan(&after); err != nil {
+		t.Fatalf("select after: %v", err)
+	}
+	if after == before {
+		t.Errorf("updated_at did not advance: before=%q after=%q", before, after)
 	}
 }
 

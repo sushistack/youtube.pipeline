@@ -70,6 +70,24 @@ var rollingWindowQueries = []struct {
 		args:  []any{"2020-01-01"},
 		index: "idx_runs",
 	},
+	{
+		name:  "metrics_recent_completed_runs",
+		sql:   "SELECT id, status, critic_score, human_override, retry_count, retry_reason, created_at FROM runs WHERE status = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+		args:  []any{"completed", 25},
+		index: "idx_runs_status_created_at",
+	},
+	{
+		name:  "metrics_decisions_by_run",
+		sql:   "SELECT scene_id, decision_type FROM decisions WHERE run_id = ? AND superseded_by IS NULL AND decision_type IN ('approve','reject') AND scene_id IS NOT NULL",
+		args:  []any{"scp-049-run-1"},
+		index: "idx_decisions_run_id_type",
+	},
+	{
+		name:  "metrics_auto_passed_scenes",
+		sql:   "SELECT COUNT(*) FROM segments WHERE run_id = ? AND critic_score >= ?",
+		args:  []any{"scp-049-run-1", 0.70},
+		index: "sqlite_autoindex_segments_1",
+	},
 }
 
 func TestRollingWindowQueries_UseIndexes(t *testing.T) {
@@ -99,10 +117,48 @@ func TestRollingWindowQueries_UseIndexes(t *testing.T) {
 				!strings.Contains(planStr, "USING COVERING INDEX") {
 				t.Errorf("query %s did not use an index. plan:\n%s", q.name, planStr)
 			}
+			if (strings.Contains(planStr, "SCAN runs") || strings.Contains(planStr, "SCAN decisions")) &&
+				!strings.Contains(planStr, "USING INDEX") &&
+				!strings.Contains(planStr, "USING COVERING INDEX") {
+				t.Errorf("query %s performed a full scan. plan:\n%s", q.name, planStr)
+			}
 			if !strings.Contains(planStr, q.index) {
 				t.Logf("query %s plan:\n%s (expected %s substring)", q.name, planStr, q.index)
 			}
 		})
+	}
+}
+
+// TestMigration005_DecisionsIndexesCreated confirms Migration 005 produced the
+// decisions-table indexes required by Story 2.7.
+func TestMigration005_DecisionsIndexesCreated(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+
+	wanted := map[string]bool{
+		"idx_decisions_run_id_type": false,
+		"idx_decisions_created_at":  false,
+	}
+	rows, err := database.Query(
+		`SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='decisions'`,
+	)
+	if err != nil {
+		t.Fatalf("query sqlite_master: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		if _, ok := wanted[name]; ok {
+			wanted[name] = true
+		}
+	}
+	for idx, found := range wanted {
+		if !found {
+			t.Errorf("Migration 005 index missing: %s", idx)
+		}
 	}
 }
 

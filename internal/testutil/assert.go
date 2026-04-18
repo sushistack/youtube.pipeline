@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"encoding/json"
+	"math"
 	"reflect"
 	"testing"
 )
@@ -26,5 +27,13 @@ func AssertJSONEq(t testing.TB, got, want string) {
 	}
 	if !reflect.DeepEqual(gotVal, wantVal) {
 		t.Errorf("JSON mismatch:\ngot:  %s\nwant: %s", got, want)
+	}
+}
+
+// AssertFloatNear fails the test if got and want differ by more than eps.
+func AssertFloatNear(t testing.TB, got, want, eps float64) {
+	t.Helper()
+	if math.Abs(got-want) > eps {
+		t.Errorf("got %0.12f, want %0.12f (eps=%0.12f)", got, want, eps)
 	}
 }

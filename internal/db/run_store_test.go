@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -174,6 +175,40 @@ func TestRunStore_Cancel_NotFound(t *testing.T) {
 	}
 }
 
+func TestRunStore_Cancel_RemovesHITLSession(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	decisions := db.NewDecisionStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := store.Create(ctx, "049", outDir)
+	// Advance run into a paused HITL state and seed the session row.
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET stage = 'batch_review', status = 'waiting' WHERE id = ?`, run.ID); err != nil {
+		t.Fatalf("seed stage/status: %v", err)
+	}
+	if err := decisions.UpsertSession(ctx, &domain.HITLSession{
+		RunID: run.ID, Stage: domain.StageBatchReview, SceneIndex: 2,
+		LastInteractionTimestamp: "2026-01-01T00:00:00Z", SnapshotJSON: `{}`,
+	}); err != nil {
+		t.Fatalf("upsert session: %v", err)
+	}
+	// Sanity: session exists before cancel.
+	if got, _ := decisions.GetSession(ctx, run.ID); got == nil {
+		t.Fatalf("pre-cancel: expected session row, got nil")
+	}
+
+	if err := store.Cancel(ctx, run.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	if got, _ := decisions.GetSession(ctx, run.ID); got != nil {
+		t.Fatalf("expected session removed after Cancel, got %+v", got)
+	}
+}
+
 func TestRunStore_SetStatus_Success(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)
@@ -296,6 +331,79 @@ func TestRunStore_ResetForResume_IncrementsFromExistingCount(t *testing.T) {
 	got, _ := store.Get(ctx, run.ID)
 	testutil.AssertEqual(t, got.RetryCount, 3) // 2 + 1
 	testutil.AssertEqual(t, got.Status, domain.StatusWaiting)
+}
+
+func TestRunStore_RecentCompletedRunsForMetrics_ReturnsWindow(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.LoadRunStateFixture(t, "metrics_seed")
+	store := db.NewRunStore(database)
+
+	rows, err := store.RecentCompletedRunsForMetrics(context.Background(), 25)
+	if err != nil {
+		t.Fatalf("RecentCompletedRunsForMetrics: %v", err)
+	}
+	testutil.AssertEqual(t, len(rows), 25)
+	testutil.AssertEqual(t, rows[0].ID, "scp-049-run-01")
+	testutil.AssertEqual(t, rows[24].ID, "scp-049-run-25")
+	testutil.AssertEqual(t, rows[0].Status, "completed")
+	testutil.AssertEqual(t, rows[16].HumanOverride, true)
+}
+
+func TestRunStore_RecentCompletedRunsForMetrics_Empty(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	rows, err := store.RecentCompletedRunsForMetrics(context.Background(), 25)
+	if err != nil {
+		t.Fatalf("RecentCompletedRunsForMetrics: %v", err)
+	}
+	if rows != nil {
+		t.Fatalf("expected nil slice, got %+v", rows)
+	}
+}
+
+func TestRunStore_RecentCompletedRunsForMetrics_ValidationError(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	_, err := store.RecentCompletedRunsForMetrics(context.Background(), 0)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestRunStore_RecentCompletedRunsForMetrics_UsesIndex(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.LoadRunStateFixture(t, "metrics_seed")
+
+	rows, err := database.Query(
+		"EXPLAIN QUERY PLAN SELECT id, status, critic_score, human_override, retry_count, retry_reason, created_at FROM runs WHERE status = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+		"completed", 25,
+	)
+	if err != nil {
+		t.Fatalf("explain: %v", err)
+	}
+	defer rows.Close()
+
+	var plan strings.Builder
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatalf("scan plan row: %v", err)
+		}
+		plan.WriteString(detail)
+		plan.WriteString("\n")
+	}
+	planStr := plan.String()
+	if !strings.Contains(planStr, "idx_runs_status_created_at") {
+		t.Fatalf("expected idx_runs_status_created_at in plan, got:\n%s", planStr)
+	}
+	if strings.Contains(planStr, "SCAN runs") {
+		t.Fatalf("unexpected full scan:\n%s", planStr)
+	}
 }
 
 func TestRunStore_ResetForResume_NotFound(t *testing.T) {
@@ -502,4 +610,116 @@ func TestRunStore_RecordStageObservation_RejectsInvalid(t *testing.T) {
 
 	after, _ := store.Get(ctx, run.ID)
 	testutil.AssertEqual(t, after.CostUSD, before.CostUSD)
+}
+
+func TestAntiProgressFalsePositiveStats_EmptyDB(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	got, err := store.AntiProgressFalsePositiveStats(context.Background(), 50)
+	if err != nil {
+		t.Fatalf("stats on empty DB: %v", err)
+	}
+	testutil.AssertEqual(t, got.Total, 0)
+	testutil.AssertEqual(t, got.OperatorOverride, 0)
+	testutil.AssertEqual(t, got.Provisional, true)
+}
+
+func TestAntiProgressFalsePositiveStats_InvalidWindow(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	for _, w := range []int{0, -1, -100} {
+		_, err := store.AntiProgressFalsePositiveStats(context.Background(), w)
+		if !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("window=%d: expected ErrValidation, got %v", w, err)
+		}
+	}
+}
+
+func TestAntiProgressFalsePositiveStats_RollingWindow(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.LoadRunStateFixture(t, "anti_progress_seed")
+	store := db.NewRunStore(database)
+	ctx := context.Background()
+
+	cases := []struct {
+		window           int
+		wantTotal        int
+		wantOverridden   int
+		wantProvisional  bool
+	}{
+		{50, 50, 0, false},
+		{60, 60, 10, false},
+		{100, 60, 10, true},
+	}
+	for _, tc := range cases {
+		got, err := store.AntiProgressFalsePositiveStats(ctx, tc.window)
+		if err != nil {
+			t.Fatalf("window=%d: %v", tc.window, err)
+		}
+		if got.Total != tc.wantTotal || got.OperatorOverride != tc.wantOverridden || got.Provisional != tc.wantProvisional {
+			t.Errorf("window=%d: got %+v, want Total=%d Overridden=%d Provisional=%v",
+				tc.window, got, tc.wantTotal, tc.wantOverridden, tc.wantProvisional)
+		}
+	}
+}
+
+func TestAntiProgressFalsePositiveStats_IgnoresNonAntiProgressRows(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.LoadRunStateFixture(t, "anti_progress_seed")
+	store := db.NewRunStore(database)
+
+	// The fixture has 20 rate_limit rows + 5 NULL rows that must NOT be counted.
+	got, err := store.AntiProgressFalsePositiveStats(context.Background(), 100)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	// Only the 60 anti_progress rows should be counted; the 25 decoys are excluded.
+	testutil.AssertEqual(t, got.Total, 60)
+}
+
+func TestAntiProgressFalsePositiveStats_UsesCompositeIndex(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.LoadRunStateFixture(t, "anti_progress_seed")
+
+	const explainQuery = `
+EXPLAIN QUERY PLAN
+SELECT COUNT(*), SUM(CASE WHEN human_override = 1 THEN 1 ELSE 0 END)
+FROM (
+    SELECT human_override
+    FROM runs
+    WHERE retry_reason = 'anti_progress'
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+);
+`
+	rows, err := database.QueryContext(context.Background(), explainQuery, 50)
+	if err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN: %v", err)
+	}
+	defer rows.Close()
+
+	var plan strings.Builder
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatalf("scan plan row: %v", err)
+		}
+		plan.WriteString(detail)
+		plan.WriteString("\n")
+	}
+	planStr := plan.String()
+	// Migration 004 added idx_runs_retry_reason_created_at specifically for
+	// this query shape. The planner must pick it up: a selective index seek
+	// on retry_reason + index-ordered walk by created_at DESC.
+	if !strings.Contains(planStr, "USING INDEX idx_runs_retry_reason_created_at") {
+		t.Errorf("query plan must use idx_runs_retry_reason_created_at (migration 004); got plan:\n%s", planStr)
+	}
+	if strings.Contains(planStr, "SCAN runs") {
+		t.Errorf("query plan must not full-scan runs; got plan:\n%s", planStr)
+	}
 }

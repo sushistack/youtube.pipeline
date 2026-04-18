@@ -104,6 +104,33 @@ func TestLoad_MissingConfigFileIgnored(t *testing.T) {
 	}
 }
 
+func TestLoad_AntiProgressThresholdDefault(t *testing.T) {
+	cfg, err := Load("", "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AntiProgressThreshold != 0.92 {
+		t.Errorf("AntiProgressThreshold = %v, want 0.92 default", cfg.AntiProgressThreshold)
+	}
+}
+
+func TestLoad_AntiProgressThresholdOverride(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := `anti_progress_threshold: 0.85
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	cfg, err := Load(cfgPath, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AntiProgressThreshold != 0.85 {
+		t.Errorf("AntiProgressThreshold = %v, want 0.85 (from yaml)", cfg.AntiProgressThreshold)
+	}
+}
+
 func TestDefaultConfigDir(t *testing.T) {
 	dir := DefaultConfigDir()
 	if dir == "" {

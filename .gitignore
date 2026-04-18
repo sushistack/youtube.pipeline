@@ -20,5 +20,6 @@ e2e/node_modules/
 # IDE / tool
 .claude
 .agent
+.agents
 .gemini
 _bmad

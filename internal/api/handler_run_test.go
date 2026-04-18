@@ -23,7 +23,9 @@ func newTestRunHandler(t testing.TB) (*api.RunHandler, string) {
 	svc := service.NewRunService(store, nil)
 	logger, _ := testutil.CaptureLog(t)
 	outDir := t.TempDir()
-	return api.NewRunHandler(svc, outDir, logger), outDir
+	decisionStore := db.NewDecisionStore(database)
+	hitl := service.NewHITLService(store, decisionStore, logger)
+	return api.NewRunHandler(svc, hitl, outDir, logger), outDir
 }
 
 // newTestRunHandlerWithEngine wires a handler + resumer engine + a seeded
@@ -37,8 +39,10 @@ func newTestRunHandlerWithEngine(t testing.TB, scpID, stage, status string) (*ap
 	logger, _ := testutil.CaptureLog(t)
 	outDir := t.TempDir()
 
-	engine := pipeline.NewEngine(store, segStore, clock.RealClock{}, outDir, logger)
+	engine := pipeline.NewEngine(store, segStore, nil, clock.RealClock{}, outDir, logger)
 	svc := service.NewRunService(store, engine)
+	decisionStore := db.NewDecisionStore(database)
+	hitl := service.NewHITLService(store, decisionStore, logger)
 
 	// Seed run and advance its state machine column directly.
 	ctx := context.Background()
@@ -50,7 +54,7 @@ func newTestRunHandlerWithEngine(t testing.TB, scpID, stage, status string) (*ap
 		stage, status, scpID); err != nil {
 		t.Fatalf("seed stage/status: %v", err)
 	}
-	return api.NewRunHandler(svc, outDir, logger), outDir
+	return api.NewRunHandler(svc, hitl, outDir, logger), outDir
 }
 
 type runEnvelope struct {

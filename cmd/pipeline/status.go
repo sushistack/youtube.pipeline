@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/sushistack/youtube.pipeline/internal/config"
@@ -34,24 +36,20 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	store := db.NewRunStore(database)
 	svc := service.NewRunService(store, nil)
+	decisionStore := db.NewDecisionStore(database)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	hitlSvc := service.NewHITLService(store, decisionStore, logger)
 	renderer := newRenderer(cmd.OutOrStdout())
 
 	if len(args) == 1 {
-		// Single run detail view.
+		// Single run detail view — includes HITL pause/diff (Story 2.6).
 		runID := args[0]
-		run, err := svc.Get(cmd.Context(), runID)
+		payload, err := hitlSvc.BuildStatus(cmd.Context(), runID)
 		if err != nil {
 			renderer.RenderError(err)
 			return &silentErr{err}
 		}
-		out := &RunOutput{
-			ID:        run.ID,
-			SCPID:     run.SCPID,
-			Stage:     string(run.Stage),
-			Status:    string(run.Status),
-			CreatedAt: run.CreatedAt,
-			UpdatedAt: run.UpdatedAt,
-		}
+		out := runOutputFromStatusPayload(payload)
 		renderer.RenderSuccess(out)
 		return nil
 	}
@@ -77,3 +75,47 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	renderer.RenderSuccess(&RunListOutput{Runs: items, Total: len(items)})
 	return nil
 }
+
+// runOutputFromStatusPayload maps service.StatusPayload to RunOutput,
+// including Story 2.6's paused_position / decisions_summary / summary /
+// changes_since_last_interaction fields. All HITL fields are elided via
+// omitempty when the run is not in a HITL wait state.
+func runOutputFromStatusPayload(p *service.StatusPayload) *RunOutput {
+	out := &RunOutput{
+		ID:        p.Run.ID,
+		SCPID:     p.Run.SCPID,
+		Stage:     string(p.Run.Stage),
+		Status:    string(p.Run.Status),
+		CreatedAt: p.Run.CreatedAt,
+		UpdatedAt: p.Run.UpdatedAt,
+		Summary:   p.Summary,
+	}
+	if p.PausedPosition != nil {
+		out.PausedPosition = &PausedPositionOutput{
+			Stage:                    string(p.PausedPosition.Stage),
+			SceneIndex:               p.PausedPosition.SceneIndex,
+			LastInteractionTimestamp: p.PausedPosition.LastInteractionTimestamp,
+		}
+	}
+	if p.DecisionsSummary != nil {
+		out.DecisionsSummary = &DecisionSummaryOutput{
+			ApprovedCount: p.DecisionsSummary.ApprovedCount,
+			RejectedCount: p.DecisionsSummary.RejectedCount,
+			PendingCount:  p.DecisionsSummary.PendingCount,
+		}
+	}
+	if len(p.ChangesSince) > 0 {
+		out.ChangesSince = make([]ChangeOutput, len(p.ChangesSince))
+		for i, c := range p.ChangesSince {
+			out.ChangesSince[i] = ChangeOutput{
+				Kind:      string(c.Kind),
+				SceneID:   c.SceneID,
+				Before:    c.Before,
+				After:     c.After,
+				Timestamp: c.Timestamp,
+			}
+		}
+	}
+	return out
+}
+

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,30 +16,23 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
-// setStatusCountingStore wraps *db.RunStore and counts SetStatus invocations,
-// so the 429 integration test can assert NFR-P3: SetStatus is never called
-// during the retry path.
-type setStatusCountingStore struct {
-	*db.RunStore
-	setStatusCalls int64
-}
-
-func (s *setStatusCountingStore) SetStatus(ctx context.Context, id string, status domain.Status, retryReason *string) error {
-	atomic.AddInt64(&s.setStatusCalls, 1)
-	return s.RunStore.SetStatus(ctx, id, status, retryReason)
-}
-
 // TestIntegration_429Backoff_DoesNotAdvanceStage is the NFR-P3 pin:
 // a 429 response triggers retry + observability recording but never advances
 // runs.stage and never sets runs.status to failed.
+//
+// The invariant is enforced by interface segregation: Recorder consumes
+// ObservationStore, which only declares RecordStageObservation. SetStatus is
+// not on that interface, so the retry path CANNOT advance status at compile
+// time. The assertions below pin the observable post-state: stage and status
+// are unchanged, retry metadata is recorded.
 func TestIntegration_429Backoff_DoesNotAdvanceStage(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.LoadRunStateFixture(t, "running_at_write")
 
-	store := &setStatusCountingStore{RunStore: db.NewRunStore(database)}
+	store := db.NewRunStore(database)
 	acc := pipeline.NewCostAccumulator(nil, 0)
 	logger, _ := testutil.CaptureLog(t)
-	rec := pipeline.NewRecorder(store.RunStore, acc, clock.RealClock{}, logger)
+	rec := pipeline.NewRecorder(store, acc, clock.RealClock{}, logger)
 
 	clk := clock.NewFakeClock(time.Unix(0, 0))
 
@@ -75,11 +67,9 @@ func TestIntegration_429Backoff_DoesNotAdvanceStage(t *testing.T) {
 			if err != nil {
 				t.Fatalf("WithRetry: %v", err)
 			}
-			// Assert post-state: the retry path never called SetStatus.
-			if got := atomic.LoadInt64(&store.setStatusCalls); got != 0 {
-				t.Errorf("SetStatus called %d times during retry; expected 0 (NFR-P3)", got)
-			}
-
+			// NFR-P3: stage and status must be unchanged after the retry flow.
+			// If the retry path had advanced status to failed, these asserts
+			// would fail. Retry metadata must be recorded.
 			updated, err := store.Get(context.Background(), "scp-049-run-1")
 			if err != nil {
 				t.Fatalf("Get: %v", err)

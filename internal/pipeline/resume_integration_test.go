@@ -34,7 +34,7 @@ func TestIntegration_Resume_FailedAtTTS(t *testing.T) {
 	mustWrite(t, filepath.Join(runDir, "scenario.json"), `{"scenes":[]}`)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	engine := pipeline.NewEngine(runStore, segStore, clock.RealClock{}, outDir, logger)
+	engine := pipeline.NewEngine(runStore, segStore, nil, clock.RealClock{}, outDir, logger)
 
 	ctx := context.Background()
 
@@ -98,7 +98,7 @@ func TestIntegration_Resume_IdempotentAgainstRealStores(t *testing.T) {
 	mustWrite(t, filepath.Join(runDir, "scenario.json"), `{"scenes":[]}`)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	engine := pipeline.NewEngine(runStore, segStore, clock.RealClock{}, outDir, logger)
+	engine := pipeline.NewEngine(runStore, segStore, nil, clock.RealClock{}, outDir, logger)
 
 	ctx := context.Background()
 
@@ -154,7 +154,7 @@ func TestIntegration_Resume_FailedAtWrite(t *testing.T) {
 	// No on-disk artifacts seeded — Phase A is in-memory.
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	engine := pipeline.NewEngine(runStore, segStore, clock.RealClock{}, outDir, logger)
+	engine := pipeline.NewEngine(runStore, segStore, nil, clock.RealClock{}, outDir, logger)
 
 	ctx := context.Background()
 	if _, err := engine.Resume(ctx, "scp-049-run-1"); err != nil {

@@ -38,6 +38,12 @@ type PipelineConfig struct {
 	// of which stage was running. Intentionally larger than the sum of
 	// per-stage caps so per-stage caps remain the primary guardrail.
 	CostCapPerRun float64 `yaml:"cost_cap_per_run" mapstructure:"cost_cap_per_run"`
+
+	// Anti-progress cosine similarity threshold (FR8). When two consecutive
+	// retry outputs exceed this threshold the retry loop is hard-stopped and
+	// the operator is escalated via domain.ErrAntiProgress (NFR-R2).
+	// Must be in (0.0, 1.0]; 1.0 disables the detector (no value can exceed).
+	AntiProgressThreshold float64 `yaml:"anti_progress_threshold" mapstructure:"anti_progress_threshold"`
 }
 
 // DefaultConfig returns a PipelineConfig with sensible defaults.
@@ -47,21 +53,22 @@ func DefaultConfig() PipelineConfig {
 	base := filepath.Join(home, ".youtube-pipeline")
 
 	return PipelineConfig{
-		WriterModel:    "deepseek-chat",
-		CriticModel:    "gemini-2.0-flash",
-		TTSModel:       "qwen3-tts-flash-2025-09-18",
-		ImageModel:     "qwen-max-vl",
-		WriterProvider: "deepseek",
-		CriticProvider: "gemini",
-		DashScopeRegion: "cn-beijing",
-		DataDir:         "/mnt/data/raw",
-		OutputDir:       filepath.Join(base, "output"),
-		DBPath:          filepath.Join(base, "pipeline.db"),
-		CostCapResearch: 0.50,
-		CostCapWrite:    0.50,
-		CostCapImage:    2.00,
-		CostCapTTS:      1.00,
-		CostCapAssemble: 0.10,
-		CostCapPerRun:   5.00,
+		WriterModel:           "deepseek-chat",
+		CriticModel:           "gemini-2.0-flash",
+		TTSModel:              "qwen3-tts-flash-2025-09-18",
+		ImageModel:            "qwen-max-vl",
+		WriterProvider:        "deepseek",
+		CriticProvider:        "gemini",
+		DashScopeRegion:       "cn-beijing",
+		DataDir:               "/mnt/data/raw",
+		OutputDir:             filepath.Join(base, "output"),
+		DBPath:                filepath.Join(base, "pipeline.db"),
+		CostCapResearch:       0.50,
+		CostCapWrite:          0.50,
+		CostCapImage:          2.00,
+		CostCapTTS:            1.00,
+		CostCapAssemble:       0.10,
+		CostCapPerRun:         5.00,
+		AntiProgressThreshold: 0.92,
 	}
 }

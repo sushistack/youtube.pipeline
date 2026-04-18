@@ -173,6 +173,89 @@ func TestRecorder_Record_Concurrent(t *testing.T) {
 	testutil.AssertEqual(t, store.count(), 50)
 }
 
+func TestRecorder_RecordAntiProgress_ShapeAndLogs(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	store := &fakeObsStore{}
+	acc := pipeline.NewCostAccumulator(nil, 0)
+	logger, buf := testutil.CaptureLog(t)
+	rec := pipeline.NewRecorder(store, acc, clock.RealClock{}, logger)
+
+	if err := rec.RecordAntiProgress(context.Background(), "scp-049-run-1", domain.StageWrite, 0.98, 0.92); err != nil {
+		t.Fatalf("RecordAntiProgress: %v", err)
+	}
+	testutil.AssertEqual(t, store.count(), 1)
+
+	lines := splitLogLines(buf.String())
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 log lines (warn + info), got %d: %v", len(lines), lines)
+	}
+
+	warnEntry := decodeLog(t, lines[0])
+	testutil.AssertEqual(t, warnEntry["msg"].(string), "anti-progress detected")
+	testutil.AssertEqual(t, warnEntry["stage"].(string), string(domain.StageWrite))
+	testutil.AssertEqual(t, warnEntry["similarity"].(float64), 0.98)
+	testutil.AssertEqual(t, warnEntry["threshold"].(float64), 0.92)
+	testutil.AssertEqual(t, warnEntry["run_id"].(string), "scp-049-run-1")
+
+	infoEntry := decodeLog(t, lines[1])
+	testutil.AssertEqual(t, infoEntry["msg"].(string), "stage observation")
+
+	got := store.calls[0]
+	testutil.AssertEqual(t, got.Stage, domain.StageWrite)
+	testutil.AssertEqual(t, got.RetryCount, 1)
+	if got.RetryReason == nil || *got.RetryReason != "anti_progress" {
+		t.Errorf("RetryReason = %v, want \"anti_progress\"", got.RetryReason)
+	}
+	testutil.AssertEqual(t, got.CostUSD, 0.0)
+	testutil.AssertEqual(t, got.TokenIn, 0)
+	testutil.AssertEqual(t, got.TokenOut, 0)
+	testutil.AssertEqual(t, got.HumanOverride, false)
+}
+
+func TestRecorder_RecordAntiProgress_SecondCallIncrementsRetry(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	store := &fakeObsStore{}
+	acc := pipeline.NewCostAccumulator(nil, 0)
+	logger, _ := testutil.CaptureLog(t)
+	rec := pipeline.NewRecorder(store, acc, clock.RealClock{}, logger)
+
+	for i := 0; i < 2; i++ {
+		if err := rec.RecordAntiProgress(context.Background(), "r1", domain.StageWrite, 0.95, 0.92); err != nil {
+			t.Fatalf("call %d: %v", i, err)
+		}
+	}
+	testutil.AssertEqual(t, store.count(), 2)
+	// Each call sends RetryCount=1 to the store; real RunStore accumulates via
+	// SQL UPDATE. The fake's append-only list proves the caller intent.
+	for i, obs := range store.calls {
+		testutil.AssertEqual(t, obs.RetryCount, 1)
+		if obs.RetryReason == nil || *obs.RetryReason != "anti_progress" {
+			t.Errorf("call %d: RetryReason = %v", i, obs.RetryReason)
+		}
+	}
+}
+
+func TestRecorder_RecordAntiProgress_PropagatesStoreError(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	storeErr := errors.New("boom")
+	store := &fakeObsStore{err: storeErr}
+	acc := pipeline.NewCostAccumulator(nil, 0)
+	logger, buf := testutil.CaptureLog(t)
+	rec := pipeline.NewRecorder(store, acc, clock.RealClock{}, logger)
+
+	err := rec.RecordAntiProgress(context.Background(), "r1", domain.StageWrite, 0.99, 0.92)
+	if err == nil {
+		t.Fatal("expected error propagated from store")
+	}
+	if !errors.Is(err, storeErr) {
+		t.Errorf("err = %v, want wrapping storeErr", err)
+	}
+	// Warn was still emitted (fire-and-forget logging before delegation).
+	if !strings.Contains(buf.String(), "anti-progress detected") {
+		t.Errorf("expected warn log even on store error, got: %s", buf.String())
+	}
+}
+
 // splitLogLines returns non-empty lines of the buffer output.
 func splitLogLines(s string) []string {
 	var out []string

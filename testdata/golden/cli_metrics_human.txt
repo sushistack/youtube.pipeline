@@ -1,0 +1,11 @@
+Pipeline metrics — rolling window: 25 (25 completed runs)
+
+METRIC                       VALUE        TARGET     STATUS    
+---------------------------  -----------  ---------  ----------
+Automation rate              72.0%        ≥ 80%      [31m✗ fail    [0m
+Critic calibration (kappa)   0.71         ≥ 0.70     [32m✓ pass    [0m
+Critic regression detection  82.0%        ≥ 80%      [32m✓ pass    [0m
+Defect escape rate           5.0%         ≤ 5%       [32m✓ pass    [0m
+Stage-level resume idempot.  100.0%       100%       [32m✓ pass    [0m
+
+Generated at: 2026-04-18T12:34:56Z

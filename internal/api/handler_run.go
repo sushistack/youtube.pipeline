@@ -21,13 +21,15 @@ const maxRequestBodyBytes = 1 << 16
 // to prevent arbitrary filesystem writes via the API.
 type RunHandler struct {
 	svc       *service.RunService
+	hitl      *service.HITLService
 	outputDir string
 	logger    *slog.Logger
 }
 
 // NewRunHandler creates a RunHandler. outputDir must come from server config.
-func NewRunHandler(svc *service.RunService, outputDir string, logger *slog.Logger) *RunHandler {
-	return &RunHandler{svc: svc, outputDir: outputDir, logger: logger}
+// hitl is required; Status delegates to it unconditionally.
+func NewRunHandler(svc *service.RunService, hitl *service.HITLService, outputDir string, logger *slog.Logger) *RunHandler {
+	return &RunHandler{svc: svc, hitl: hitl, outputDir: outputDir, logger: logger}
 }
 
 // createRequest is the request body for POST /api/runs.
@@ -112,15 +114,24 @@ func (h *RunHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Status handles GET /api/runs/{id}/status.
-// For now returns the same detail as Get; full stage-by-stage data is Epic 2.3+.
+//
+// Response envelope carries the base run plus (when applicable):
+//
+//	paused_position:                  where the operator left off (FR49)
+//	decisions_summary:                approved/rejected/pending counts
+//	summary:                          state-aware summary string
+//	changes_since_last_interaction:   FR50 diff array (omitted when empty)
+//
+// Non-HITL runs get just the run field — all other keys are omitted via
+// JSON omitempty. Delegates to HITLService.BuildStatus for the full payload.
 func (h *RunHandler) Status(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	run, err := h.svc.Get(r.Context(), id)
+	payload, err := h.hitl.BuildStatus(r.Context(), id)
 	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toRunResponse(run))
+	writeJSON(w, http.StatusOK, payload)
 }
 
 // Cancel handles POST /api/runs/{id}/cancel.
@@ -222,6 +233,9 @@ func mismatchStrings(report *domain.InconsistencyReport) []string {
 	return out
 }
 
+// toRunResponse is used by Create/Get/Cancel/Resume — endpoints where the
+// thinner shape is sufficient. Status uses the full *domain.Run via
+// HITLService.BuildStatus so cost/token/duration are carried in the response.
 func toRunResponse(r *domain.Run) *runResponse {
 	return &runResponse{
 		ID:         r.ID,

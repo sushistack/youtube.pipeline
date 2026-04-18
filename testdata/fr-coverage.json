@@ -16,6 +16,11 @@
       "annotation": "per-stage observability captured (NFR-P3 retry_reason, NFR-C1/C2 cost caps)"
     },
     {
+      "fr_id": "FR8",
+      "test_ids": ["TestCosineSimilarity_GoldenPairs", "TestDetector_ThresholdCrossing", "TestDetector_NoFalsePositiveOnDissimilar", "TestIntegration_AntiProgressFlow_RecordsRetryReason", "TestAntiProgressFalsePositiveStats_RollingWindow"],
+      "annotation": "anti-progress detection (cosine > 0.92 → ErrAntiProgress → HITL; NFR-R2 rolling-50 window measurement)"
+    },
+    {
       "fr_id": "FR38",
       "test_ids": ["TestInitCmd_CreatesDirectoryTree", "TestInitCmd_Idempotent"],
       "annotation": null
@@ -28,7 +33,7 @@
     {
       "fr_id": "FR42",
       "test_ids": [],
-      "annotation": "not-directly-testable, covered by AC-JSON in Story 1.6"
+      "annotation": null
     },
     {
       "fr_id": "FR43",
@@ -39,6 +44,21 @@
       "fr_id": "FR46",
       "test_ids": ["TestWriterCriticCheck_SameProvider"],
       "annotation": null
+    },
+    {
+      "fr_id": "FR49",
+      "test_ids": ["TestDecisionStore_GetSession_RoundTrip", "TestHITLService_BuildStatus_PausedWithNoChanges", "TestIntegration_BuildStatus_PausedNoChanges", "TestRunHandler_Status_Paused", "TestRunHandler_Status_JSONSchemaStable", "TestHumanRenderer_RunOutput_PausedShowsSummaryAndChanges", "TestStatusCmd_Human_PausedShowsChanges", "TestStatusCmd_JSON_Paused_GoldenMatch"],
+      "annotation": "HITL session pause state persisted in hitl_sessions, exposed via GET /api/runs/{id}/status with state-aware summary"
+    },
+    {
+      "fr_id": "FR50",
+      "test_ids": ["TestSnapshotDiff_OneSceneApproved", "TestSnapshotDiff_NoChange", "TestAttachTimestamps_MatchesLastApprove", "TestHITLService_BuildStatus_PausedWithChanges", "TestIntegration_BuildStatus_PausedWithChanges"],
+      "annotation": "'what changed since I paused' diff computed by comparing hitl_sessions.snapshot_json (T1) vs live decisions+segments state"
+    },
+    {
+      "fr_id": "FR29",
+      "test_ids": ["TestCohensKappa_KnownTextbookExample", "TestCohensKappa_Degenerate_AllOneClass", "TestMetricsService_Report_FullWindow", "TestMetricsService_Report_ProvisionalWhenShort", "TestDecisionStore_KappaPairsForRuns_FiltersSupersededAndNonScene", "TestMetricsCmd_HumanOutput_Golden", "TestMetricsCmd_JSONOutput_Golden"],
+      "annotation": "Cohen's kappa calibration, rolling 25-run window, provisional label when n<25 (PRD §Technical Success; NFR-O4 indexes via Migration 005)"
     },
     {
       "fr_id": "FR51",

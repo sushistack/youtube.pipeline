@@ -77,6 +77,36 @@ type RunOutput struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 	OutputDir string `json:"output_dir,omitempty"`
+
+	// Story 2.6 — HITL pause fields. Emitted only when the run is in a
+	// HITL wait state (status=waiting AND stage ∈ HITL stages).
+	PausedPosition   *PausedPositionOutput  `json:"paused_position,omitempty"`
+	DecisionsSummary *DecisionSummaryOutput `json:"decisions_summary,omitempty"`
+	Summary          string                 `json:"summary,omitempty"`
+	ChangesSince     []ChangeOutput         `json:"changes_since_last_interaction,omitempty"`
+}
+
+// PausedPositionOutput mirrors domain.HITLSession in the CLI JSON envelope.
+type PausedPositionOutput struct {
+	Stage                    string `json:"stage"`
+	SceneIndex               int    `json:"scene_index"`
+	LastInteractionTimestamp string `json:"last_interaction_timestamp"`
+}
+
+// DecisionSummaryOutput is the triplet surfaced next to a paused run.
+type DecisionSummaryOutput struct {
+	ApprovedCount int `json:"approved_count"`
+	RejectedCount int `json:"rejected_count"`
+	PendingCount  int `json:"pending_count"`
+}
+
+// ChangeOutput is one item in the FR50 "what changed since pause" diff.
+type ChangeOutput struct {
+	Kind      string `json:"kind"`
+	SceneID   string `json:"scene_id"`
+	Before    string `json:"before,omitempty"`
+	After     string `json:"after,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
 }
 
 // RunListOutput is the structured output for `pipeline status` (all runs).
@@ -94,9 +124,15 @@ type CancelOutput struct {
 // ResumeOutput is the structured output for the resume command.
 // Warnings carries filesystem/DB inconsistency descriptions that were
 // bypassed via --force (empty when no mismatches were present).
+// Summary + ChangesSince are populated (when relevant) from a post-resume
+// HITLService.BuildStatus call so the operator sees the state-aware
+// summary and the FR50 "what changed since you paused" diff at the moment
+// of re-engagement.
 type ResumeOutput struct {
-	Run      RunOutput `json:"run"`
-	Warnings []string  `json:"warnings,omitempty"`
+	Run          RunOutput      `json:"run"`
+	Warnings     []string       `json:"warnings,omitempty"`
+	Summary      string         `json:"summary,omitempty"`
+	ChangesSince []ChangeOutput `json:"changes_since_last_interaction,omitempty"`
 }
 
 // --- HumanRenderer ---
@@ -126,6 +162,8 @@ func (r *HumanRenderer) RenderSuccess(data any) {
 		r.renderCancel(v)
 	case *ResumeOutput:
 		r.renderResume(v)
+	case *domain.MetricsReport:
+		r.renderMetrics(v)
 	default:
 		fmt.Fprintf(r.w, "%v\n", data)
 	}
@@ -178,6 +216,40 @@ func (r *HumanRenderer) renderRun(o *RunOutput) {
 	if o.OutputDir != "" {
 		fmt.Fprintf(r.w, "  Output:    %s\n", o.OutputDir)
 	}
+	r.renderHITLBlock(o.Summary, o.PausedPosition, o.ChangesSince)
+}
+
+// renderHITLBlock emits the Story 2.6 summary line and the FR50 change diff
+// block when populated. No-ops when summary is empty (non-HITL runs).
+func (r *HumanRenderer) renderHITLBlock(summary string, paused *PausedPositionOutput, changes []ChangeOutput) {
+	if summary == "" {
+		return
+	}
+	fmt.Fprintln(r.w)
+	fmt.Fprintf(r.w, "  Summary: %s\n", summary)
+	if len(changes) > 0 {
+		anchor := ""
+		if paused != nil {
+			anchor = " (" + paused.LastInteractionTimestamp + ")"
+		}
+		fmt.Fprintf(r.w, "\n  %sChanges since last interaction%s%s:\n", colorYellow, anchor, colorReset)
+		for _, c := range changes {
+			ts := ""
+			if c.Timestamp != "" {
+				ts = " (at " + c.Timestamp + ")"
+			}
+			switch c.Kind {
+			case "scene_status_flipped":
+				fmt.Fprintf(r.w, "    \u2022 scene %s: %s \u2192 %s%s\n", c.SceneID, c.Before, c.After, ts)
+			case "scene_added":
+				fmt.Fprintf(r.w, "    \u2022 scene %s added (%s)%s\n", c.SceneID, c.After, ts)
+			case "scene_removed":
+				fmt.Fprintf(r.w, "    \u2022 scene %s removed (was %s)%s\n", c.SceneID, c.Before, ts)
+			default:
+				fmt.Fprintf(r.w, "    \u2022 scene %s: %s\n", c.SceneID, c.Kind)
+			}
+		}
+	}
 }
 
 func (r *HumanRenderer) renderRunList(o *RunListOutput) {
@@ -215,6 +287,54 @@ func (r *HumanRenderer) renderResume(o *ResumeOutput) {
 			fmt.Fprintf(r.w, "  - %s\n", w)
 		}
 	}
+	r.renderHITLBlock(o.Summary, o.Run.PausedPosition, o.ChangesSince)
+}
+
+func (r *HumanRenderer) renderMetrics(m *domain.MetricsReport) {
+	fmt.Fprintf(r.w, "Pipeline metrics — rolling window: %d (%d completed runs)\n", m.Window, m.WindowCount)
+	if m.Provisional {
+		fmt.Fprintf(r.w, "%s[provisional — n < %d]%s\n", colorYellow, m.Window, colorReset)
+	}
+	fmt.Fprintln(r.w)
+	fmt.Fprintf(r.w, "%-27s  %-11s  %-9s  %-10s\n", "METRIC", "VALUE", "TARGET", "STATUS")
+	fmt.Fprintf(r.w, "%-27s  %-11s  %-9s  %-10s\n",
+		"---------------------------", "-----------", "---------", "----------")
+	for _, metric := range m.Metrics {
+		value := "—"
+		if metric.Value != nil {
+			if metric.ID == domain.MetricCriticCalibration {
+				value = fmt.Sprintf("%.2f", *metric.Value)
+			} else {
+				value = fmt.Sprintf("%.1f%%", *metric.Value*100)
+			}
+		}
+
+		target := fmt.Sprintf("≥ %.0f%%", metric.Target*100)
+		if metric.ID == domain.MetricCriticCalibration {
+			target = fmt.Sprintf("≥ %.2f", metric.Target)
+		} else if metric.Comparator == domain.ComparatorLTE {
+			target = fmt.Sprintf("≤ %.0f%%", metric.Target*100)
+		} else if metric.Target == 1.0 {
+			// "≥ 100%" is semantically odd; spec example shows bare "100%".
+			target = "100%"
+		}
+
+		statusText := "unavailable"
+		statusColor := colorYellow
+		if !metric.Unavailable && metric.Pass {
+			statusText = "✓ pass"
+			statusColor = colorGreen
+		}
+		if !metric.Unavailable && !metric.Pass {
+			statusText = "✗ fail"
+			statusColor = colorRed
+		}
+
+		fmt.Fprintf(r.w, "%-27s  %-11s  %-9s  %s%-10s%s\n",
+			metric.Label, value, target, statusColor, statusText, colorReset)
+	}
+	fmt.Fprintln(r.w)
+	fmt.Fprintf(r.w, "Generated at: %s\n", m.GeneratedAt)
 }
 
 // --- JSONRenderer ---

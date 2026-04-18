@@ -119,6 +119,41 @@ func (r *Recorder) RecordRetry(ctx context.Context, runID string, stage domain.S
 	return r.Record(ctx, runID, obs)
 }
 
+// RecordAntiProgress persists an anti-progress event (FR8). Semantics:
+//   - RetryCount += 1 (this retry was attempted before we detected stuckness)
+//   - RetryReason overwrites with "anti_progress"
+//   - Cost is zero (the underlying LLM call is charged separately via Record;
+//     this method is the decision that short-circuits the loop, not a new
+//     external call)
+//
+// Emits a slog.Warn("anti-progress detected") line BEFORE delegating to
+// Record so the warn is guaranteed even if Record returns an error.
+//
+// The caller is responsible for ALSO returning domain.ErrAntiProgress so
+// the engine routes the run to HITL. This method records the event; it
+// does NOT alter the run's stage/status.
+func (r *Recorder) RecordAntiProgress(
+	ctx context.Context,
+	runID string,
+	stage domain.Stage,
+	similarity float64,
+	threshold float64,
+) error {
+	r.logger.Warn("anti-progress detected",
+		"run_id", runID,
+		"stage", string(stage),
+		"similarity", similarity,
+		"threshold", threshold,
+	)
+	reason := "anti_progress"
+	obs := domain.StageObservation{
+		Stage:       stage,
+		RetryCount:  1,
+		RetryReason: &reason,
+	}
+	return r.Record(ctx, runID, obs)
+}
+
 func nullableString(p *string) any {
 	if p == nil {
 		return nil

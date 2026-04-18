@@ -19,6 +19,7 @@ func TestDomainErrors_Classification(t *testing.T) {
 		{ErrConflict, 409, false},
 		{ErrCostCapExceeded, 402, false},
 		{ErrNotFound, 404, false},
+		{ErrAntiProgress, 422, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.err.Code, func(t *testing.T) {
@@ -36,9 +37,10 @@ func TestDomainErrors_Count(t *testing.T) {
 	allErrors := []*DomainError{
 		ErrRateLimited, ErrUpstreamTimeout, ErrStageFailed,
 		ErrValidation, ErrConflict, ErrCostCapExceeded, ErrNotFound,
+		ErrAntiProgress,
 	}
-	if got := len(allErrors); got != 7 {
-		t.Errorf("sentinel error count = %d, want 7", got)
+	if got := len(allErrors); got != 8 {
+		t.Errorf("sentinel error count = %d, want 8", got)
 	}
 }
 
@@ -74,6 +76,33 @@ func TestClassify_DomainError(t *testing.T) {
 	}
 	if retryable {
 		t.Error("retryable = true, want false")
+	}
+}
+
+func TestClassify_AntiProgress(t *testing.T) {
+	status, code, retryable := Classify(ErrAntiProgress)
+	if status != 422 {
+		t.Errorf("status = %d, want 422", status)
+	}
+	if code != "ANTI_PROGRESS" {
+		t.Errorf("code = %q, want ANTI_PROGRESS", code)
+	}
+	if retryable {
+		t.Error("retryable = true, want false")
+	}
+	if ErrAntiProgress.Message != "Retries producing similar output — human review required" {
+		t.Errorf("Message = %q, want exact operator-facing text", ErrAntiProgress.Message)
+	}
+}
+
+func TestClassify_AntiProgress_WrappedError(t *testing.T) {
+	err := fmt.Errorf("stage write: %w", ErrAntiProgress)
+	status, code, retryable := Classify(err)
+	if status != 422 || code != "ANTI_PROGRESS" || retryable {
+		t.Errorf("Classify(wrapped) = (%d, %q, %v), want (422, ANTI_PROGRESS, false)", status, code, retryable)
+	}
+	if !errors.Is(err, ErrAntiProgress) {
+		t.Error("errors.Is failed to unwrap ErrAntiProgress")
 	}
 }
 

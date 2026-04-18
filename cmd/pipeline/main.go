@@ -45,6 +45,7 @@ func main() {
 	rootCmd.AddCommand(newCancelCmd())
 	rootCmd.AddCommand(newResumeCmd())
 	rootCmd.AddCommand(newStatusCmd())
+	rootCmd.AddCommand(newMetricsCmd())
 	rootCmd.AddCommand(newServeCmd())
 
 	if err := rootCmd.Execute(); err != nil {

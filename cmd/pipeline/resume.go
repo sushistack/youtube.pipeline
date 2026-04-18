@@ -51,9 +51,11 @@ func runResume(cmd *cobra.Command, runID string, force bool) error {
 
 	store := db.NewRunStore(database)
 	segStore := db.NewSegmentStore(database)
+	decisionStore := db.NewDecisionStore(database)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	engine := pipeline.NewEngine(store, segStore, clock.RealClock{}, cfg.OutputDir, logger)
+	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
 	svc := service.NewRunService(store, engine)
+	hitlSvc := service.NewHITLService(store, decisionStore, logger)
 
 	run, report, err := svc.Resume(cmd.Context(), runID, force)
 	if err != nil {
@@ -73,6 +75,33 @@ func runResume(cmd *cobra.Command, runID string, force bool) error {
 		},
 		Warnings: mismatchLines(report),
 	}
+
+	// Story 2.6: surface the post-resume HITL summary + FR50 diff when
+	// applicable. Non-HITL runs return zero-valued fields which stay elided
+	// via omitempty.
+	if payload, perr := hitlSvc.BuildStatus(cmd.Context(), runID); perr == nil && payload != nil {
+		out.Summary = payload.Summary
+		if payload.PausedPosition != nil {
+			out.Run.PausedPosition = &PausedPositionOutput{
+				Stage:                    string(payload.PausedPosition.Stage),
+				SceneIndex:               payload.PausedPosition.SceneIndex,
+				LastInteractionTimestamp: payload.PausedPosition.LastInteractionTimestamp,
+			}
+		}
+		if len(payload.ChangesSince) > 0 {
+			out.ChangesSince = make([]ChangeOutput, len(payload.ChangesSince))
+			for i, c := range payload.ChangesSince {
+				out.ChangesSince[i] = ChangeOutput{
+					Kind:      string(c.Kind),
+					SceneID:   c.SceneID,
+					Before:    c.Before,
+					After:     c.After,
+					Timestamp: c.Timestamp,
+				}
+			}
+		}
+	}
+
 	renderer := newRenderer(cmd.OutOrStdout())
 	renderer.RenderSuccess(out)
 	return nil

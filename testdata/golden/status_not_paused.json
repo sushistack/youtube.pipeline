@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "data": {
+    "run": {
+      "id": "scp-049-run-1",
+      "scp_id": "049",
+      "stage": "write",
+      "status": "running",
+      "retry_count": 0,
+      "cost_usd": 0,
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 0,
+      "human_override": false,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  }
+}

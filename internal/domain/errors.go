@@ -17,10 +17,15 @@ var (
 	ErrRateLimited     = &DomainError{Code: "RATE_LIMITED", Message: "rate limited", HTTPStatus: 429, Retryable: true}
 	ErrUpstreamTimeout = &DomainError{Code: "UPSTREAM_TIMEOUT", Message: "upstream timeout", HTTPStatus: 504, Retryable: true}
 	ErrStageFailed     = &DomainError{Code: "STAGE_FAILED", Message: "stage failed", HTTPStatus: 500, Retryable: true}
-	ErrValidation      = &DomainError{Code: "VALIDATION_ERROR", Message: "validation error", HTTPStatus: 400, Retryable: false}
-	ErrConflict        = &DomainError{Code: "CONFLICT", Message: "conflict", HTTPStatus: 409, Retryable: false}
+	ErrValidation = &DomainError{Code: "VALIDATION_ERROR", Message: "validation error", HTTPStatus: 400, Retryable: false}
+	// Story 2.6 deliberately adds NO HITL-specific sentinel; missing hitl_sessions
+	// rows are logged at Warn level and handled as a transient absence (see
+	// service.HITLService.BuildStatus).
+	ErrConflict = &DomainError{Code: "CONFLICT", Message: "conflict", HTTPStatus: 409, Retryable: false}
 	ErrCostCapExceeded = &DomainError{Code: "COST_CAP_EXCEEDED", Message: "cost cap exceeded", HTTPStatus: 402, Retryable: false}
 	ErrNotFound        = &DomainError{Code: "NOT_FOUND", Message: "not found", HTTPStatus: 404, Retryable: false}
+	// ErrAntiProgress — FR8 hard stop; message is the operator-facing escalation text.
+	ErrAntiProgress = &DomainError{Code: "ANTI_PROGRESS", Message: "Retries producing similar output — human review required", HTTPStatus: 422, Retryable: false}
 )
 
 // Classify extracts DomainError attributes from any error chain.

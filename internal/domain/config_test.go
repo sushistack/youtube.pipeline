@@ -71,6 +71,13 @@ func TestDefaultConfig_AllFieldsPopulated(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_AntiProgressThreshold(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.AntiProgressThreshold != 0.92 {
+		t.Errorf("AntiProgressThreshold = %v, want 0.92 (FR8 + NFR-R2)", cfg.AntiProgressThreshold)
+	}
+}
+
 func TestDefaultConfig_PathsUnderHome(t *testing.T) {
 	cfg := DefaultConfig()
 	if !strings.Contains(cfg.OutputDir, ".youtube-pipeline") {

@@ -94,6 +94,32 @@ func TestInitCmd_Idempotent(t *testing.T) {
 	}
 }
 
+func TestInitCmd_WritesAntiProgressThreshold(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.yaml")
+
+	prevCfgPath := cfgPath
+	cfgPath = configPath
+	t.Cleanup(func() { cfgPath = prevCfgPath })
+
+	cmd := newInitCmd()
+	cmd.SetOut(&bytes.Buffer{})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	// Sample config must expose the anti-progress threshold so operators can
+	// tune it without reading Go source (NFR-R2).
+	if !strings.Contains(string(data), "anti_progress_threshold: 0.92") {
+		t.Errorf("config.yaml must include 'anti_progress_threshold: 0.92', got:\n%s", data)
+	}
+}
+
 func TestInitCmd_DatabaseCreated(t *testing.T) {
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, "config.yaml")

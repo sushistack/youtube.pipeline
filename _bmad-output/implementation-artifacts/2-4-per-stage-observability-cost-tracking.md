@@ -1,6 +1,6 @@
 # Story 2.4: Per-Stage Observability & Cost Tracking
 
-Status: review
+Status: done
 
 ## Story
 
@@ -317,6 +317,21 @@ so that I can diagnose any run from the SQLite CLI and never silently overspend 
 
 - [x] **T15: Deferred work logging**
   - [x] As implementation surfaces issues that are out-of-scope for this story (see Dev Notes "Deferred Work This Story May Generate"), append them to `_bmad-output/implementation-artifacts/deferred-work.md` under a new `## Deferred from: code review of 2-4-per-stage-observability-cost-tracking (YYYY-MM-DD)` section. Examples to expect: rand seeding through clock; per-shot cost attribution (currently rolled into stage); accumulator persistence across process restart (V1 reconstructs from `runs.cost_usd` on Resume).
+
+### Review Findings
+
+- [x] [Review][Patch] Vacuous `setStatusCalls == 0` assertion in 429 integration test [internal/pipeline/observability_integration_test.go:79-81] — FIXED: removed `setStatusCountingStore` type + vacuous assertion + `sync/atomic` import. Kept Stage/Status unchanged asserts (the real NFR-P3 proof) and added a comment explaining interface segregation enforces the invariant at compile time.
+- [x] [Review][Defer] FakeClock backoff test uses wall-clock polling loop [internal/llmclient/retry_test.go:82-106] — deferred, pre-existing pattern. `clk.Advance(1s); time.Sleep(1ms)` poll-loop with 2s real-time deadline. `jitterSource` seeded from `time.Now().UnixNano()` makes jitter values vary run-to-run. Current assertions have loose lower bounds (≥3s) so they pass reliably, but not "fully deterministic". Logged in deferred-work under "Jitter seed via clock interface" — fix when clock gains a Rand() surface.
+- [x] [Review][Defer] `ErrStageFailed → "stage_failed"` auto-retryable in WithRetry [internal/llmclient/retry.go:40] — deferred, judgment call. Architecture says ErrStageFailed is "retryable (manual resume)"; current mapping auto-retries via WithRetry's maxRetries cap, which could mask real 500s. Left as-is for V1; re-evaluate when Epic 5 wires the real Phase B and operators see retry behavior.
+- [x] [Review][Defer] `docs/cli-diagnostics.md` ↔ `diagnostic_query_test.go` drift risk — deferred, acknowledged in story Dev Notes. Both embed the same SQL verbatim; edit-one-forget-other drift is possible. Add cross-references in both files OR derive one from the other (V1.5 scope).
+- [x] [Review][Defer] Contract fixture `testdata/contracts/run.resume.response.json` not re-validated after linter's Resume signature change — deferred, pre-existing scope leak. Already in deferred-work.md under the Story 2.4 entry. Re-run the contract test explicitly in Story 2.5+ context.
+
+**Checklist verification:**
+- ✅ Nullable columns: only `retry_reason` + `critic_score` are nullable (001_init.sql schema + `domain.StageObservation` pointer types + COALESCE SQL)
+- ✅ Cost cap mid-accumulation: `CostAccumulator.Add` checks caps immediately after incrementing totals (cost.go:64-75); error returns synchronously per Add
+- ✅ 429 stage status unchanged: `runs.stage` and `runs.status` are unchanged after retry flow; Recorder is wired to `ObservationStore` interface that does NOT expose SetStatus — NFR-P3 enforced at compile time via interface segregation
+- ⚠️ FakeClock deterministic backoff: `clk.Sleep` is correctly clock-driven, but test harness uses wall-clock polling + unseeded jitter (see deferred finding above)
+- ✅ NFR-O4 indexes: located in `migrations/003_observability_indexes.sql` (NOT 001_init.sql — 001 is immutable initial schema; architecturally correct to add indexes in 003)
 
 ---
 

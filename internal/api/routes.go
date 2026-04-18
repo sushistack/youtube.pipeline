@@ -11,6 +11,7 @@ import (
 // Dependencies holds all handler dependencies injected at startup.
 type Dependencies struct {
 	Run       *RunHandler
+	HITL      *service.HITLService
 	Logger    *slog.Logger
 	WebFS     fs.FS
 	OutputDir string
@@ -46,9 +47,9 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 
 // NewDependencies constructs a Dependencies value wiring the standard objects.
 // outputDir is the server-configured run output base (never client-controlled).
-func NewDependencies(svc *service.RunService, outputDir string, logger *slog.Logger, webFS fs.FS) *Dependencies {
+func NewDependencies(svc *service.RunService, hitl *service.HITLService, outputDir string, logger *slog.Logger, webFS fs.FS) *Dependencies {
 	return &Dependencies{
-		Run:       NewRunHandler(svc, outputDir, logger),
+		Run:       NewRunHandler(svc, hitl, outputDir, logger),
 		Logger:    logger,
 		WebFS:     webFS,
 		OutputDir: outputDir,
