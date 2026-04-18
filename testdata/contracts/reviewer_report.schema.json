@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["overall_pass", "coverage_pct", "issues", "corrections", "reviewer_model", "reviewer_provider", "source_version"],
+  "properties": {
+    "overall_pass": {"type": "boolean"},
+    "coverage_pct": {"type": "number"},
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["scene_num", "type", "severity", "description", "correction"],
+        "properties": {
+          "scene_num": {"type": "integer", "minimum": 1},
+          "type": {"type": "string", "enum": ["fact_error", "missing_fact", "descriptor_violation", "invented_content", "consistency_issue"]},
+          "severity": {"type": "string", "enum": ["critical", "warning", "info"]},
+          "description": {"type": "string"},
+          "correction": {"type": "string"}
+        }
+      }
+    },
+    "corrections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["scene_num", "field", "original", "corrected"],
+        "properties": {
+          "scene_num": {"type": "integer", "minimum": 1},
+          "field": {"type": "string", "enum": ["narration", "visual_descriptor"]},
+          "original": {"type": "string"},
+          "corrected": {"type": "string"}
+        }
+      }
+    },
+    "reviewer_model": {"type": "string"},
+    "reviewer_provider": {"type": "string"},
+    "source_version": {"const": "v1-reviewer-fact-check"}
+  }
+}

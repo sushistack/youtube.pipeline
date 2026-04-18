@@ -1,0 +1,9 @@
+{
+  "overall_pass": true,
+  "coverage_pct": 100.0,
+  "issues": [],
+  "corrections": [],
+  "reviewer_model": "review-model",
+  "reviewer_provider": "anthropic",
+  "source_version": "v1-reviewer-fact-check"
+}

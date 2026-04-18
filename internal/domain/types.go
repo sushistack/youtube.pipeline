@@ -127,6 +127,16 @@ type Run struct {
 	UpdatedAt     string   `json:"updated_at"`
 }
 
+// PhaseAAdvanceResult is the atomic persistence surface used when the engine
+// completes or retries the Phase A chain.
+type PhaseAAdvanceResult struct {
+	Stage        Stage    `json:"stage"`
+	Status       Status   `json:"status"`
+	RetryReason  *string  `json:"retry_reason,omitempty"`
+	CriticScore  *float64 `json:"critic_score,omitempty"`
+	ScenarioPath *string  `json:"scenario_path,omitempty"`
+}
+
 // Episode represents a scene/segment. Maps to the segments database table.
 type Episode struct {
 	ID            int64    `json:"id"`

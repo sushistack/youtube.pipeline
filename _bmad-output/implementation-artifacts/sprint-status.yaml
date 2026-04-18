@@ -1,5 +1,5 @@
 # generated: 2026-04-16
-# last_updated: 2026-04-18 # Story 2-7 review patches applied → done
+# last_updated: 2026-04-18 # Story 5-2 created, status ready-for-dev
 # project: youtube.pipeline
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-16
-last_updated: 2026-04-18 # Story 3-3 ready-for-dev
+last_updated: 2026-04-18 # Story 5-2 created, status ready-for-dev
 project: youtube.pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -43,7 +43,7 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   # ── Epic 1: Project Foundation & Architecture Skeleton ──────────────────
-  epic-1: in-progress
+  epic-1: done
   1-1-go-react-spa-project-scaffolding-build-chain: done
   1-2-sqlite-database-migration-infrastructure: done
   1-3-domain-types-error-system-architecture-interfaces: done
@@ -54,7 +54,7 @@ development_status:
   epic-1-retrospective: optional
 
   # ── Epic 2: Pipeline Lifecycle & State Machine ───────────────────────────
-  epic-2: in-progress
+  epic-2: done
   2-1-state-machine-core-stage-transitions: done
   2-2-run-create-cancel-inspect: done
   2-3-stage-level-resume-artifact-lifecycle: done
@@ -66,25 +66,25 @@ development_status:
 
   # ── Epic 3: Scenario Generation & Basic Quality Gate (Phase A) ───────────
   epic-3: in-progress
-  3-1-agent-function-chain-pipeline-runner: ready-for-dev
-  3-2-researcher-structurer-agents: ready-for-dev
-  3-3-writer-agent-critic-post-writer-checkpoint: ready-for-dev
-  3-4-visualbreakdowner-reviewer-agents: backlog
-  3-5-phase-a-completion-post-reviewer-critic: backlog
+  3-1-agent-function-chain-pipeline-runner: done
+  3-2-researcher-structurer-agents: done
+  3-3-writer-agent-critic-post-writer-checkpoint: done
+  3-4-visualbreakdowner-reviewer-agents: done
+  3-5-phase-a-completion-post-reviewer-critic: done
   epic-3-retrospective: optional
 
   # ── Epic 4: Advanced Quality Infrastructure ──────────────────────────────
-  epic-4: backlog
-  4-1-golden-eval-set-governance-validation: backlog
-  4-2-shadow-eval-runner: backlog
-  4-3-cohens-kappa-calibration-tracking: backlog
-  4-4-minor-content-safeguard-auto-approval-thresholds: backlog
+  epic-4: in-progress
+  4-1-golden-eval-set-governance-validation: ready-for-dev
+  4-2-shadow-eval-runner: ready-for-dev
+  4-3-cohens-kappa-calibration-tracking: ready-for-dev
+  4-4-minor-content-safeguard-auto-approval-thresholds: ready-for-dev
   epic-4-retrospective: optional
 
   # ── Epic 5: Media Generation (Phase B — Image & TTS) ─────────────────────
-  epic-5: backlog
-  5-1-common-rate-limiting-exponential-backoff: backlog
-  5-2-parallel-media-generation-runner: backlog
+  epic-5: in-progress
+  5-1-common-rate-limiting-exponential-backoff: ready-for-dev
+  5-2-parallel-media-generation-runner: ready-for-dev
   5-3-character-reference-selection-search-result-cache: backlog
   5-4-frozen-descriptor-propagation-per-shot-image-generation: backlog
   5-5-korean-tts-regex-transliteration: backlog

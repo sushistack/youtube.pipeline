@@ -229,6 +229,48 @@ func (s *RunStore) ResetForResume(ctx context.Context, id string, status domain.
 	return nil
 }
 
+func (s *RunStore) ApplyPhaseAResult(ctx context.Context, runID string, res domain.PhaseAAdvanceResult) error {
+	var retryReason sql.NullString
+	if res.RetryReason != nil {
+		retryReason = sql.NullString{String: *res.RetryReason, Valid: true}
+	}
+	var criticScore sql.NullFloat64
+	if res.CriticScore != nil {
+		criticScore = sql.NullFloat64{Float64: *res.CriticScore, Valid: true}
+	}
+	var scenarioPath sql.NullString
+	if res.ScenarioPath != nil {
+		scenarioPath = sql.NullString{String: *res.ScenarioPath, Valid: true}
+	}
+
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE runs
+		    SET stage = ?,
+		        status = ?,
+		        retry_reason = ?,
+		        critic_score = ?,
+		        scenario_path = ?
+		  WHERE id = ?`,
+		string(res.Stage),
+		string(res.Status),
+		retryReason,
+		criticScore,
+		scenarioPath,
+		runID,
+	)
+	if err != nil {
+		return fmt.Errorf("apply phase a result for %s: %w", runID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("apply phase a result for %s rows affected: %w", runID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("apply phase a result for %s: %w", runID, domain.ErrNotFound)
+	}
+	return nil
+}
+
 // RecordStageObservation folds a StageObservation into the target run row.
 // Accumulating columns (cost_usd, token_in, token_out, duration_ms, retry_count)
 // are added via SQL arithmetic; retry_reason and critic_score use COALESCE so

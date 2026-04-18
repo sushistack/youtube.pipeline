@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Schema for deterministic V1 Structurer output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scp_id", "acts", "target_scene_count", "source_version"],
+  "properties": {
+    "scp_id": { "type": "string" },
+    "acts": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "synopsis",
+          "scene_budget",
+          "duration_ratio",
+          "dramatic_beat_ids",
+          "key_points"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": ["incident", "mystery", "revelation", "unresolved"]
+          },
+          "name": { "type": "string" },
+          "synopsis": { "type": "string" },
+          "scene_budget": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "duration_ratio": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+          "dramatic_beat_ids": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0 }
+          },
+          "key_points": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "target_scene_count": { "type": "integer", "minimum": 8, "maximum": 12 },
+    "source_version": { "type": "string", "const": "v1-deterministic" }
+  }
+}

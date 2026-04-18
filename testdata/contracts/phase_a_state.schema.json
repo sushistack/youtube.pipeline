@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "scp_id", "research", "structure", "narration", "visual_breakdown", "review", "critic", "quality", "contracts", "started_at", "finished_at"],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "scp_id": { "type": "string", "minLength": 1 },
+    "research": { "type": "object" },
+    "structure": { "type": "object" },
+    "narration": { "type": "object" },
+    "visual_breakdown": { "type": "object" },
+    "review": { "type": "object" },
+    "critic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["post_writer", "post_reviewer"],
+      "properties": {
+        "post_writer": { "type": "object" },
+        "post_reviewer": { "type": "object" }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["post_writer_score", "post_reviewer_score", "cumulative_score", "final_verdict"],
+      "properties": {
+        "post_writer_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "post_reviewer_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "cumulative_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "final_verdict": { "enum": ["pass", "retry", "accept_with_notes"] }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["research_schema", "structure_schema", "writer_schema", "visual_breakdown_schema", "review_schema", "critic_post_writer_schema", "critic_post_reviewer_schema", "phase_a_state_schema"],
+      "properties": {
+        "research_schema": { "$ref": "#/definitions/contract_ref" },
+        "structure_schema": { "$ref": "#/definitions/contract_ref" },
+        "writer_schema": { "$ref": "#/definitions/contract_ref" },
+        "visual_breakdown_schema": { "$ref": "#/definitions/contract_ref" },
+        "review_schema": { "$ref": "#/definitions/contract_ref" },
+        "critic_post_writer_schema": { "$ref": "#/definitions/contract_ref" },
+        "critic_post_reviewer_schema": { "$ref": "#/definitions/contract_ref" },
+        "phase_a_state_schema": { "$ref": "#/definitions/contract_ref" }
+      }
+    },
+    "started_at": { "type": "string", "minLength": 1 },
+    "finished_at": { "type": "string", "minLength": 1 }
+  },
+  "definitions": {
+    "contract_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^testdata/contracts/[A-Za-z0-9_.-]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

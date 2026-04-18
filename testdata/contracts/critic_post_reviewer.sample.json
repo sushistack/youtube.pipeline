@@ -1,0 +1,27 @@
+{
+  "checkpoint": "post_reviewer",
+  "verdict": "pass",
+  "overall_score": 88,
+  "rubric": {
+    "hook": 86,
+    "fact_accuracy": 90,
+    "emotional_variation": 87,
+    "immersion": 89
+  },
+  "feedback": "리뷰 수정 사항이 잘 반영됐고 최종 완성도도 안정적입니다. 8번 장면의 여운만 약간 더 또렷하게 정리하면 더 좋습니다.",
+  "scene_notes": [
+    {
+      "scene_num": 8,
+      "issue": "마지막 설명의 긴장감이 약간 풀립니다.",
+      "suggestion": "질문의 여운을 한 문장 더 압축해 마무리하세요."
+    }
+  ],
+  "precheck": {
+    "schema_valid": true,
+    "forbidden_term_hits": [],
+    "short_circuited": false
+  },
+  "critic_model": "gpt-test-critic",
+  "critic_provider": "openai",
+  "source_version": "v1-critic-post-reviewer"
+}

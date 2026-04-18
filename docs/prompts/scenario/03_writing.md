@@ -10,6 +10,8 @@ Write the narration script for an SCP video about {scp_id}.
 ## Visual Identity Profile
 {scp_visual_reference}
 
+{forbidden_terms_section}
+
 {glossary_section}
 
 ## Storytelling Format Guide
@@ -106,7 +108,8 @@ For each scene, produce:
 - `true`: SCP 개체가 이 씬에서 언급되거나 등장하는 경우
 - `false`: 배경, 환경, 인물만 나오는 씬 (격리실 전경, 재단 로고, 문서 클로즈업 등)
 
-Output as a JSON object with fields: scp_id, title, scenes (array of scene objects), metadata.
+Output as a JSON object with fields: scp_id, title, scenes (array of scene objects), metadata, source_version.
+Return JSON only. Do not wrap the JSON in markdown fences.
 
 ### Pre-Output Self-Check (MANDATORY before outputting JSON)
 

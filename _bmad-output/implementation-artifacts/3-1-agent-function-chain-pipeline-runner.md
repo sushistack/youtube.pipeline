@@ -1,6 +1,6 @@
 # Story 3.1: Agent Function Chain & Pipeline Runner
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -338,78 +338,79 @@ Unless stated otherwise, new tests follow the project's `TestXxx_CaseName` conve
 
 ## Tasks / Subtasks
 
-- [ ] **T1: `internal/pipeline/agents/agent.go` — AgentFunc + PipelineState + PipelineStage** (AC: #1, #2, #3, #4, #21)
-  - [ ] Create new subpackage directory.
-  - [ ] Declare `AgentFunc` type with the exact doc comment from AC-AGENTFUNC-TYPE.
-  - [ ] Declare `PipelineState` struct with the 10 fields + snake_case JSON tags.
-  - [ ] Declare `PipelineStage` type + 6 ordered constants + `phaseAStageCount` sentinel.
-  - [ ] Implement `(PipelineStage) String() string` for the 6 canonical names.
-  - [ ] Implement `(PipelineStage) DomainStage() domain.Stage` for the 6-way mapping + panic on out-of-range.
-  - [ ] Create `internal/pipeline/agents/doc.go` with the package doc comment.
+- [x] **T1: `internal/pipeline/agents/agent.go` — AgentFunc + PipelineState + PipelineStage** (AC: #1, #2, #3, #4, #21)
+  - [x] Create new subpackage directory.
+  - [x] Declare `AgentFunc` type with the exact doc comment from AC-AGENTFUNC-TYPE.
+  - [x] Declare `PipelineState` struct with the 10 fields + snake_case JSON tags.
+  - [x] Declare `PipelineStage` type + 6 ordered constants + `phaseAStageCount` sentinel.
+  - [x] Implement `(PipelineStage) String() string` for the 6 canonical names.
+  - [x] Implement `(PipelineStage) DomainStage() domain.Stage` for the 6-way mapping + panic on out-of-range.
+  - [x] Create `internal/pipeline/agents/doc.go` with the package doc comment.
 
-- [ ] **T2: `internal/pipeline/agents/noop.go` — NoopAgent helper** (AC: #15)
-  - [ ] Export `func NoopAgent() AgentFunc`.
-  - [ ] Add godoc explaining intended use (test spies, incremental wiring during 3.2–3.5).
+- [x] **T2: `internal/pipeline/agents/noop.go` — NoopAgent helper** (AC: #15)
+  - [x] Export `func NoopAgent() AgentFunc`.
+  - [x] Add godoc explaining intended use (test spies, incremental wiring during 3.2–3.5).
 
-- [ ] **T3: `internal/pipeline/agents/agent_test.go` + `noop_test.go`** (AC: #1, #2, #3, #4, #12, #15, #20)
-  - [ ] `TestAgentFunc_SignatureStable` — compile-time interface satisfaction.
-  - [ ] `TestPipelineState_JSONShape` — zero state marshals to expected bytes; full-state round-trip; snake_case tags.
-  - [ ] `TestPipelineStage_String` — table-driven across all 6 values.
-  - [ ] `TestPipelineStage_Count` — asserts `phaseAStageCount == 6`.
-  - [ ] `TestPipelineStage_DomainStage` — table-driven across all 6 values + panic on out-of-range.
-  - [ ] `TestNoopAgent` — returns nil on any state.
-  - [ ] All tests call `testutil.BlockExternalHTTP(t)`.
+- [x] **T3: `internal/pipeline/agents/agent_test.go` + `noop_test.go`** (AC: #1, #2, #3, #4, #12, #15, #20)
+  - [x] `TestAgentFunc_SignatureStable` — compile-time interface satisfaction.
+  - [x] `TestPipelineState_JSONShape` — zero state marshals to expected bytes; full-state round-trip; snake_case tags.
+  - [x] `TestPipelineStage_String` — table-driven across all 6 values.
+  - [x] `TestPipelineStage_Count` — asserts `phaseAStageCount == 6`.
+  - [x] `TestPipelineStage_DomainStage` — table-driven across all 6 values + panic on out-of-range.
+  - [x] `TestNoopAgent` — returns nil on any state.
+  - [x] All tests call `testutil.BlockExternalHTTP(t)`.
 
-- [ ] **T4: `internal/pipeline/phase_a.go` — PhaseARunner struct + constructor** (AC: #5, #6, #17)
-  - [ ] Import `context`, `encoding/json`, `errors`, `fmt`, `log/slog`, `os`, `path/filepath`, `time`, `domain`, `clock`, `agents`.
-  - [ ] Declare `PhaseARunner` struct with six AgentFunc fields named per `PipelineStage`.
-  - [ ] Implement `NewPhaseARunner(...)` with nil-agent guards (six parameterized checks) + nil-clock + empty-outputDir guards returning `domain.ErrValidation`.
-  - [ ] Implement `Run(ctx, state)` with the 7-step procedure from AC-CHAIN-RUN, calling a private `r.runAgent(ctx, ps, agent, state)` helper that handles logging + wrapping.
-  - [ ] Implement `ScenarioPath(outputDir, runID string) string` helper (AC-SCENARIO-JSON-PATH-ON-RUN).
-  - [ ] Implement a private `writeScenario(runDir string, state *agents.PipelineState) error` helper with the atomic-write procedure from AC-SCENARIO-JSON.
+- [x] **T4: `internal/pipeline/phase_a.go` — PhaseARunner struct + constructor** (AC: #5, #6, #17)
+  - [x] Import `context`, `encoding/json`, `fmt`, `log/slog`, `os`, `path/filepath`, `time`, `domain`, `clock`, `agents`.
+  - [x] Declare `PhaseARunner` struct with six AgentFunc fields named per `PipelineStage`.
+  - [x] Implement `NewPhaseARunner(...)` with nil-agent guards (six parameterized checks) + nil-clock + empty-outputDir guards returning `domain.ErrValidation`.
+  - [x] Implement `Run(ctx, state)` with the 7-step procedure from AC-CHAIN-RUN, calling a private `r.runAgent(ctx, ps, agent, state)` helper that handles logging + wrapping.
+  - [x] Implement `ScenarioPath(outputDir, runID string) string` helper (AC-SCENARIO-JSON-PATH-ON-RUN).
+  - [x] Implement a private `writeScenario(runDir string, state *agents.PipelineState) error` helper with the atomic-write procedure from AC-SCENARIO-JSON.
 
-- [ ] **T5: `internal/pipeline/phase_a_test.go` — unit tests** (AC: #5, #6, #7, #8, #9, #10, #13, #14, #20)
-  - [ ] All tests: `testutil.BlockExternalHTTP(t)` at top; `t.TempDir()` for outputDir; `clock.NewFakeClock(fixedTime)` for determinism; spy agents implemented inline via closure that records its PipelineStage into a shared slice.
-  - [ ] Constructor validation cases (6+3=9 cases).
-  - [ ] Execution order test (AC-CHAIN-ORDER-INVARIANT).
-  - [ ] Fail-fast test with sentinel error at position 3 (AC-FAIL-FAST-WRAPPING).
-  - [ ] No-artifact-on-failure test (AC-FAIL-NO-ARTIFACT).
-  - [ ] Context-canceled-between-agents + context-already-canceled (AC-CTX-CANCEL).
-  - [ ] scenario.json write tests: exists + valid JSON + atomicity (no temp file remains) + idempotent overwrite.
-  - [ ] `TestPhaseARunner_MkdirFailure_ReturnsError` — outputDir is a regular file.
+- [x] **T5: `internal/pipeline/phase_a_test.go` — unit tests** (AC: #5, #6, #7, #8, #9, #10, #13, #14, #20)
+  - [x] All tests: `testutil.BlockExternalHTTP(t)` at top; `t.TempDir()` for outputDir; `clock.NewFakeClock(fixedTime)` for determinism; spy agents implemented inline via closure that records its PipelineStage into a shared slice.
+  - [x] Constructor validation cases (6+3=9 cases).
+  - [x] Execution order test (AC-CHAIN-ORDER-INVARIANT).
+  - [x] Fail-fast test with sentinel error at position 3 (AC-FAIL-FAST-WRAPPING).
+  - [x] No-artifact-on-failure test (AC-FAIL-NO-ARTIFACT).
+  - [x] Context-canceled-between-agents + context-already-canceled (AC-CTX-CANCEL).
+  - [x] scenario.json write tests: exists + valid JSON + atomicity (no temp file remains) + idempotent overwrite.
+  - [x] `TestPhaseARunner_MkdirFailure_ReturnsError` — outputDir is a regular file.
 
-- [ ] **T6: `internal/pipeline/phase_a_integration_test.go` — end-to-end** (AC: #19)
-  - [ ] `testutil.BlockExternalHTTP(t)` + `testutil.CaptureLog(t)` for logger assertions.
-  - [ ] Six spy agents each inject a distinct `json.RawMessage` payload.
-  - [ ] Assert chain completes, scenario.json exists and unmarshals to a state with all 6 fields populated.
-  - [ ] Assert `started_at <= finished_at` (RFC3339Nano, parsed via `time.Parse`).
-  - [ ] Assert captured logs contain exactly 6 "agent start" entries in stage order.
+- [x] **T6: `internal/pipeline/phase_a_integration_test.go` — end-to-end** (AC: #19)
+  - [x] `testutil.BlockExternalHTTP(t)` + `testutil.CaptureLog(t)` for logger assertions.
+  - [x] Six spy agents each inject a distinct `json.RawMessage` payload.
+  - [x] Assert chain completes, scenario.json exists and unmarshals to a state with all 6 fields populated.
+  - [x] Assert `started_at <= finished_at` (RFC3339Nano, parsed via `time.Parse`).
+  - [x] Assert captured logs contain exactly 6 "agent start" entries in stage order.
 
-- [ ] **T7: Layer-lint integration** (AC: #11, #22)
-  - [ ] Edit `scripts/lintlayers/main.go`:
-    - Add `var nestedTrackedPackages = []string{"internal/pipeline/agents"}`.
-    - Update `resolveTopLevelPackage` and `resolveTopLevelFromImport` to check `nestedTrackedPackages` (longest-prefix match, require `/` or EOS boundary) BEFORE the generic two-segment collapse.
-    - Add `"internal/pipeline/agents": {"internal/domain", "internal/clock"}` to `allowedImports`.
-  - [ ] Edit `scripts/lintlayers/main_test.go` — add three tests: `TestResolveTopLevelPackage_NestedAgents`, `TestResolveTopLevelFromImport_NestedAgents`, `TestAllowedImports_Agents` (including a temp-dir negative-case fixture proving the rule bites).
-  - [ ] Update any total-package-count assertions if present.
-  - [ ] Run `go run scripts/lintlayers/main.go` locally and confirm `layer-import lint: OK`.
+- [x] **T7: Layer-lint integration** (AC: #11, #22)
+  - [x] Edit `scripts/lintlayers/main.go`:
+    - Added `var nestedTrackedPackages = []string{"internal/pipeline/agents"}`.
+    - Updated `resolveTopLevelPackage` and `resolveTopLevelFromImport` to check `nestedTrackedPackages` (longest-prefix match, require `/` or EOS boundary) BEFORE the generic two-segment collapse.
+    - Added `"internal/pipeline/agents": {"internal/domain", "internal/clock"}` to `allowedImports`.
+    - Added `"internal/pipeline/agents"` to the parent `internal/pipeline` allow list so PhaseARunner can import the subpackage.
+  - [x] Edit `scripts/lintlayers/main_test.go` — added `TestResolveTopLevelPackage_NestedAgents`, `TestResolveTopLevelFromImport_NestedAgents`, `TestAllowedImports_Agents`, `TestAgents_ForbiddenImport_Negative` (temp-dir fixture proving the rule bites).
+  - [x] Updated `TestAllowedImportsMap_PipelineAllowed` and `TestAllowedImportsMap_AllPackagesCovered` to include the new nested entry.
+  - [x] Run `go run scripts/lintlayers/main.go` locally — `layer-import lint: OK`.
 
-- [ ] **T8: Engine advance stub guard** (AC: #16)
-  - [ ] In `internal/pipeline/engine_test.go`, add `TestEngine_AdvanceStillStub` that constructs an Engine with inline fake stores and asserts `Advance` returns an error with `"advance not implemented: epic 3 scope"` as its message.
+- [x] **T8: Engine advance stub guard** (AC: #16)
+  - [x] In `internal/pipeline/engine_test.go`, added `TestEngine_AdvanceStillStub` that constructs an Engine with nil stores + real clock + slog.Default and asserts `Advance` returns an error with the exact `"advance not implemented: epic 3 scope"` message.
 
-- [ ] **T9: Runner interface preservation guard** (AC: #17)
-  - [ ] In `internal/pipeline/runner_test.go` (NEW if missing), add `TestRunnerInterface_Signature` using reflection or `var _ Runner = ...` to assert both methods on a minimal inline type.
-  - [ ] If `runner_test.go` exists, add the test there.
+- [x] **T9: Runner interface preservation guard** (AC: #17)
+  - [x] Created new file `internal/pipeline/runner_test.go` with `TestRunnerInterface_Signature` plus a `var _ Runner = runnerStub{}` compile-time assertion asserting both methods have the canonical `(ctx, runID string) error` signature.
 
-- [ ] **T10: Documentation update** (AC: #21)
-  - [ ] Update `internal/pipeline/doc.go` with the one-sentence pointer to `phase_a.go` and the `agents` subpackage.
-  - [ ] Append a row to `_bmad-output/implementation-artifacts/deferred-work.md`: "ConsistencyChecker should reuse `pipeline.ScenarioPath` — currently duplicates the `filepath.Join(runDir, 'scenario.json')` literal. Follow-up after 3.5 integration."
+- [x] **T10: Documentation update** (AC: #21)
+  - [x] Updated `internal/pipeline/doc.go` with the one-sentence pointer to `phase_a.go` and the `agents` subpackage.
+  - [x] Appended a new section to `_bmad-output/implementation-artifacts/deferred-work.md` covering the `ConsistencyChecker`/`ScenarioPath` duplication, PipelineState typed-field promotion, and other follow-ups.
 
-- [ ] **T11: Sprint status update & final validation**
-  - [ ] Run `go test ./... -race -count=1 -timeout=120s` — zero failures.
-  - [ ] Run `go build ./...` — clean.
-  - [ ] Run `go run scripts/lintlayers/main.go` — `layer-import lint: OK`.
-  - [ ] Flip `3-1-agent-function-chain-pipeline-runner: backlog` → `in-progress` via `/bmad-dev-story`; then `→ review` after implementation; then `→ done` via `/bmad-code-review`.
+- [x] **T11: Sprint status update & final validation**
+  - [x] Ran `go test ./... -race -count=1 -timeout=180s` — zero failures.
+  - [x] Ran `go build ./...` — clean.
+  - [x] Ran `go run scripts/lintlayers/main.go` — `layer-import lint: OK`.
+  - [x] Ran `make test-go` — all packages pass under `CGO_ENABLED=0`.
+  - [x] Flipped sprint-status `3-1-agent-function-chain-pipeline-runner` → `in-progress` → `review`.
 
 ---
 
@@ -635,5 +636,95 @@ Claude Opus 4.7 (1M context)
 ### Completion Notes List
 
 - Ultimate context engine analysis completed — comprehensive developer guide created.
+- **Scaffold only, no engine wiring.** Implementation shipped `internal/pipeline/agents/` subpackage (AgentFunc, PipelineState, PipelineStage, NoopAgent) + `internal/pipeline/phase_a.go` (PhaseARunner, ScenarioPath). Engine.Advance remains a stub by design (AC-ENGINE-ADVANCE-UNCHANGED); `TestEngine_AdvanceStillStub` guards against premature wiring.
+- **Purity enforced via layer-lint extension.** `scripts/lintlayers/main.go` now honours `nestedTrackedPackages` so `internal/pipeline/agents/*.go` is evaluated against a stricter allow-list (`{internal/domain, internal/clock}`) than its `internal/pipeline` parent. A temp-dir negative-case test in `main_test.go` (`TestAgents_ForbiddenImport_Negative`) proves the rule bites when an agent imports `internal/llmclient`.
+- **Atomic scenario.json write.** `writeScenario` uses `os.CreateTemp → Write → Sync → Close → Chmod 0o644 → Rename` in the per-run dir so a mid-write crash never produces a partial file. `TestPhaseARunner_AtomicWrite_NoTempLeftover` verifies no `scenario-*.json` temp file survives a successful run. `TestPhaseARunner_IdempotentOverwrite` proves a second Run overwrites the first, supporting Story 2.3's resume-from-Phase-A semantics.
+- **Fail-fast semantics.** On the first agent error, Run aborts and returns `fmt.Errorf("phase a: stage=%s: %w", ps.String(), err)` so `errors.Is` and `domain.Classify` keep working across the chain boundary. `TestPhaseARunner_StopsOnFirstError_ClassifiesDomainError` verifies a wrapped `domain.ErrValidation` classifies correctly through the outer wrap.
+- **Context cancellation is attributable.** Pre-chain cancel → `stage=researcher`; mid-chain cancel → the stage being *aborted* (not the last one that ran). Both cases surface `context.Canceled` via `errors.Is`.
+- **JSON output disciplined.** PipelineState uses snake_case tags matching the project-wide rule; zero state marshals to exactly `{"run_id":"","scp_id":"","started_at":"","finished_at":""}` per AC-PIPELINESTATE-STRUCT; full states round-trip byte-identically (`TestPipelineState_JSONShape_RoundTrip`).
+- **Deferred integration.** Recorder (2.4) is NOT wired into per-agent observability in 3.1 — agents are still placeholders. Slog structured logging IS in place (`pipeline_stage`, `run_id`, `duration_ms`) so the scaffold is observable. Captured in deferred-work.md.
 
 ### File List
+
+**New files**
+- `internal/pipeline/agents/agent.go` — AgentFunc type + PipelineState struct + PipelineStage enum + String/DomainStage methods
+- `internal/pipeline/agents/noop.go` — NoopAgent helper
+- `internal/pipeline/agents/doc.go` — package-level godoc
+- `internal/pipeline/agents/agent_test.go` — AgentFunc / PipelineState / PipelineStage unit tests
+- `internal/pipeline/agents/noop_test.go` — NoopAgent unit tests
+- `internal/pipeline/phase_a.go` — PhaseARunner struct, NewPhaseARunner, Run, runAgent, writeScenario, ScenarioPath
+- `internal/pipeline/phase_a_test.go` — PhaseARunner unit tests (constructor validation, execution order, fail-fast, ctx cancel, scenario.json write, atomic-write, idempotent overwrite, MkdirAll failure, ScenarioPath table)
+- `internal/pipeline/phase_a_integration_test.go` — end-to-end integration test with six payload-injecting spies + log capture
+- `internal/pipeline/runner_test.go` — Runner interface signature compile-time guard
+
+**Modified files**
+- `internal/pipeline/doc.go` — package doc updated with phase_a.go + agents pointer
+- `internal/pipeline/engine_test.go` — added `TestEngine_AdvanceStillStub`
+- `scripts/lintlayers/main.go` — added `nestedTrackedPackages`, updated `resolveTopLevelPackage` + `resolveTopLevelFromImport` with nested-match precedence, added `internal/pipeline/agents` to `allowedImports`, added `internal/pipeline/agents` to `internal/pipeline`'s allow list
+- `scripts/lintlayers/main_test.go` — added `TestResolveTopLevelPackage_NestedAgents`, `TestResolveTopLevelFromImport_NestedAgents`, `TestAllowedImports_Agents`, `TestAgents_ForbiddenImport_Negative`; updated `TestAllowedImportsMap_PipelineAllowed` and `TestAllowedImportsMap_AllPackagesCovered`
+- `_bmad-output/implementation-artifacts/deferred-work.md` — added Story 3.1 deferred-work section
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — flipped `3-1-agent-function-chain-pipeline-runner` through `in-progress` → `review`
+
+### Change Log
+
+| Date | Version | Description | Author |
+|---|---|---|---|
+| 2026-04-18 | 1.0 | Initial implementation — Phase A chain runner scaffold, agents subpackage, layer-lint extension, docs. | dev-agent |
+| 2026-04-18 | 1.1 | Addressed code-review findings — 3 layers resolved, 8 action items fixed. | dev-agent |
+
+---
+
+## Senior Developer Review (AI)
+
+**Date:** 2026-04-18
+**Reviewers:** Blind Hunter (adversarial, diff-only) + Edge Case Hunter (path-tracer, diff + project read) + Acceptance Auditor (spec-vs-diff)
+**Outcome:** Changes Requested → Resolved (all High/Med items addressed; Low nits either fixed or explicitly deferred)
+
+### Summary
+
+Three review layers produced 65 raw findings (25 Blind / 30 Edge / 10 Auditor). After deduplication and triage:
+- **Patch (fixed):** 8
+- **Defer:** 6 (logged in deferred-work.md)
+- **Dismiss:** 51 (over-engineering, single-operator tool mitigations, documented non-goals, textual name-drift that does not affect behavior)
+
+### Action Items (all resolved)
+
+- [x] **[High] AC-MKDIR-FAILURE violation.** Spec required "no agents ran" when the per-run dir cannot be created. Implementation had MkdirAll inside writeScenario, so all 6 agents ran before failing (wastes LLM cost). **Fix:** Moved `os.MkdirAll(runDir, 0o755)` to Run() entry, right after StartedAt stamp. Updated `TestPhaseARunner_MkdirFailure_ReturnsError` to assert `calls == 0` and `FinishedAt == ""` (was asserting `calls == 6`). Related AC: #14.
+- [x] **[High] RunID path-traversal.** `filepath.Join(outputDir, RunID)` with `RunID="../etc/passwd"` escapes outputDir. **Fix:** Added `validateRunID` helper rejecting RunIDs containing `/`, `\`, `..`, or being `"."`. New test `TestPhaseARunner_Run_RunIDPathTraversal_ReturnsValidation` with 6 table cases covers every rejection path. Related AC: #6.
+- [x] **[Med] FinishedAt stamped before writeScenario.** Docstring promised `FinishedAt != ""` signals success, but writeScenario failures left FinishedAt populated with no file on disk. **Fix:** Stamp remains before writeScenario so scenario.json includes it (spec AC-CHAIN-RUN step 5 requires this), but the runner now rolls back `state.FinishedAt = ""` on write failure, preserving the predicate. Related AC: #6, #13.
+- [x] **[Med] Post-critic ctx cancel ignored.** An agent that ignored ctx.Done() during its own work (especially critic, the last stage) would let writeScenario proceed despite a canceled context. **Fix:** Added post-chain `ctx.Err()` check between the agent loop and writeScenario, attributing abort to `stage=critic`. Related AC: #10.
+- [x] **[Med] TestPhaseARunner_StageCountIs6 was vacuous.** Test body only constructed the runner with no assertion, relying on "6 constructor args" as an indirect signal. **Fix:** Rewrote to wire 6 tallying spies and assert `calls == 6` after a successful Run — now directly pins the chain-length invariant. Related AC: #7.
+- [x] **[Low] TestPhaseARunner_WritesScenarioJSON dead code.** Empty `go func(){}()` stub + double `b.build(t)` (first runner discarded) were abandoned-approach artifacts. **Fix:** Restructured spy wiring into a single builder; removed dead goroutine and duplicate build. Related AC: #13.
+- [x] **[Low] `TestPhaseARunner_AtomicWrite_NoTempLeftover` drifted from spec name.** Spec calls for `TestPhaseARunner_AtomicWrite`. **Fix:** Renamed. Related AC: #13, #20.
+- [x] **[Low] Chdir-based layer-lint test robustness.** `os.Getwd()` error was silently ignored; Cleanup's `os.Chdir(cwd)` error was also ignored — if Getwd failed, Cleanup would Chdir to `""` and corrupt subsequent tests. **Fix:** `t.Fatalf` on Getwd error, `t.Errorf` on restore failure. Tightened violation-count assertion comment to flag fixture-leak regressions. Related AC: #11.
+
+### Key Files Changed in Response to Review
+
+- `internal/pipeline/phase_a.go` — Run() reordered to fail-fast on bad outputDir, post-chain ctx check added, FinishedAt rollback on write failure, `validateRunID` helper.
+- `internal/pipeline/phase_a_test.go` — `TestPhaseARunner_MkdirFailure_ReturnsError` assertion flipped, new `TestPhaseARunner_Run_RunIDPathTraversal_ReturnsValidation`, `TestPhaseARunner_StageCountIs6` made real, `TestPhaseARunner_WritesScenarioJSON` cleaned up, `TestPhaseARunner_AtomicWrite_NoTempLeftover` renamed to `TestPhaseARunner_AtomicWrite`.
+- `scripts/lintlayers/main_test.go` — Getwd error handled, Chdir restore error logged, fixture-isolation comment added.
+- `_bmad-output/implementation-artifacts/deferred-work.md` — 6 new deferred entries covering dir fsync, rename-failure stale scenario, outputDir traversal, resume StartedAt semantics, nestedTrackedPackages ordering, concurrent Run safety.
+
+### Deferred Findings (not fixed in this cycle)
+
+- Directory fsync after Rename (single-operator tool; accept risk)
+- Rename failure stale-scenario fallback (Rename failures on same FS are rare; manual intervention acceptable)
+- outputDir traversal validation (outputDir comes from trusted config, not JSON input)
+- StartedAt overwrite on resume (Story 3.5 integration decision)
+- nestedTrackedPackages sort-by-length (only 1 entry today)
+- Concurrent-Run mutex (documented NOT goroutine-safe; add when API becomes public)
+
+### Dismissed Findings (summary)
+
+- Over-engineering for single-operator tool: log injection, control-char filtering, multi-nil constructor feedback, float-precision timestamp edges.
+- Documented non-goals: schema versioning on PipelineState (Stories 3.2–3.5 scope), `json.Decoder.DisallowUnknownFields` (not in spec), goroutine-escape from AgentFunc (doc-only purity per architecture.md).
+- Textual name drift not affecting behavior: `TestNoopAgent` vs `TestNoopAgent_ReturnsNil`, `TestPipelineState_JSONShape` split into three sub-tests (arguably better practice), parent `internal/pipeline` allow-list widening (pragmatic necessity).
+- Tautological or low-value tests: `TestNoopAgent_IndependentInstances`, out-of-range PipelineStage(-1) panic case, negative-case fixture for blank imports.
+- Mitigated by other layers: TOCTOU on CreateTemp (O_EXCL), symlink-replaced runDir (race window vanishingly small), Rename cross-filesystem (temp created in same dir).
+
+### Final Validation After Fixes
+
+- `go test ./... -race -count=1 -timeout=180s` — all packages pass.
+- `go build ./...` — clean.
+- `go run scripts/lintlayers/main.go` — `layer-import lint: OK`.
+- `make test-go` (CGO_ENABLED=0) — all pass.

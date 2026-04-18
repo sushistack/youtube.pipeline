@@ -21,6 +21,21 @@
       "annotation": "anti-progress detection (cosine > 0.92 → ErrAntiProgress → HITL; NFR-R2 rolling-50 window measurement)"
     },
     {
+      "fr_id": "FR9",
+      "test_ids": ["TestResearcher_Run_SCPTest_Happy", "TestResearcher_Run_Validates_SampleFixture", "TestResearcher_Run_MissingCorpus", "TestResearcher_Run_SparseCorpus", "TestFilesystemCorpus_Read_Happy", "TestFilesystemCorpus_Read_MissingSCP"],
+      "annotation": "Researcher produces schema-validated summary from local /mnt/data/raw corpus (FR9); V1 deterministic - LLM wiring deferred to Story 3.3+"
+    },
+    {
+      "fr_id": "FR10",
+      "test_ids": ["TestShotCountForDuration_Boundaries", "TestVisualBreakdowner_Run_Happy", "TestVisualBreakdowner_Run_PrefixesFrozenDescriptor_EveryShot", "TestPhaseAIntegration_TwoCriticCheckpointsAndScenarioJSONIntegrity"],
+      "annotation": "Phase A final scenario output now includes visual breakdown, review, both critic checkpoints, and the authoritative persisted scenario artifact"
+    },
+    {
+      "fr_id": "FR11",
+      "test_ids": ["TestVisualBreakdowner_Run_Happy", "TestReviewer_Run_Happy", "TestReviewer_Run_InvalidVisualBreakdownBlockedBeforeLLM", "TestPhaseARunner_ReviewOutputValidatedBeforeCritic", "TestFinalizePhaseA_ContractManifestStable"],
+      "annotation": "Schema validation is enforced at the final Phase A handoff boundary via checked-in contract manifest references"
+    },
+    {
       "fr_id": "FR38",
       "test_ids": ["TestInitCmd_CreatesDirectoryTree", "TestInitCmd_Idempotent"],
       "annotation": null
@@ -43,6 +58,31 @@
     {
       "fr_id": "FR46",
       "test_ids": ["TestWriterCriticCheck_SameProvider"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR12",
+      "test_ids": ["TestValidateDistinctProviders_SameRejected", "TestPhaseARunner_Run_ProviderGuardTriggersBeforeWriterCall"],
+      "annotation": "runtime Writer/Critic provider inequality enforced before the Writer stage runs"
+    },
+    {
+      "fr_id": "FR13",
+      "test_ids": ["TestPostWriterCritic_Run_Happy", "TestPostReviewerCritic_Run_Happy", "TestPhaseAIntegration_TwoCriticCheckpointsAndScenarioJSONIntegrity"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR24",
+      "test_ids": ["TestPostWriterCritic_Run_Happy", "TestPostWriterCritic_Run_FillsRetryReasonFromRubric", "TestPostReviewerCritic_Run_FillsRetryReasonFromRubric", "TestEngineAdvance_PhaseAHappyPath_MovesToScenarioReview"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR25",
+      "test_ids": ["TestPostWriterPrecheck_SchemaFailureShortCircuits", "TestPostWriterPrecheck_ForbiddenTermsShortCircuits", "TestPostWriterCritic_Run_PrecheckRetryWithoutLLMCall", "TestPostReviewerCritic_Run_PrecheckReviewFailureShortCircuits", "TestPostReviewerCritic_Run_PrecheckSchemaFailureShortCircuits", "TestPostReviewerCritic_Run_PrecheckForbiddenTermsShortCircuits", "TestPhaseAIntegration_PostReviewerReviewFailureShortCircuitsSecondLLMCall"],
+      "annotation": "schema, review-gate, and policy prechecks short-circuit Critic LLM calls into deterministic retry reports"
+    },
+    {
+      "fr_id": "FR48",
+      "test_ids": ["TestWriter_Run_ForbiddenTermsRejected", "TestForbiddenTerms_LoadAndMatch"],
       "annotation": null
     },
     {

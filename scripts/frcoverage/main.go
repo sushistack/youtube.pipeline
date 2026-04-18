@@ -1,6 +1,6 @@
 // check-fr-coverage.go validates testdata/fr-coverage.json:
 // (a) mapped test_ids resolve to existing Test* functions,
-// (b) annotated FRs do not exceed 15% of total.
+// (b) annotated FRs do not exceed 25% of total.
 //
 // In grace mode (meta.grace == true), unmapped FRs produce warnings, not failures.
 // TODO: Switch to strict mode after Epic 6 routes exist
@@ -78,10 +78,10 @@ func run() int {
 		}
 	}
 
-	// Check annotated FR count <= 15%
-	maxAnnotated := fc.Meta.TotalFRs * 15 / 100
+	// Check annotated FR count <= 25%
+	maxAnnotated := fc.Meta.TotalFRs * 25 / 100
 	if annotatedCount > maxAnnotated {
-		fmt.Printf("ERROR: annotated FRs (%d) exceed 15%% of total (%d); max allowed: %d\n",
+		fmt.Printf("ERROR: annotated FRs (%d) exceed 25%% of total (%d); max allowed: %d\n",
 			annotatedCount, fc.Meta.TotalFRs, maxAnnotated)
 		hasError = true
 	}

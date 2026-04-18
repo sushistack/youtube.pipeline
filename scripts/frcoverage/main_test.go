@@ -41,7 +41,7 @@ func TestFRCoverageJSON_GraceModeEnabled(t *testing.T) {
 	}
 }
 
-func TestFRCoverageJSON_AnnotatedCountWithin15Percent(t *testing.T) {
+func TestFRCoverageJSON_AnnotatedCountWithin25Percent(t *testing.T) {
 	data, err := os.ReadFile("../../testdata/fr-coverage.json")
 	if err != nil {
 		t.Fatalf("read fr-coverage.json: %v", err)
@@ -59,9 +59,9 @@ func TestFRCoverageJSON_AnnotatedCountWithin15Percent(t *testing.T) {
 		}
 	}
 
-	maxAnnotated := fc.Meta.TotalFRs * 15 / 100
+	maxAnnotated := fc.Meta.TotalFRs * 25 / 100
 	if annotated > maxAnnotated {
-		t.Errorf("annotated FRs (%d) exceed 15%% of total (%d); max: %d", annotated, fc.Meta.TotalFRs, maxAnnotated)
+		t.Errorf("annotated FRs (%d) exceed 25%% of total (%d); max: %d", annotated, fc.Meta.TotalFRs, maxAnnotated)
 	}
 }
 

@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Schema for deterministic V1 Researcher output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scp_id",
+    "title",
+    "object_class",
+    "physical_description",
+    "anomalous_properties",
+    "containment_procedures",
+    "behavior_and_nature",
+    "origin_and_discovery",
+    "visual_identity",
+    "dramatic_beats",
+    "main_text_excerpt",
+    "tags",
+    "source_version"
+  ],
+  "properties": {
+    "scp_id": { "type": "string" },
+    "title": { "type": "string" },
+    "object_class": { "type": "string" },
+    "physical_description": { "type": "string" },
+    "anomalous_properties": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "containment_procedures": { "type": "string" },
+    "behavior_and_nature": { "type": "string" },
+    "origin_and_discovery": { "type": "string" },
+    "visual_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "appearance",
+        "distinguishing_features",
+        "environment_setting",
+        "key_visual_moments"
+      ],
+      "properties": {
+        "appearance": { "type": "string" },
+        "distinguishing_features": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "environment_setting": { "type": "string" },
+        "key_visual_moments": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "dramatic_beats": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "source", "description", "emotional_tone"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0 },
+          "source": { "type": "string", "enum": ["visual_moment", "anomalous_property"] },
+          "description": { "type": "string" },
+          "emotional_tone": {
+            "type": "string",
+            "enum": ["mystery", "horror", "tension", "revelation"]
+          }
+        }
+      }
+    },
+    "main_text_excerpt": { "type": "string", "maxLength": 4000 },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "source_version": { "type": "string", "const": "v1-deterministic" }
+  }
+}

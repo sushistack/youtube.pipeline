@@ -21,20 +21,34 @@ Answer these questions honestly:
 ## Output Format (JSON only, no markdown fences)
 
 {
+  "checkpoint": "post_writer",
   "verdict": "pass" | "retry" | "accept_with_notes",
-  "hook_effective": true/false,
-  "retention_risk": "low" | "medium" | "high",
-  "ending_impact": "strong" | "medium" | "weak",
+  "retry_reason": "weak_hook" | "fact_accuracy" | "emotional_variation" | "immersion",
+  "overall_score": 0-100,
+  "rubric": {
+    "hook": 0-100,
+    "fact_accuracy": 0-100,
+    "emotional_variation": 0-100,
+    "immersion": 0-100
+  },
   "feedback": "Concrete, actionable improvement instructions in Korean. Be specific about which scenes need what changes.",
-  "scene_notes": [
-    {"scene_num": 1, "issue": "description of problem", "suggestion": "specific fix"}
-  ]
+  "scene_notes": [{"scene_num": 1, "issue": "description of problem", "suggestion": "specific fix"}],
+  "critic_model": "critic model name",
+  "critic_provider": "critic provider name",
+  "source_version": "v1-critic-post-writer"
 }
 
 Rules:
 - "pass": Scenario is production-ready. Would get >50% watch-through rate. Narration sounds like a real YouTuber, not a wiki reader.
 - "retry": Significant issues that require rewriting. Be specific in feedback.
 - "accept_with_notes": Passable but not great. Note improvements for future reference.
+- If you return "retry" and the rubric has a clear weakest dimension, fill `retry_reason` with one of the allowed machine-readable values. Do not invent a new string.
+
+### Reserved values for `retry_reason`
+
+- **LLM-authored (the ONLY values you may emit):** `weak_hook`, `fact_accuracy`, `emotional_variation`, `immersion`.
+- **System-reserved (NEVER emit these):** `schema_validation_failed` and `forbidden_terms_detected` are set by the pipeline's precheck when the Critic LLM is skipped entirely (schema revalidation failure or forbidden-term pattern match on the narration). You must never produce them.
+- **Downstream consumers:** parsers of `retry_reason` should handle 6 possible values in total (4 LLM-authored + 2 system-reserved).
 - feedback MUST be in Korean and MUST be specific ("Scene 1을 Shock Hook으로 교체: 'SCP-173은 14명의 재단 인원을 살해했습니다'")
 - Do NOT be generous. If it's mediocre, say "retry".
 - If the narration sounds like a Wikipedia article or government report, ALWAYS say "retry". YouTube viewers leave in 5 seconds if the tone is boring.

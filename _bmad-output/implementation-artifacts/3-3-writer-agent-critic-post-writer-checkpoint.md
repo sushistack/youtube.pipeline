@@ -1,6 +1,6 @@
 # Story 3.3: Writer Agent & Critic (Post-Writer Checkpoint)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -379,43 +379,43 @@ Unless stated otherwise, new tests follow the project's `TestXxx_CaseName` conve
 
 ## Tasks / Subtasks
 
-- [ ] **T1: Domain types + single state carrier guard** (AC: 1)
-  - [ ] Add `internal/domain/narration.go` and `internal/domain/critic.go`.
-  - [ ] Update the canonical `PipelineState` in place so it carries `Narration` and `Critic` without introducing a duplicate state type.
-  - [ ] Add JSON round-trip tests for both new domain files.
+- [x] **T1: Domain types + single state carrier guard** (AC: 1)
+  - [x] Add `internal/domain/narration.go` and `internal/domain/critic.go`.
+  - [x] Update the canonical `PipelineState` in place so it carries `Narration` and `Critic` without introducing a duplicate state type.
+  - [x] Add JSON round-trip tests for both new domain files.
 
-- [ ] **T2: Authorable prompt/policy artifacts** (AC: 2)
-  - [ ] Update [docs/prompts/scenario/03_writing.md](../../docs/prompts/scenario/03_writing.md).
-  - [ ] Update [docs/prompts/scenario/critic_agent.md](../../docs/prompts/scenario/critic_agent.md).
-  - [ ] Add [docs/policy/forbidden_terms.ko.txt](../../docs/policy/forbidden_terms.ko.txt).
-  - [ ] Implement prompt and forbidden-term loaders with file-hash versioning.
+- [x] **T2: Authorable prompt/policy artifacts** (AC: 2)
+  - [x] Update [docs/prompts/scenario/03_writing.md](../../docs/prompts/scenario/03_writing.md).
+  - [x] Update [docs/prompts/scenario/critic_agent.md](../../docs/prompts/scenario/critic_agent.md).
+  - [x] Add [docs/policy/forbidden_terms.ko.txt](../../docs/policy/forbidden_terms.ko.txt).
+  - [x] Implement prompt and forbidden-term loaders with file-hash versioning.
 
-- [ ] **T3: Writer agent** (AC: 3)
-  - [ ] Add `internal/pipeline/agents/writer.go`.
-  - [ ] Add strict JSON decode helper.
-  - [ ] Validate schema and forbidden-term list before mutating state.
-  - [ ] Add Writer tests for happy path, invalid JSON, schema violation, and forbidden terms.
+- [x] **T3: Writer agent** (AC: 3)
+  - [x] Add `internal/pipeline/agents/writer.go`.
+  - [x] Add strict JSON decode helper.
+  - [x] Validate schema and forbidden-term list before mutating state.
+  - [x] Add Writer tests for happy path, invalid JSON, schema violation, and forbidden terms.
 
-- [ ] **T4: Runtime provider guard** (AC: 4)
-  - [ ] Add `internal/pipeline/provider_guard.go`.
-  - [ ] Reuse the exact doctor error string for same-provider rejection.
-  - [ ] Wire the guard into the canonical Phase A runtime entrypoint before Writer/Critic calls.
+- [x] **T4: Runtime provider guard** (AC: 4)
+  - [x] Add `internal/pipeline/provider_guard.go`.
+  - [x] Reuse the exact doctor error string for same-provider rejection.
+  - [x] Wire the guard into the canonical Phase A runtime entrypoint before Writer/Critic calls.
 
-- [ ] **T5: Precheck + retry reason helper** (AC: 5)
-  - [ ] Add precheck helper.
-  - [ ] Add deterministic `DeriveRetryReason`.
-  - [ ] Add tests for schema short-circuit, forbidden-term short-circuit, and tie-breaking.
+- [x] **T5: Precheck + retry reason helper** (AC: 5)
+  - [x] Add precheck helper.
+  - [x] Add deterministic `DeriveRetryReason`.
+  - [x] Add tests for schema short-circuit, forbidden-term short-circuit, and tie-breaking.
 
-- [ ] **T6: Post-Writer Critic agent** (AC: 6)
-  - [ ] Add `internal/pipeline/agents/critic.go`.
-  - [ ] Short-circuit on precheck failure without calling the Critic LLM.
-  - [ ] Persist result into `state.Critic.PostWriter`.
-  - [ ] Preserve the `PostReviewer` slot for Story 3.5.
+- [x] **T6: Post-Writer Critic agent** (AC: 6)
+  - [x] Add `internal/pipeline/agents/critic.go`.
+  - [x] Short-circuit on precheck failure without calling the Critic LLM.
+  - [x] Persist result into `state.Critic.PostWriter`.
+  - [x] Preserve the `PostReviewer` slot for Story 3.5.
 
-- [ ] **T7: Contracts, samples, and FR mapping** (AC: 7, 8)
-  - [ ] Add the four JSON contract/sample files under `testdata/contracts/`.
-  - [ ] Update `testdata/fr-coverage.json` for FR12/FR13/FR24/FR25/FR48.
-  - [ ] Run `go test ./...`, `go build ./...`, and `go run scripts/lintlayers/main.go`.
+- [x] **T7: Contracts, samples, and FR mapping** (AC: 7, 8)
+  - [x] Add the four JSON contract/sample files under `testdata/contracts/`.
+  - [x] Update `testdata/fr-coverage.json` for FR12/FR13/FR24/FR25/FR48.
+  - [x] Run `go test ./...`, `go build ./...`, and `go run scripts/lintlayers/main.go`.
 
 ## Dev Notes
 
@@ -482,10 +482,97 @@ A post-Writer Critic verdict of `retry` is a **business outcome**, not an infras
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+GPT-5 Codex
 
 ### Debug Log References
 
+- `2026-04-18T06:14:52Z` sprint status moved to `in-progress`
+- `go test ./internal/domain ./internal/pipeline/agents ./internal/pipeline`
+- `go build ./...`
+- `go test ./...`
+- `go run scripts/lintlayers/main.go`
+
 ### Completion Notes List
 
+- Promoted the single canonical `PipelineState` to typed `Narration` and `Critic` slots instead of introducing a second carrier.
+- Added prompt/policy asset loaders plus SHA-256 forbidden-term versioning so Writer/Critic `AgentFunc` execution stays filesystem-pure.
+- Implemented Writer strict JSON decoding, schema validation, metadata filling, and forbidden-term rejection without mutating state on failure.
+- Implemented runtime Writer/Critic provider validation in `PhaseARunner.Run`; the Critic agent mirrors the same validation behavior locally because importing `pipeline` from `agents` would create a Go package cycle.
+- Implemented post-Writer Critic prechecks, deterministic retry reasons, typed contract/sample fixtures, and FR coverage/test updates.
+
 ### File List
+
+- `docs/prompts/scenario/03_writing.md`
+- `docs/prompts/scenario/critic_agent.md`
+- `docs/policy/forbidden_terms.ko.txt`
+- `internal/domain/narration.go`
+- `internal/domain/critic.go`
+- `internal/domain/narration_test.go`
+- `internal/domain/critic_test.go`
+- `internal/pipeline/agents/agent.go`
+- `internal/pipeline/agents/agent_test.go`
+- `internal/pipeline/agents/assets.go`
+- `internal/pipeline/agents/assets_test.go`
+- `internal/pipeline/agents/policy.go`
+- `internal/pipeline/agents/policy_test.go`
+- `internal/pipeline/agents/writer.go`
+- `internal/pipeline/agents/writer_test.go`
+- `internal/pipeline/agents/critic_precheck.go`
+- `internal/pipeline/agents/critic.go`
+- `internal/pipeline/agents/critic_test.go`
+- `internal/pipeline/agents/validator_test.go`
+- `internal/pipeline/provider_guard.go`
+- `internal/pipeline/provider_guard_test.go`
+- `internal/pipeline/phase_a.go`
+- `internal/pipeline/phase_a_test.go`
+- `internal/pipeline/phase_a_integration_test.go`
+- `testdata/contracts/structurer_output.sample.json`
+- `testdata/contracts/writer_output.schema.json`
+- `testdata/contracts/writer_output.sample.json`
+- `testdata/contracts/critic_post_writer.schema.json`
+- `testdata/contracts/critic_post_writer.sample.json`
+- `testdata/fr-coverage.json`
+
+### Change Log
+
+- 2026-04-18: Implemented Story 3.3 Writer + post-Writer Critic, runtime provider guard, forbidden-term policy loading, typed contracts, and full verification updates.
+- 2026-04-18: Code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor) — see Review Findings below.
+
+### Review Findings
+
+**Adversarial review:** 3 parallel layers (Blind Hunter / Edge Case Hunter / Acceptance Auditor) over Story 3.3 scope. Triaged: 10 patch, 1 defer, ~20 dismissed as by-design / spec-compliant / false positive.
+
+#### patch (HIGH)
+
+- [x] [Review][Patch] Same-provider error must wrap `domain.ErrValidation` for `domain.Classify` routing [internal/pipeline/provider_guard.go:14, internal/pipeline/agents/critic.go:142]
+- [x] [Review][Patch] Precheck short-circuit report must go through `criticValidator.Validate` too [internal/pipeline/agents/critic.go:51-55]
+- [x] [Review][Patch] `critic_agent.md` `retry_reason` enum must document the 2 precheck system values (`schema_validation_failed`, `forbidden_terms_detected`) as reserved [docs/prompts/scenario/critic_agent.md]
+- [x] [Review][Patch] `decodeJSONResponse` must strip UTF-8 BOM before bare-JSON prefix check [internal/pipeline/agents/critic.go:147-166]
+- [x] [Review][Patch] `trimSingleFence` must tolerate CRLF line endings and case-insensitive fence labels (e.g., ` ```JSON `) [internal/pipeline/agents/critic.go:168-183]
+- [x] [Review][Patch] `ForbiddenTerms.MatchNarration` must scan `title`, `fact_tags.content`, `location`, `atmosphere`, `mood` — not only `narration` (NFR-M2 policy coverage gap) [internal/pipeline/agents/policy.go:67-89]
+
+#### patch (MEDIUM)
+
+- [x] [Review][Patch] `containsHangul` must include Hangul Jamo (U+1100–U+11FF) and Compatibility Jamo (U+3130–U+318F) ranges + cache `regexp` at package level [internal/pipeline/agents/critic.go:133-135]
+- [x] [Review][Patch] `validateRunID` must reject control characters, NUL, whitespace [internal/pipeline/phase_a.go:239-252]
+- [x] [Review][Patch] `scoreRubric` must use `math.Round` — truncation biases rubric-derived scores downward by up to 1 [internal/pipeline/agents/critic.go:126-131]
+- [x] [Review][Patch] `NewPhaseARunner` must reject empty `writerProvider`/`criticProvider` at construction (fail-fast, not at Run) [internal/pipeline/phase_a.go:53-96]
+
+#### defer
+
+- [x] [Review][Defer] `writeScenario` missing parent-directory fsync — cross-architecture durability concern, not introduced by Story 3.3 [internal/pipeline/phase_a.go:289-333] — deferred, pre-existing architecture
+
+#### dismissed (with rationale)
+
+- Blind Hunter #1 (test compile error) — false positive; `go build` + `go test ./internal/pipeline/...` pass.
+- `fillNarrationMetadata` overwrite of model-returned metadata — **by design** per AC-3 ("fill `script.Metadata` from the generator response / config").
+- `overall_score == 0` silent recompute — **by design** fallback for LLM-omitted field.
+- Regex pattern injection risk in `LoadForbiddenTerms` — **explicitly allowed** per spec ("Compile each pattern as-is; do not auto-escape lines because the artifact is deliberately authorable as regex").
+- `validateDistinctProvidersLocal` in `agents/critic.go` duplicating pipeline-level guard — **accepted** per Completion Notes (Go package cycle prevents shared import); mitigated by H1 wrapping both in `ErrValidation` consistently.
+- `PromptAssets` carrying `VisualBreakdownTemplate` / `ReviewerTemplate` + matching files — Story 3.4 scope already landed in this commit; files exist, tests pass.
+- `sample-sha256` placeholder in `writer_output.sample.json` — fixture convention; no runtime assertion of SHA-256 shape.
+- `describeValidation` truncation to 3 errors — UX trade-off, not a correctness bug.
+- LLM transport errors not wrapped in `ErrValidation` — transport/5xx errors are distinct from validation; classification layer handles separately.
+- `DeriveRetryReason` returning `weak_hook` on ties / all-high scores — spec-mandated tie-break order; callers should not interpret as clinical diagnosis.
+- `ensureCriticState` overwriting prior `PostWriter` on rerun — spec permits; preservation of `PostReviewer` is the only invariant.
+- Several other low-severity UX/observability nits — tracked implicitly; re-raise if operator friction shows up.

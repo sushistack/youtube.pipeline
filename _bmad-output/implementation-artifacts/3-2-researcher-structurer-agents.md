@@ -1,6 +1,6 @@
 # Story 3.2: Researcher & Structurer Agents
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -609,59 +609,59 @@ Unless stated otherwise, new tests follow the project's `TestXxx_CaseName` conve
 
 ## Tasks / Subtasks
 
-- [ ] **T1: Domain scenario types** (AC: #1)
-  - [ ] Create `internal/domain/scenario.go` — `ResearcherOutput`, `VisualIdentity`, `DramaticBeat`, `StructurerOutput`, `Act` structs with snake_case JSON tags, no `,omitempty` on required fields.
-  - [ ] Declare constants `ActIncident`, `ActMystery`, `ActRevelation`, `ActUnresolved`, `SourceVersionV1`, `ActOrder`, `ActDurationRatio`.
-  - [ ] Create `internal/domain/scenario_test.go` — round-trip tests + `TestResearcherOutput_NoOmitemptyOnRequired` + `TestStructurerOutput_ActOrderConstant`.
+- [x] **T1: Domain scenario types** (AC: #1)
+  - [x] Create `internal/domain/scenario.go` — `ResearcherOutput`, `VisualIdentity`, `DramaticBeat`, `StructurerOutput`, `Act` structs with snake_case JSON tags, no `,omitempty` on required fields.
+  - [x] Declare constants `ActIncident`, `ActMystery`, `ActRevelation`, `ActUnresolved`, `SourceVersionV1`, `ActOrder`, `ActDurationRatio`.
+  - [x] Create `internal/domain/scenario_test.go` — round-trip tests + `TestResearcherOutput_NoOmitemptyOnRequired` + `TestStructurerOutput_ActOrderConstant`.
 
-- [ ] **T2: Promote PipelineState slots to typed pointers** (AC: #2)
-  - [ ] In `internal/pipeline/agents/agent.go`: change `Research` field to `*domain.ResearcherOutput`, `Structure` field to `*domain.StructurerOutput`. Add `import "github.com/sushistack/youtube.pipeline/internal/domain"`.
-  - [ ] In `internal/pipeline/agents/agent_test.go`: update `TestPipelineState_JSONShape` to reflect the new typed fields (zero-valued state still marshals to `{"run_id":"","scp_id":"","started_at":"","finished_at":""}` via `omitempty`).
-  - [ ] Add `TestPipelineState_ResearchStructureTyped`.
+- [x] **T2: Promote PipelineState slots to typed pointers** (AC: #2)
+  - [x] In `internal/pipeline/agents/agent.go`: change `Research` field to `*domain.ResearcherOutput`, `Structure` field to `*domain.StructurerOutput`. Add `import "github.com/sushistack/youtube.pipeline/internal/domain"`.
+  - [x] In `internal/pipeline/agents/agent_test.go`: update `TestPipelineState_JSONShape` to reflect the new typed fields (zero-valued state still marshals to `{"run_id":"","scp_id":"","started_at":"","finished_at":""}` via `omitempty`).
+  - [x] Add `TestPipelineState_ResearchStructureTyped`.
 
-- [ ] **T3: Corpus reader** (AC: #3)
-  - [ ] Create `internal/pipeline/agents/corpus.go` — `CorpusReader`, `CorpusDocument`, `SCPFacts`, `SCPVisualElements`, `SCPMeta`, `ErrCorpusNotFound`, `NewFilesystemCorpus`.
-  - [ ] Create `internal/pipeline/agents/corpus_test.go` — all 6 filesystem tests (TempDir-rooted, no touching `/mnt/data/raw`).
+- [x] **T3: Corpus reader** (AC: #3)
+  - [x] Create `internal/pipeline/agents/corpus.go` — `CorpusReader`, `CorpusDocument`, `SCPFacts`, `SCPVisualElements`, `SCPMeta`, `ErrCorpusNotFound`, `NewFilesystemCorpus`.
+  - [x] Create `internal/pipeline/agents/corpus_test.go` — all 6 filesystem tests (TempDir-rooted, no touching `/mnt/data/raw`).
 
-- [ ] **T4: JSON schema validator + dependency** (AC: #4, #12)
-  - [ ] `go get github.com/santhosh-tekuri/jsonschema/v5@<pinned-version>`, run `go mod tidy`. Commit `go.mod` and `go.sum`.
-  - [ ] Expose a test helper `testutil.ProjectRoot(t)` (or equivalent) so the validator can resolve `testdata/contracts/` across packages. Update `internal/testutil/fixture.go` minimally; do NOT refactor existing `LoadFixture` users.
-  - [ ] Create `internal/pipeline/agents/validator.go` — `Validator`, `NewValidator`, `Validate`.
-  - [ ] Create `internal/pipeline/agents/validator_test.go` — 5 validator tests + 2 contract-sample tests (schema + sample happy-path).
+- [x] **T4: JSON schema validator + dependency** (AC: #4, #12)
+  - [x] `go get github.com/santhosh-tekuri/jsonschema/v5@<pinned-version>`, run `go mod tidy`. Commit `go.mod` and `go.sum`.
+  - [x] Expose a test helper `testutil.ProjectRoot(t)` (or equivalent) so the validator can resolve `testdata/contracts/` across packages. Update `internal/testutil/fixture.go` minimally; do NOT refactor existing `LoadFixture` users.
+  - [x] Create `internal/pipeline/agents/validator.go` — `Validator`, `NewValidator`, `Validate`.
+  - [x] Create `internal/pipeline/agents/validator_test.go` — 5 validator tests + 2 contract-sample tests (schema + sample happy-path).
 
-- [ ] **T5: Contract schemas + sample fixtures** (AC: #5)
-  - [ ] `testdata/contracts/researcher_output.schema.json` — Draft-07, all-required, `additionalProperties: false`, `main_text_excerpt` maxLength 4000, `source_version` const, beat tone enum, top-level description note.
-  - [ ] `testdata/contracts/researcher_output.sample.json` — canonical SCP-TEST output (produced by the happy-path Researcher run).
-  - [ ] `testdata/contracts/structurer_output.schema.json` — Draft-07, 4-act minItems/maxItems, act ID enum, budget 1-5, ratio 0.0-1.0, target_scene_count 8-12, `source_version` const.
-  - [ ] `testdata/contracts/structurer_output.sample.json` — canonical SCP-TEST output.
+- [x] **T5: Contract schemas + sample fixtures** (AC: #5)
+  - [x] `testdata/contracts/researcher_output.schema.json` — Draft-07, all-required, `additionalProperties: false`, `main_text_excerpt` maxLength 4000, `source_version` const, beat tone enum, top-level description note.
+  - [x] `testdata/contracts/researcher_output.sample.json` — canonical SCP-TEST output (produced by the happy-path Researcher run).
+  - [x] `testdata/contracts/structurer_output.schema.json` — Draft-07, 4-act minItems/maxItems, act ID enum, budget 1-5, ratio 0.0-1.0, target_scene_count 8-12, `source_version` const.
+  - [x] `testdata/contracts/structurer_output.sample.json` — canonical SCP-TEST output.
 
-- [ ] **T6: Corpus fixture (SCP-TEST)** (AC: #6)
-  - [ ] `testdata/fixtures/corpus/SCP-TEST/facts.json` — populate every required field per AC-FIXTURE-CORPUS.
-  - [ ] `testdata/fixtures/corpus/SCP-TEST/meta.json` — 4 tags matching `facts.json`, empty `related_docs`.
-  - [ ] `testdata/fixtures/corpus/SCP-TEST/main.txt` — ≥200 UTF-8 chars, at least one multi-byte rune (Korean or em-dash).
+- [x] **T6: Corpus fixture (SCP-TEST)** (AC: #6)
+  - [x] `testdata/fixtures/corpus/SCP-TEST/facts.json` — populate every required field per AC-FIXTURE-CORPUS.
+  - [x] `testdata/fixtures/corpus/SCP-TEST/meta.json` — 4 tags matching `facts.json`, empty `related_docs`.
+  - [x] `testdata/fixtures/corpus/SCP-TEST/main.txt` — ≥200 UTF-8 chars, at least one multi-byte rune (Korean or em-dash).
 
-- [ ] **T7: Researcher agent** (AC: #7, #9)
-  - [ ] Create `internal/pipeline/agents/researcher.go` — V1 comment, `NewResearcher`, `buildDramaticBeats`, `copyStringSlice`, `truncateMainText`, `beatToneRotation`.
-  - [ ] Create `internal/pipeline/agents/researcher_test.go` — 11 tests from AC-RESEARCHER.
+- [x] **T7: Researcher agent** (AC: #7, #9)
+  - [x] Create `internal/pipeline/agents/researcher.go` — V1 comment, `NewResearcher`, `buildDramaticBeats`, `copyStringSlice`, `truncateMainText`, `beatToneRotation`.
+  - [x] Create `internal/pipeline/agents/researcher_test.go` — 11 tests from AC-RESEARCHER.
 
-- [ ] **T8: Structurer agent** (AC: #8, #9)
-  - [ ] Create `internal/pipeline/agents/structurer.go` — V1 comment, `NewStructurer`, `distributeSceneBudget`, `titleCase`.
-  - [ ] Create `internal/pipeline/agents/structurer_test.go` — 8 agent tests + 6 `distributeSceneBudget` tests.
+- [x] **T8: Structurer agent** (AC: #8, #9)
+  - [x] Create `internal/pipeline/agents/structurer.go` — V1 comment, `NewStructurer`, `distributeSceneBudget`, `titleCase`.
+  - [x] Create `internal/pipeline/agents/structurer_test.go` — 8 agent tests + 6 `distributeSceneBudget` tests.
 
-- [ ] **T9: Guardrails** (AC: #9, #10)
-  - [ ] Create `internal/pipeline/agents/no_prompt_read_test.go` — `TestAgents_NoPromptFileReferences` via `go/parser` literal scan.
-  - [ ] Create `internal/pipeline/agents/network_guard_test.go` — `TestAgents_PackageImports_NoNetPkgs` via import-list walk.
+- [x] **T9: Guardrails** (AC: #9, #10)
+  - [x] Create `internal/pipeline/agents/no_prompt_read_test.go` — `TestAgents_NoPromptFileReferences` via `go/parser` literal scan.
+  - [x] Create `internal/pipeline/agents/network_guard_test.go` — `TestAgents_PackageImports_NoNetPkgs` via import-list walk.
 
-- [ ] **T10: FR coverage + deferred work** (AC: #11, #15)
-  - [ ] Insert FR9, FR10, FR11 entries into `testdata/fr-coverage.json` between FR8 and FR38.
-  - [ ] Append LLM-wiring deferral entry to `_bmad-output/implementation-artifacts/deferred-work.md`.
+- [x] **T10: FR coverage + deferred work** (AC: #11, #15)
+  - [x] Insert FR9, FR10, FR11 entries into `testdata/fr-coverage.json` between FR8 and FR38.
+  - [x] Append LLM-wiring deferral entry to `_bmad-output/implementation-artifacts/deferred-work.md`.
 
-- [ ] **T11: Build + test + lint verification** (AC: #12, #13, #14)
-  - [ ] `go build ./...` — clean.
-  - [ ] `CGO_ENABLED=0 go build ./cmd/pipeline` — clean.
-  - [ ] `go test ./...` — all pass (especially `./internal/pipeline/agents/...` and `./internal/domain/...`).
-  - [ ] `go run ./scripts/lintlayers` — prints `layer-import lint: OK`.
-  - [ ] Manual: scan diff for any of: new migration, DB table change, HTTP handler, LLM import, `NoopAgent` or `PipelineStage` modification → none permitted. Record confirmation in Dev Agent Record.
+- [x] **T11: Build + test + lint verification** (AC: #12, #13, #14)
+  - [x] `go build ./...` — clean.
+  - [x] `CGO_ENABLED=0 go build ./cmd/pipeline` — clean.
+  - [x] `go test ./...` — all pass (especially `./internal/pipeline/agents/...` and `./internal/domain/...`).
+  - [x] `go run ./scripts/lintlayers` — prints `layer-import lint: OK`.
+  - [x] Manual: scan diff for any of: new migration, DB table change, HTTP handler, LLM import, `NoopAgent` or `PipelineStage` modification → none permitted. Record confirmation in Dev Agent Record.
 
 ## Dev Notes
 
@@ -818,10 +818,87 @@ Stories 3.3–3.5 will add `writer.go`, `visual_breaker.go`, `reviewer.go`, `cri
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+GPT-5 Codex
 
 ### Debug Log References
 
+- `go test ./internal/domain ./internal/pipeline/agents ./internal/pipeline`
+- `go test ./scripts/frcoverage`
+- `go test ./...`
+- `go build ./...`
+- `CGO_ENABLED=0 go build ./cmd/pipeline`
+- `go run ./scripts/lintlayers`
 ### Completion Notes List
 
+- Implemented deterministic V1 Phase A scenario types in `internal/domain/scenario.go` with JSON round-trip coverage and constant guards for act order/duration ratios.
+- Promoted `agents.PipelineState.Research` and `Structure` to typed domain pointers, and updated the existing Phase A runner tests to preserve successful scenario serialization.
+- Added the corpus reader, JSON-schema validator, SCP-TEST corpus fixture, Researcher agent, Structurer agent, contract schemas/samples, and package guard tests that enforce the no-prompt/no-network V1 boundary.
+- Updated FR coverage with FR9/FR10/FR11 and appended the two required deferred-work entries covering future LLM wiring and production validator schema sourcing.
+- Added `testutil.ProjectRoot(t)` and pinned `github.com/santhosh-tekuri/jsonschema/v5 v5.3.1` in `go.mod`/`go.sum`.
+- Verification completed successfully: `go build ./...`, `CGO_ENABLED=0 go build ./cmd/pipeline`, `go test ./...`, `go test ./scripts/frcoverage`, and `go run ./scripts/lintlayers`.
+- Manual scope-drift check passed: no migration, DB table, HTTP handler, LLM import, `NoopAgent`, or `PipelineStage` changes were introduced by this story.
 ### File List
+
+- `internal/domain/scenario.go`
+- `internal/domain/scenario_test.go`
+- `internal/testutil/fixture.go`
+- `internal/pipeline/agents/agent.go`
+- `internal/pipeline/agents/agent_test.go`
+- `internal/pipeline/agents/corpus.go`
+- `internal/pipeline/agents/corpus_test.go`
+- `internal/pipeline/agents/validator.go`
+- `internal/pipeline/agents/validator_test.go`
+- `internal/pipeline/agents/researcher.go`
+- `internal/pipeline/agents/researcher_test.go`
+- `internal/pipeline/agents/structurer.go`
+- `internal/pipeline/agents/structurer_test.go`
+- `internal/pipeline/agents/no_prompt_read_test.go`
+- `internal/pipeline/agents/network_guard_test.go`
+- `internal/pipeline/phase_a_test.go`
+- `internal/pipeline/phase_a_integration_test.go`
+- `testdata/contracts/researcher_output.schema.json`
+- `testdata/contracts/researcher_output.sample.json`
+- `testdata/contracts/structurer_output.schema.json`
+- `testdata/contracts/structurer_output.sample.json`
+- `testdata/fixtures/corpus/SCP-TEST/facts.json`
+- `testdata/fixtures/corpus/SCP-TEST/meta.json`
+- `testdata/fixtures/corpus/SCP-TEST/main.txt`
+- `testdata/fr-coverage.json`
+- `scripts/frcoverage/main.go`
+- `scripts/frcoverage/main_test.go`
+- `go.mod`
+- `go.sum`
+- `_bmad-output/implementation-artifacts/deferred-work.md`
+
+### Review Findings
+
+Code review 2026-04-18 — 3 parallel layers (Blind Hunter, Edge Case Hunter, Acceptance Auditor).
+
+**Patch (will be auto-fixed):**
+- [x] [Review][Patch] Path traversal via scpID (`../etc`, absolute paths) [internal/pipeline/agents/corpus.go:65-80] — critical, Edge Hunter
+- [x] [Review][Patch] Symlink escape — resolved corpus path can point outside dataDir [internal/pipeline/agents/corpus.go:70-77] — high, Edge Hunter
+- [x] [Review][Patch] `mustOpenSchema` silently returns `"{"` on os.ReadFile error, masking real I/O errors with misleading parse failures [internal/pipeline/agents/validator.go:73-79] — high, Blind + Auditor + Edge
+- [x] [Review][Patch] Researcher classifies `domain.ErrValidation` via `strings.Contains(err.Error(), ...)` instead of `errors.Is` — string-match hack, fragile to message changes [internal/pipeline/agents/researcher.go:33] — high, Blind + Auditor
+- [x] [Review][Patch] Researcher uses `==` equality on `ErrCorpusNotFound` / `context.Canceled` / `context.DeadlineExceeded` instead of `errors.Is`, breaks wrap chain [internal/pipeline/agents/researcher.go:27-30] — medium, Blind + Auditor
+- [x] [Review][Patch] Validator schema compiler has default `LoadURL` that resolves external `$ref` targets (file://, http://); lock down [internal/pipeline/agents/validator.go:21-28] — medium, Edge Hunter
+- [x] [Review][Patch] `TestFilesystemCorpus_Read_CaseSensitive` fails on case-insensitive filesystems (macOS APFS default, Windows); add skip guard [internal/pipeline/agents/corpus_test.go:81-91] — medium, Blind
+- [x] [Review][Patch] main.txt-is-a-directory routes to generic `ErrStageFailed` instead of `ErrValidation` (data-shape bug) [internal/pipeline/agents/corpus.go:90-96] — medium, Edge Hunter
+- [x] [Review][Patch] `Act.Name` uses ASCII hyphen `" - "` instead of spec-prescribed em-dash `" — "` [internal/pipeline/agents/structurer.go:46 + testdata/contracts/structurer_output.sample.json] — low spec-deviation, Auditor
+
+**Deferred (recorded in deferred-work.md):**
+- [x] [Review][Defer] Synopsis double-period baked into sample fixture — spec-prescribed format `". (" + len + ...)` concatenates after a key-point that already ends with `.`. Fix requires either spec amendment or keypoint trimming; defer to spec-owner decision.
+- [x] [Review][Defer] `distributeSceneBudget` accepts any int — schema max `scene_budget=5` and `target_scene_count=12` not enforced at function boundary. Caller pinned at `target=10`; defensive range guard would be dead code until a later story parameterizes T.
+- [x] [Review][Defer] `researcher_output.schema.json` has `minItems:3 maxItems:10` on `dramatic_beats` — Go-side already enforces; belt-and-suspenders duplication.
+- [x] [Review][Defer] `testdata/contracts/structurer_output.schema.json` does not enforce per-act ordering / unique `id` / `duration_ratio` sum via schema — currently enforced in Go tests; strengthening schema is additive.
+- [x] [Review][Defer] Duplicate entries in `key_visual_moments` / `anomalous_properties` produce duplicate beats (no dedup) — spec doesn't mandate; no corpus observed with duplicates.
+- [x] [Review][Defer] `truncateMainText` is O(N²) over bytes — functionally correct within 4000-rune cap; perf negligible for V1.
+- [x] [Review][Defer] `describeValidation` has no depth/cycle guard — low-risk given controlled schema inputs.
+- [x] [Review][Defer] Test quality: `TestResearcher_Run_CallsBlockExternalHTTP` name misleading; `TestResearcher_Run_SliceIsolation` tests only input→output aliasing direction; `TestResearcher_BeatTones_Rotate` coupled to fixture content.
+- [x] [Review][Defer] `go.mod` elevates `gopkg.in/yaml.v3` from indirect to direct with no new yaml import — cleanup when adjacent story touches go.mod.
+
+**Dismissed:** 6 findings as noise / working-as-specified / duplicates — beat-cap silent trim (spec mandates), tags-null coercion (spec-compliant), `NewFilesystemCorpus` unexported-struct design smell, schema `scene_budget ≥ 13` branch (caller-pinned at 10), diff-completeness metadata artifact, `mustOpenSchema` double read (subsumed by error-swallow fix).
+
+## Change Log
+
+- 2026-04-18: Implemented Story 3.2 deterministic Researcher + Structurer agents, typed Phase A scenario contracts, schema validation, corpus fixtures, and repo-wide verification updates.
+- 2026-04-18: Code review (3 adversarial layers) + 9 auto-patched findings applied.

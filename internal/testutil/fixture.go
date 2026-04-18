@@ -14,12 +14,18 @@ import (
 // LoadFixture reads a fixture file from testdata/{path} at the project root.
 func LoadFixture(t testing.TB, path string) []byte {
 	t.Helper()
-	root := findProjectRoot(t)
+	root := ProjectRoot(t)
 	data, err := os.ReadFile(filepath.Join(root, "testdata", path))
 	if err != nil {
 		t.Fatalf("load fixture %s: %v", path, err)
 	}
 	return data
+}
+
+// ProjectRoot resolves the repository root by walking up to the nearest go.mod.
+func ProjectRoot(t testing.TB) string {
+	t.Helper()
+	return findProjectRoot(t)
 }
 
 // LoadRunStateFixture creates a temporary SQLite DB pre-seeded with data from

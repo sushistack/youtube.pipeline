@@ -23,13 +23,24 @@ var allowedImports = map[string][]string{
 	"internal/clock":     {},
 	"internal/db":        {"internal/domain"},
 	"internal/llmclient": {"internal/domain", "internal/clock"},
-	"internal/pipeline":  {"internal/domain", "internal/db", "internal/llmclient", "internal/clock"},
-	"internal/service":   {"internal/domain", "internal/db", "internal/pipeline", "internal/clock"},
-	"internal/api":       {"internal/domain", "internal/db", "internal/service", "internal/pipeline", "internal/clock", "internal/web"},
-	"internal/config":    {"internal/domain"},
-	"internal/hitl":      {"internal/domain"},
-	"internal/testutil":  {"internal/domain", "internal/db"},
-	"internal/web":       {},
+	"internal/pipeline":  {"internal/domain", "internal/db", "internal/llmclient", "internal/clock", "internal/pipeline/agents"},
+	// Agents are pure functions (architecture.md:1731-1734); LLM calls
+	// flow in via domain.TextGenerator closures, not direct llmclient
+	// imports. They may depend only on domain types and the clock.
+	"internal/pipeline/agents": {"internal/domain", "internal/clock"},
+	"internal/service":         {"internal/domain", "internal/db", "internal/pipeline", "internal/clock"},
+	"internal/api":             {"internal/domain", "internal/db", "internal/service", "internal/pipeline", "internal/clock", "internal/web"},
+	"internal/config":          {"internal/domain"},
+	"internal/hitl":            {"internal/domain"},
+	"internal/testutil":        {"internal/domain", "internal/db"},
+	"internal/web":             {},
+}
+
+// nestedTrackedPackages lists internal/ subpackages that have their
+// own layer-import rules distinct from their parent. Checked with
+// longest-match semantics BEFORE the generic two-segment collapse.
+var nestedTrackedPackages = []string{
+	"internal/pipeline/agents",
 }
 
 func main() {
@@ -118,11 +129,19 @@ func checkImports(root string) []string {
 }
 
 // resolveTopLevelPackage maps a file path to its top-level internal/ package.
+// Nested tracked packages (e.g. "internal/pipeline/agents") take
+// precedence over the generic two-segment collapse so their stricter
+// rules apply.
 // e.g. "internal/llmclient/dashscope/client.go" -> "internal/llmclient"
+//      "internal/pipeline/agents/agent.go"      -> "internal/pipeline/agents"
+//      "internal/pipeline/engine.go"            -> "internal/pipeline"
 func resolveTopLevelPackage(path string) string {
 	path = filepath.ToSlash(path)
 	if !strings.HasPrefix(path, "internal/") {
 		return ""
+	}
+	if nested := matchNestedTracked(path); nested != "" {
+		return nested
 	}
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 {
@@ -132,13 +151,34 @@ func resolveTopLevelPackage(path string) string {
 }
 
 // resolveTopLevelFromImport maps an internal import path to its top-level package.
-// e.g. "internal/llmclient/dashscope" -> "internal/llmclient"
+// Nested tracked packages are checked first with longest-prefix semantics.
+// e.g. "internal/llmclient/dashscope"    -> "internal/llmclient"
+//      "internal/pipeline/agents"        -> "internal/pipeline/agents"
+//      "internal/pipeline/agents/foo"    -> "internal/pipeline/agents"
 func resolveTopLevelFromImport(importPath string) string {
+	if nested := matchNestedTracked(importPath); nested != "" {
+		return nested
+	}
 	parts := strings.Split(importPath, "/")
 	if len(parts) < 2 {
 		return importPath
 	}
 	return parts[0] + "/" + parts[1]
+}
+
+// matchNestedTracked returns the longest nestedTrackedPackages entry that
+// is a prefix of s, requiring either an exact match or a '/' boundary.
+// Returns "" if no entry matches.
+func matchNestedTracked(s string) string {
+	best := ""
+	for _, n := range nestedTrackedPackages {
+		if s == n || strings.HasPrefix(s, n+"/") {
+			if len(n) > len(best) {
+				best = n
+			}
+		}
+	}
+	return best
 }
 
 func isAllowed(pkg string, allowed []string) bool {

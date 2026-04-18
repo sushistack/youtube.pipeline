@@ -1,0 +1,66 @@
+{
+  "scp_id": "SCP-TEST",
+  "title": "SCP-TEST",
+  "object_class": "Euclid",
+  "physical_description": "A concrete humanoid statue with fractured obsidian seams and powdery residue around its feet.",
+  "anomalous_properties": [
+    "It advances when every witness blinks.",
+    "Its shadow lingers for several seconds after movement."
+  ],
+  "containment_procedures": "Keep three observers in the chamber at all times and rotate staff before fatigue breaks line of sight.",
+  "behavior_and_nature": "It stalks the nearest isolated observer and becomes more active when alarm lighting drops.",
+  "origin_and_discovery": "Recovered from an abandoned Seoul transit spur after multiple synchronized eyewitness reports.",
+  "visual_identity": {
+    "appearance": "A gaunt concrete sentinel with obsidian seams.",
+    "distinguishing_features": [
+      "Obsidian eye sockets",
+      "Hairline fractures that glow red"
+    ],
+    "environment_setting": "A dim transit-platform containment vault.",
+    "key_visual_moments": [
+      "The sentinel stands motionless beneath a flickering platform light.",
+      "A security monitor catches it one step closer after a blink.",
+      "Red light leaks from the fractures as alarms begin to pulse."
+    ]
+  },
+  "dramatic_beats": [
+    {
+      "index": 0,
+      "source": "visual_moment",
+      "description": "The sentinel stands motionless beneath a flickering platform light.",
+      "emotional_tone": "mystery"
+    },
+    {
+      "index": 1,
+      "source": "visual_moment",
+      "description": "A security monitor catches it one step closer after a blink.",
+      "emotional_tone": "horror"
+    },
+    {
+      "index": 2,
+      "source": "visual_moment",
+      "description": "Red light leaks from the fractures as alarms begin to pulse.",
+      "emotional_tone": "tension"
+    },
+    {
+      "index": 3,
+      "source": "anomalous_property",
+      "description": "It advances when every witness blinks.",
+      "emotional_tone": "revelation"
+    },
+    {
+      "index": 4,
+      "source": "anomalous_property",
+      "description": "Its shadow lingers for several seconds after movement.",
+      "emotional_tone": "mystery"
+    }
+  ],
+  "main_text_excerpt": "SCP-TEST waited at the end of the abandoned platform, silent except for the tiny grit that slid from its shoulders. Investigators logged each blink in pairs, yet every relay review found the figure closer than before. 관측 기록은 일치하지 않았고, each witness described the same impossible sensation: the platform felt shorter every time they looked away. By the time the emergency shutters sealed, a second trail of dust already marked the path behind them.",
+  "tags": [
+    "scp",
+    "horror",
+    "urban",
+    "test"
+  ],
+  "source_version": "v1-deterministic"
+}

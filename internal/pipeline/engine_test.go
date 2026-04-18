@@ -1,9 +1,16 @@
 package pipeline
 
 import (
+	"context"
+	"errors"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
+	"github.com/sushistack/youtube.pipeline/internal/pipeline/agents"
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
@@ -126,6 +133,142 @@ func TestStatusForStage_AllStages(t *testing.T) {
 		t.Run(string(tt.stage), func(t *testing.T) {
 			testutil.AssertEqual(t, StatusForStage(tt.stage), tt.want)
 		})
+	}
+}
+
+func TestEngine_AdvanceRequiresPhaseAExecutor(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	engine := NewEngine(nil, nil, nil, clock.RealClock{}, t.TempDir(), slog.Default())
+	err := engine.Advance(context.Background(), "run-anything")
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	want := "advance run-anything: validation error: phase a executor is nil"
+	if err.Error() != want {
+		t.Errorf("unexpected message: got %q, want %q", err.Error(), want)
+	}
+}
+
+type fakePhaseAExecutor struct {
+	run func(ctx context.Context, state *agents.PipelineState) error
+}
+
+func (f fakePhaseAExecutor) Run(ctx context.Context, state *agents.PipelineState) error {
+	return f.run(ctx, state)
+}
+
+type engineTestRunStore struct {
+	run *domain.Run
+}
+
+func (s *engineTestRunStore) Get(ctx context.Context, id string) (*domain.Run, error) {
+	if s.run == nil || s.run.ID != id {
+		return nil, domain.ErrNotFound
+	}
+	copy := *s.run
+	return &copy, nil
+}
+
+func (s *engineTestRunStore) ResetForResume(ctx context.Context, id string, status domain.Status) error {
+	return nil
+}
+
+func (s *engineTestRunStore) ApplyPhaseAResult(ctx context.Context, id string, res domain.PhaseAAdvanceResult) error {
+	if s.run == nil || s.run.ID != id {
+		return domain.ErrNotFound
+	}
+	s.run.Stage = res.Stage
+	s.run.Status = res.Status
+	s.run.RetryReason = res.RetryReason
+	s.run.CriticScore = res.CriticScore
+	s.run.ScenarioPath = res.ScenarioPath
+	return nil
+}
+
+type engineTestSegmentStore struct{}
+
+func (engineTestSegmentStore) ListByRunID(ctx context.Context, runID string) ([]*domain.Episode, error) {
+	return nil, nil
+}
+
+func (engineTestSegmentStore) DeleteByRunID(ctx context.Context, runID string) (int64, error) {
+	return 0, nil
+}
+
+func (engineTestSegmentStore) ClearClipPathsByRunID(ctx context.Context, runID string) (int64, error) {
+	return 0, nil
+}
+
+func TestEngineAdvance_PhaseAHappyPath_MovesToScenarioReview(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outDir := t.TempDir()
+	runs := &engineTestRunStore{
+		run: &domain.Run{ID: "run-1", SCPID: "SCP-TEST", Stage: domain.StagePending, Status: domain.StatusPending},
+	}
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, outDir, slog.Default())
+	engine.SetPhaseAExecutor(fakePhaseAExecutor{run: func(ctx context.Context, state *agents.PipelineState) error {
+		state.Quality = &agents.PhaseAQualitySummary{PostWriterScore: 81, PostReviewerScore: 88, CumulativeScore: 85, FinalVerdict: domain.CriticVerdictPass}
+		state.Contracts = &agents.PhaseAContractManifest{}
+		state.Critic = &domain.CriticOutput{
+			PostReviewer: &domain.CriticCheckpointReport{
+				Checkpoint:   domain.CriticCheckpointPostReviewer,
+				Verdict:      domain.CriticVerdictPass,
+				OverallScore: 88,
+			},
+		}
+		if err := os.MkdirAll(filepath.Join(outDir, state.RunID), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(ScenarioPath(outDir, state.RunID), []byte(`{}`), 0o644)
+	}})
+
+	if err := engine.Advance(context.Background(), "run-1"); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+	testutil.AssertEqual(t, runs.run.Stage, domain.StageScenarioReview)
+	testutil.AssertEqual(t, runs.run.Status, domain.StatusWaiting)
+	if runs.run.CriticScore == nil {
+		t.Fatal("expected critic_score persisted")
+	}
+	testutil.AssertFloatNear(t, *runs.run.CriticScore, 0.88, 0.000001)
+	if runs.run.ScenarioPath == nil || *runs.run.ScenarioPath != "scenario.json" {
+		t.Fatalf("unexpected scenario path: %v", runs.run.ScenarioPath)
+	}
+}
+
+func TestEngineAdvance_PhaseARetry_MovesBackToWriteWithoutScenarioJSON(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outDir := t.TempDir()
+	runs := &engineTestRunStore{
+		run: &domain.Run{ID: "run-2", SCPID: "SCP-TEST", Stage: domain.StageCritic, Status: domain.StatusRunning},
+	}
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, outDir, slog.Default())
+	engine.SetPhaseAExecutor(fakePhaseAExecutor{run: func(ctx context.Context, state *agents.PipelineState) error {
+		state.Critic = &domain.CriticOutput{
+			PostReviewer: &domain.CriticCheckpointReport{
+				Checkpoint:   domain.CriticCheckpointPostReviewer,
+				Verdict:      domain.CriticVerdictRetry,
+				RetryReason:  "weak_hook",
+				OverallScore: 54,
+			},
+		}
+		return nil
+	}})
+
+	err := engine.Advance(context.Background(), "run-2")
+	if !errors.Is(err, domain.ErrStageFailed) {
+		t.Fatalf("expected ErrStageFailed, got %v", err)
+	}
+	testutil.AssertEqual(t, runs.run.Stage, domain.StageWrite)
+	testutil.AssertEqual(t, runs.run.Status, domain.StatusFailed)
+	if runs.run.ScenarioPath != nil {
+		t.Fatalf("expected no scenario path, got %v", *runs.run.ScenarioPath)
+	}
+	if _, err := os.Stat(ScenarioPath(outDir, "run-2")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no scenario.json, got %v", err)
 	}
 }
 

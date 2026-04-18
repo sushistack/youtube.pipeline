@@ -1,0 +1,36 @@
+{
+  "scp_id": "SCP-TEST",
+  "title": "SCP-TEST",
+  "object_class": "Euclid",
+  "rating": 137,
+  "physical_description": "A concrete humanoid statue with fractured obsidian seams and powdery residue around its feet.",
+  "anomalous_properties": [
+    "It advances when every witness blinks.",
+    "Its shadow lingers for several seconds after movement."
+  ],
+  "containment_procedures": "Keep three observers in the chamber at all times and rotate staff before fatigue breaks line of sight.",
+  "behavior_and_nature": "It stalks the nearest isolated observer and becomes more active when alarm lighting drops.",
+  "origin_and_discovery": "Recovered from an abandoned Seoul transit spur after multiple synchronized eyewitness reports.",
+  "incidents": [],
+  "related_documents": [],
+  "visual_elements": {
+    "appearance": "A gaunt concrete sentinel with obsidian seams.",
+    "distinguishing_features": [
+      "Obsidian eye sockets",
+      "Hairline fractures that glow red"
+    ],
+    "environment_setting": "A dim transit-platform containment vault.",
+    "key_visual_moments": [
+      "The sentinel stands motionless beneath a flickering platform light.",
+      "A security monitor catches it one step closer after a blink.",
+      "Red light leaks from the fractures as alarms begin to pulse."
+    ]
+  },
+  "cross_references": [],
+  "tags": [
+    "scp",
+    "horror",
+    "urban",
+    "test"
+  ]
+}

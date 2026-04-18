@@ -22,6 +22,7 @@ type fakeRunStore struct {
 	mu             sync.Mutex
 	run            *domain.Run
 	resetCalls     []resetCall
+	phaseACalls    []domain.PhaseAAdvanceResult
 	getErr         error
 	resetErr       error
 }
@@ -55,6 +56,20 @@ func (f *fakeRunStore) ResetForResume(ctx context.Context, id string, status dom
 		f.run.Status = status
 		f.run.RetryReason = nil
 		f.run.RetryCount++
+	}
+	return nil
+}
+
+func (f *fakeRunStore) ApplyPhaseAResult(ctx context.Context, id string, res domain.PhaseAAdvanceResult) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.phaseACalls = append(f.phaseACalls, res)
+	if f.run != nil && f.run.ID == id {
+		f.run.Stage = res.Stage
+		f.run.Status = res.Status
+		f.run.RetryReason = res.RetryReason
+		f.run.CriticScore = res.CriticScore
+		f.run.ScenarioPath = res.ScenarioPath
 	}
 	return nil
 }

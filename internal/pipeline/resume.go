@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
+	"github.com/sushistack/youtube.pipeline/internal/pipeline/agents"
 )
 
 // RunStore is the minimal persistence surface the Engine needs.
@@ -16,6 +18,11 @@ import (
 type RunStore interface {
 	Get(ctx context.Context, id string) (*domain.Run, error)
 	ResetForResume(ctx context.Context, id string, status domain.Status) error
+	ApplyPhaseAResult(ctx context.Context, runID string, res domain.PhaseAAdvanceResult) error
+}
+
+type PhaseAExecutor interface {
+	Run(ctx context.Context, state *agents.PipelineState) error
 }
 
 // SegmentStore is the minimal persistence surface the Engine needs for
@@ -49,6 +56,7 @@ type Engine struct {
 	runs      RunStore
 	segments  SegmentStore
 	sessions  HITLSessionCleaner
+	phaseA    PhaseAExecutor
 	clock     clock.Clock
 	outputDir string
 	logger    *slog.Logger
@@ -72,10 +80,74 @@ func NewEngine(runs RunStore, segments SegmentStore, sessions HITLSessionCleaner
 	}
 }
 
-// Advance is not implemented in V1; automated stage execution lands in
-// Epic 3's agent-chain implementation. Returns a descriptive error.
+func (e *Engine) SetPhaseAExecutor(exec PhaseAExecutor) {
+	e.phaseA = exec
+}
+
+// Advance executes or re-executes the full Phase A chain for any run whose
+// current stage is pending through critic.
 func (e *Engine) Advance(ctx context.Context, runID string) error {
-	return fmt.Errorf("advance not implemented: epic 3 scope")
+	if e.phaseA == nil {
+		return fmt.Errorf("advance %s: %w: phase a executor is nil", runID, domain.ErrValidation)
+	}
+
+	run, err := e.runs.Get(ctx, runID)
+	if err != nil {
+		return fmt.Errorf("advance %s: %w", runID, err)
+	}
+	if !isPhaseAEntryStage(run.Stage) {
+		return fmt.Errorf("advance %s: %w: stage %s is not a Phase A entry point", runID, domain.ErrConflict, run.Stage)
+	}
+
+	state := &agents.PipelineState{
+		RunID: run.ID,
+		SCPID: run.SCPID,
+	}
+	if err := e.phaseA.Run(ctx, state); err != nil {
+		return fmt.Errorf("advance %s: %w", runID, err)
+	}
+	if state.Critic == nil || state.Critic.PostReviewer == nil {
+		return fmt.Errorf("advance %s: %w: post_reviewer critic result missing", runID, domain.ErrValidation)
+	}
+
+	postReviewer := state.Critic.PostReviewer
+	if postReviewer.Verdict == domain.CriticVerdictRetry {
+		var score *float64
+		if !postReviewer.Precheck.ShortCircuited {
+			normalized := NormalizeCriticScore(postReviewer.OverallScore)
+			score = &normalized
+		}
+		res := domain.PhaseAAdvanceResult{
+			Stage:       domain.StageWrite,
+			Status:      domain.StatusFailed,
+			RetryReason: stringPtrOrNil(postReviewer.RetryReason),
+			CriticScore: score,
+		}
+		if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
+			return fmt.Errorf("advance %s: apply phase a retry result: %w", runID, err)
+		}
+		return fmt.Errorf("advance %s: %w: %s", runID, domain.ErrStageFailed, postReviewer.RetryReason)
+	}
+
+	if state.Quality == nil || state.Contracts == nil {
+		return fmt.Errorf("advance %s: %w: final phase a state missing quality or contracts", runID, domain.ErrValidation)
+	}
+	if _, err := os.Stat(ScenarioPath(e.outputDir, runID)); err != nil {
+		return fmt.Errorf("advance %s: scenario artifact missing: %w", runID, err)
+	}
+
+	score := NormalizeCriticScore(postReviewer.OverallScore)
+	scenarioPath := "scenario.json"
+	res := domain.PhaseAAdvanceResult{
+		Stage:        domain.StageScenarioReview,
+		Status:       domain.StatusWaiting,
+		CriticScore:  &score,
+		ScenarioPath: &scenarioPath,
+	}
+	if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
+		return fmt.Errorf("advance %s: apply phase a success result: %w", runID, err)
+	}
+	return nil
 }
 
 // Resume re-enters the failed (or waiting) stage of a run with default
@@ -221,4 +293,25 @@ func validateResumable(run *domain.Run) error {
 
 func isPhaseB(s domain.Stage) bool {
 	return s == domain.StageImage || s == domain.StageTTS
+}
+
+func isPhaseAEntryStage(s domain.Stage) bool {
+	switch s {
+	case domain.StagePending,
+		domain.StageResearch,
+		domain.StageStructure,
+		domain.StageWrite,
+		domain.StageVisualBreak,
+		domain.StageReview,
+		domain.StageCritic:
+		return true
+	}
+	return false
+}
+
+func stringPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

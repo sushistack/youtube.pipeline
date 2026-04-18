@@ -261,6 +261,48 @@ func TestRunStore_SetStatus_NotFound(t *testing.T) {
 	}
 }
 
+func TestRunStore_ApplyPhaseAResult_RoundTrip(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	retryReason := "weak_hook"
+	score := 0.83
+	scenarioPath := "scenario.json"
+	if err := store.ApplyPhaseAResult(ctx, run.ID, domain.PhaseAAdvanceResult{
+		Stage:        domain.StageScenarioReview,
+		Status:       domain.StatusWaiting,
+		RetryReason:  &retryReason,
+		CriticScore:  &score,
+		ScenarioPath: &scenarioPath,
+	}); err != nil {
+		t.Fatalf("ApplyPhaseAResult: %v", err)
+	}
+
+	updated, err := store.Get(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	testutil.AssertEqual(t, updated.Stage, domain.StageScenarioReview)
+	testutil.AssertEqual(t, updated.Status, domain.StatusWaiting)
+	if updated.RetryReason == nil || *updated.RetryReason != retryReason {
+		t.Fatalf("unexpected retry_reason: %v", updated.RetryReason)
+	}
+	if updated.CriticScore == nil {
+		t.Fatal("expected critic_score persisted")
+	}
+	testutil.AssertFloatNear(t, *updated.CriticScore, score, 0.000001)
+	if updated.ScenarioPath == nil || *updated.ScenarioPath != scenarioPath {
+		t.Fatalf("unexpected scenario_path: %v", updated.ScenarioPath)
+	}
+}
+
 func TestRunStore_IncrementRetryCount_Success(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)

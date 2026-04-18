@@ -1,0 +1,69 @@
+{
+  "run_id": "run-1",
+  "scp_id": "SCP-TEST",
+  "research": {
+    "scp_id": "SCP-TEST"
+  },
+  "structure": {
+    "scp_id": "SCP-TEST"
+  },
+  "narration": {
+    "scp_id": "SCP-TEST"
+  },
+  "visual_breakdown": {
+    "scp_id": "SCP-TEST"
+  },
+  "review": {
+    "overall_pass": true
+  },
+  "critic": {
+    "post_writer": {
+      "checkpoint": "post_writer"
+    },
+    "post_reviewer": {
+      "checkpoint": "post_reviewer"
+    }
+  },
+  "quality": {
+    "post_writer_score": 81,
+    "post_reviewer_score": 88,
+    "cumulative_score": 85,
+    "final_verdict": "pass"
+  },
+  "contracts": {
+    "research_schema": {
+      "path": "testdata/contracts/researcher_output.schema.json",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "structure_schema": {
+      "path": "testdata/contracts/structurer_output.schema.json",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "writer_schema": {
+      "path": "testdata/contracts/writer_output.schema.json",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "visual_breakdown_schema": {
+      "path": "testdata/contracts/visual_breakdown.schema.json",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "review_schema": {
+      "path": "testdata/contracts/reviewer_report.schema.json",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "critic_post_writer_schema": {
+      "path": "testdata/contracts/critic_post_writer.schema.json",
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    "critic_post_reviewer_schema": {
+      "path": "testdata/contracts/critic_post_reviewer.schema.json",
+      "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "phase_a_state_schema": {
+      "path": "testdata/contracts/phase_a_state.schema.json",
+      "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+    }
+  },
+  "started_at": "2026-04-18T12:00:00Z",
+  "finished_at": "2026-04-18T12:00:05Z"
+}

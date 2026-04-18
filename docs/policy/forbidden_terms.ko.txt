@@ -1,0 +1,6 @@
+# One literal-or-regex pattern per line.
+# Comments and blank lines are ignored.
+wiki
+위키
+정부\s*보고서
+백과사전처럼

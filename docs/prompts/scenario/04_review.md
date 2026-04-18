@@ -1,106 +1,68 @@
-# Stage 4: Fact-Check & Quality Review
+# Stage 4: Fact and Consistency Review
 
-You are an SCP Foundation fact-checker reviewing a video narration script for {scp_id}.
+You are reviewing a generated scenario package for factual accuracy and visual consistency.
+
+Return JSON only.
+Do not use markdown fences.
 
 ## Source Facts
 {scp_fact_sheet}
 
-## Generated Narration Script (from Stage 3)
+## Narration Script
 {narration_script}
 
-## Visual Descriptions (from Stage 3.5)
+## Visual Breakdown
 {visual_descriptions}
 
-## Visual Identity Profile
+## Frozen Descriptor
 {scp_visual_reference}
 
-{glossary_section}
-
-## Storytelling Format Guide (Review Reference)
-
-Use the following format guide as the evaluation criteria for storytelling quality checks.
-
+## Format Reference
 {format_guide}
 
-## Review Checklist
+## Review Focus
 
-### 1. SCP Classification Accuracy
-- Verify Object Class matches source data exactly
-- Verify Containment Class is correct
-- Verify any clearance levels mentioned are accurate
+Check:
+- factual accuracy against source facts
+- missing critical facts from the narration
+- Frozen Descriptor consistency inside visual descriptors
+- invented or non-canonical visual content
+- shot-count and transition sanity
+- cross-scene consistency problems
 
-### 2. Anomalous Properties Accuracy
-- Each stated property must exist in source facts
-- No properties should be fabricated or exaggerated
-- Severity descriptions must match source tone
+Do not score storytelling quality.
+Do not output rubric commentary.
 
-### 3. Containment Procedure Correctness
-- Stated procedures must match source specifications
-- No invented containment measures
-- Security protocols must be accurately described
+## Required JSON Shape
 
-### 4. Visual Identity Consistency
-- Every scene where the entity appears must use the Frozen Descriptor
-- No physical description should contradict the Visual Identity Profile
-- Verify visual descriptions don't add non-canonical features
-
-### 5. Fact Coverage Check
-- List each source fact and whether it appears in the narration
-- Calculate coverage percentage
-- Flag critical facts that are missing
-
-### 6. Visual Description Quality
-- Every scene has visual_descriptions (not empty)
-- Shot count approximately matches sentence count (1:1 mapping)
-- Camera type variety within each scene (no consecutive same camera_type)
-- Character visual consistency across scenes (same descriptors for same character)
-- No forbidden generic terms in image_prompts ("dark", "scary", "horror", "creepy", "mysterious", "eerie")
-- When entity_visible is true, the SCP frozen descriptor from Visual Identity Profile is present
-
-### 7. Storytelling Quality
-Evaluate the narration's storytelling effectiveness:
-- **Hook strength**: Does Scene 1 open with a clear hook type (question, shock, mystery, or contrast)? Rate 0-100.
-- **Information curve**: Are key facts distributed across 3+ scenes using progressive disclosure (not front-loaded)? Rate 0-100.
-- **Emotional variation**: Do adjacent scenes have different moods? Count consecutive same-mood pairs (0 is ideal). Rate 0-100.
-- **Immersion devices**: Count occurrences of 2nd person address, sensory description, situation hypotheticals (minimum 3 per scenario). Rate 0-100.
-
-Calculate `storytelling_score` as the average of these four sub-scores.
-
-## Task
-
-Output a JSON review report:
-```json
 {
-  "overall_pass": true/false,
-  "coverage_pct": 85.0,
+  "overall_pass": true,
+  "coverage_pct": 100.0,
   "issues": [
     {
-      "scene_num": 3,
-      "type": "fact_error|missing_fact|descriptor_violation|invented_content",
-      "severity": "critical|warning|info",
-      "description": "What is wrong",
-      "correction": "Specific text to replace or add"
+      "scene_num": 1,
+      "type": "fact_error",
+      "severity": "critical",
+      "description": "Describe the problem.",
+      "correction": "Describe the correction."
     }
   ],
   "corrections": [
     {
-      "scene_num": 3,
-      "field": "narration|visual_description",
-      "original": "original text snippet",
+      "scene_num": 1,
+      "field": "visual_descriptor",
+      "original": "original text",
       "corrected": "corrected text"
     }
   ],
-  "storytelling_score": 75,
-  "storytelling_issues": [
-    {
-      "scene_num": 1,
-      "type": "weak_hook|flat_info_curve|monotone_mood|low_immersion",
-      "severity": "warning",
-      "description": "What is wrong with storytelling",
-      "correction": "Suggested improvement"
-    }
-  ]
+  "reviewer_model": "",
+  "reviewer_provider": "",
+  "source_version": "v1-reviewer-fact-check"
 }
-```
 
-Only report actual issues found. If the script is accurate, return an empty issues array. Storytelling issues are advisory — they do NOT affect `overall_pass`.
+Rules:
+- `type` must be one of `fact_error`, `missing_fact`, `descriptor_violation`, `invented_content`, `consistency_issue`
+- `severity` must be one of `critical`, `warning`, `info`
+- `field` must be either `narration` or `visual_descriptor`
+- if there are no issues, return empty arrays
+- keep corrections specific and minimally scoped
