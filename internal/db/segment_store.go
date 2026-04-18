@@ -26,7 +26,7 @@ func (s *SegmentStore) ListByRunID(ctx context.Context, runID string) ([]*domain
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, run_id, scene_index, narration, shot_count, shots,
 		        tts_path, tts_duration_ms, clip_path,
-		        critic_score, critic_sub, status, created_at
+		        critic_score, critic_sub, status, review_status, safeguard_flags, created_at
 		   FROM segments WHERE run_id = ? ORDER BY scene_index ASC`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("list segments for %s: %w", runID, err)
@@ -80,6 +80,58 @@ func (s *SegmentStore) DeleteByRunID(ctx context.Context, runID string) (int64, 
 	return n, nil
 }
 
+func (s *SegmentStore) GetByRunIDAndSceneIndex(ctx context.Context, runID string, sceneIndex int) (*domain.Episode, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, run_id, scene_index, narration, shot_count, shots,
+		        tts_path, tts_duration_ms, clip_path,
+		        critic_score, critic_sub, status, review_status, safeguard_flags, created_at
+		   FROM segments
+		  WHERE run_id = ? AND scene_index = ?`,
+		runID, sceneIndex,
+	)
+	ep, err := scanEpisode(row)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("get segment %s[%d]: %w", runID, sceneIndex, domain.ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get segment %s[%d]: %w", runID, sceneIndex, err)
+	}
+	return ep, nil
+}
+
+func (s *SegmentStore) UpdateReviewGate(
+	ctx context.Context,
+	runID string,
+	sceneIndex int,
+	reviewStatus domain.ReviewStatus,
+	safeguardFlags []string,
+) error {
+	if !reviewStatus.IsValid() {
+		return fmt.Errorf("update review gate %s[%d]: invalid review status %q: %w", runID, sceneIndex, reviewStatus, domain.ErrValidation)
+	}
+	flagsJSON, err := json.Marshal(normalizeSafeguardFlags(safeguardFlags))
+	if err != nil {
+		return fmt.Errorf("update review gate %s[%d]: marshal safeguard flags: %w", runID, sceneIndex, err)
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE segments
+		    SET review_status = ?, safeguard_flags = ?
+		  WHERE run_id = ? AND scene_index = ?`,
+		string(reviewStatus), string(flagsJSON), runID, sceneIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("update review gate %s[%d]: %w", runID, sceneIndex, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update review gate %s[%d] rows affected: %w", runID, sceneIndex, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("update review gate %s[%d]: %w", runID, sceneIndex, domain.ErrNotFound)
+	}
+	return nil
+}
+
 func scanEpisode(sc scanner) (*domain.Episode, error) {
 	var ep domain.Episode
 	var (
@@ -90,11 +142,13 @@ func scanEpisode(sc scanner) (*domain.Episode, error) {
 		clipPath      sql.NullString
 		criticScore   sql.NullFloat64
 		criticSub     sql.NullString
+		reviewStatus  sql.NullString
+		safeguardJSON sql.NullString
 	)
 	if err := sc.Scan(
 		&ep.ID, &ep.RunID, &ep.SceneIndex, &narration, &ep.ShotCount, &shotsJSON,
 		&ttsPath, &ttsDurationMs, &clipPath,
-		&criticScore, &criticSub, &ep.Status, &ep.CreatedAt,
+		&criticScore, &criticSub, &ep.Status, &reviewStatus, &safeguardJSON, &ep.CreatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -122,5 +176,37 @@ func scanEpisode(sc scanner) (*domain.Episode, error) {
 	if criticSub.Valid {
 		ep.CriticSub = &criticSub.String
 	}
+	if reviewStatus.Valid && reviewStatus.String != "" {
+		ep.ReviewStatus = domain.ReviewStatus(reviewStatus.String)
+	} else {
+		ep.ReviewStatus = domain.ReviewStatusPending
+	}
+	if safeguardJSON.Valid && safeguardJSON.String != "" {
+		if err := json.Unmarshal([]byte(safeguardJSON.String), &ep.SafeguardFlags); err != nil {
+			return nil, fmt.Errorf("decode safeguard_flags JSON: %w", err)
+		}
+	}
 	return &ep, nil
+}
+
+func normalizeSafeguardFlags(flags []string) []string {
+	if len(flags) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(flags))
+	out := make([]string, 0, len(flags))
+	for _, flag := range flags {
+		if flag == "" {
+			continue
+		}
+		if _, ok := seen[flag]; ok {
+			continue
+		}
+		seen[flag] = struct{}{}
+		out = append(out, flag)
+	}
+	if len(out) == 0 {
+		return []string{}
+	}
+	return out
 }

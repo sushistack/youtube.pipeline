@@ -221,6 +221,81 @@ func TestDecisionStore_DeleteSession_RemovesRow(t *testing.T) {
 	}
 }
 
+func TestDecisionStore_LatestDecisionIDForRuns_MaxNonSupersededApproveReject(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	if _, err := database.Exec(`
+		INSERT INTO runs (id, scp_id) VALUES
+		  ('r1', 'scp'),
+		  ('r2', 'scp')`); err != nil {
+		t.Fatalf("seed runs: %v", err)
+	}
+	if _, err := database.Exec(`
+		INSERT INTO decisions (id, run_id, scene_id, decision_type, created_at, superseded_by) VALUES
+		  (1, 'r1', '0', 'approve', '2026-01-01T00:00:00Z', NULL),
+		  (2, 'r1', '1', 'reject',  '2026-01-01T00:01:00Z', 4),
+		  (3, 'r1', NULL, 'metadata_ack', '2026-01-01T00:02:00Z', NULL),
+		  (4, 'r2', '2', 'approve', '2026-01-01T00:03:00Z', NULL),
+		  (5, 'r2', '3', 'reject',  '2026-01-01T00:04:00Z', NULL)`); err != nil {
+		t.Fatalf("seed decisions: %v", err)
+	}
+
+	got, err := db.NewDecisionStore(database).LatestDecisionIDForRuns(context.Background(), []string{"r1", "r2"})
+	if err != nil {
+		t.Fatalf("LatestDecisionIDForRuns: %v", err)
+	}
+
+	testutil.AssertEqual(t, got, 5)
+}
+
+func TestDecisionStore_LatestDecisionIDForRuns_EmptyRunIDs(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id) VALUES ('r1', 'scp')`); err != nil {
+		t.Fatalf("seed runs: %v", err)
+	}
+	if _, err := database.Exec(`
+		INSERT INTO decisions (id, run_id, scene_id, decision_type, created_at, superseded_by) VALUES
+		  (1, 'r1', '0', 'approve', '2026-01-01T00:00:00Z', NULL)`); err != nil {
+		t.Fatalf("seed decisions: %v", err)
+	}
+
+	ds := db.NewDecisionStore(database)
+	got, err := ds.LatestDecisionIDForRuns(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("LatestDecisionIDForRuns nil: %v", err)
+	}
+	testutil.AssertEqual(t, got, 0)
+
+	got, err = ds.LatestDecisionIDForRuns(context.Background(), []string{})
+	if err != nil {
+		t.Fatalf("LatestDecisionIDForRuns empty slice: %v", err)
+	}
+	testutil.AssertEqual(t, got, 0)
+}
+
+func TestDecisionStore_LatestDecisionIDForRuns_AllSuperseded(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id) VALUES ('r1', 'scp')`); err != nil {
+		t.Fatalf("seed runs: %v", err)
+	}
+	if _, err := database.Exec(`
+		INSERT INTO decisions (id, run_id, scene_id, decision_type, created_at, superseded_by) VALUES
+		  (1, 'r1', '0', 'approve', '2026-01-01T00:00:00Z', 2),
+		  (2, 'r1', '0', 'reject',  '2026-01-01T00:01:00Z', 3),
+		  (3, 'r1', '0', 'approve', '2026-01-01T00:02:00Z', 4),
+		  (4, 'r1', '0', 'reject',  '2026-01-01T00:03:00Z', 1)`); err != nil {
+		t.Fatalf("seed decisions: %v", err)
+	}
+
+	got, err := db.NewDecisionStore(database).LatestDecisionIDForRuns(context.Background(), []string{"r1"})
+	if err != nil {
+		t.Fatalf("LatestDecisionIDForRuns: %v", err)
+	}
+	testutil.AssertEqual(t, got, 0)
+}
+
 func TestDecisionStore_DecisionCounts_EmptyRun(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)
@@ -342,6 +417,169 @@ func TestDecisionStore_DecisionCounts_IgnoresNullSceneID(t *testing.T) {
 	testutil.AssertEqual(t, got.Approved, 0)
 	testutil.AssertEqual(t, got.Rejected, 0)
 	testutil.AssertEqual(t, got.TotalScenes, 1)
+}
+
+func TestDecisionCountsByRunID_AutoApprovedNotPending(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id) VALUES ('r1', 'scp')`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := database.Exec(`INSERT INTO segments (run_id, scene_index) VALUES ('r1', ?)`, i); err != nil {
+			t.Fatalf("seed segment: %v", err)
+		}
+	}
+	if _, err := database.Exec(`
+		INSERT INTO decisions (run_id, scene_id, decision_type, created_at) VALUES
+		  ('r1', '0', 'system_auto_approved', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatalf("seed decision: %v", err)
+	}
+	got, err := db.NewDecisionStore(database).DecisionCountsByRunID(context.Background(), "r1")
+	if err != nil {
+		t.Fatalf("DecisionCountsByRunID: %v", err)
+	}
+	testutil.AssertEqual(t, got.Approved, 1)
+	testutil.AssertEqual(t, got.Rejected, 0)
+	testutil.AssertEqual(t, got.TotalScenes, 2)
+}
+
+func TestPrepareBatchReview_AutoApprovedSceneRecorded(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	ctx := context.Background()
+	database := testutil.NewTestDB(t)
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id, stage, status) VALUES ('r1', 'scp', 'batch_review', 'waiting')`); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := database.Exec(`INSERT INTO segments (run_id, scene_index, critic_score) VALUES ('r1', 0, 0.91)`); err != nil {
+		t.Fatalf("seed segment: %v", err)
+	}
+
+	autoContinue, err := db.NewDecisionStore(database).PrepareBatchReview(ctx, "r1",
+		[]db.SceneReviewUpdate{
+			{SceneIndex: 0, ReviewStatus: domain.ReviewStatusAutoApproved, AutoApproved: true},
+		},
+		[]db.AutoApprovalInput{{SceneIndex: 0, CriticScore: 0.91, Threshold: 0.85}},
+	)
+	if err != nil {
+		t.Fatalf("PrepareBatchReview: %v", err)
+	}
+	testutil.AssertEqual(t, autoContinue, true)
+
+	var (
+		decisionType  string
+		sceneID       string
+		reviewStatus  string
+		stage         string
+		status        string
+		humanOverride int
+	)
+	if err := database.QueryRow(`SELECT decision_type, scene_id FROM decisions WHERE run_id = 'r1'`).Scan(&decisionType, &sceneID); err != nil {
+		t.Fatalf("select decision: %v", err)
+	}
+	if err := database.QueryRow(`SELECT review_status FROM segments WHERE run_id = 'r1' AND scene_index = 0`).Scan(&reviewStatus); err != nil {
+		t.Fatalf("select segment: %v", err)
+	}
+	if err := database.QueryRow(`SELECT human_override FROM runs WHERE id = 'r1'`).Scan(&humanOverride); err != nil {
+		t.Fatalf("select run: %v", err)
+	}
+	if err := database.QueryRow(`SELECT stage, status FROM runs WHERE id = 'r1'`).Scan(&stage, &status); err != nil {
+		t.Fatalf("select run stage: %v", err)
+	}
+	testutil.AssertEqual(t, decisionType, domain.DecisionTypeSystemAutoApproved)
+	testutil.AssertEqual(t, sceneID, "0")
+	testutil.AssertEqual(t, reviewStatus, string(domain.ReviewStatusAutoApproved))
+	testutil.AssertEqual(t, stage, string(domain.StageAssemble))
+	testutil.AssertEqual(t, status, string(domain.StatusRunning))
+	testutil.AssertEqual(t, humanOverride, 0)
+}
+
+func TestPrepareBatchReview_AutoApprovalIdempotentOnRerun(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	ctx := context.Background()
+	database := testutil.NewTestDB(t)
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id, stage, status) VALUES ('r1', 'scp', 'batch_review', 'waiting')`); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := database.Exec(`INSERT INTO segments (run_id, scene_index, critic_score) VALUES ('r1', 0, 0.91)`); err != nil {
+		t.Fatalf("seed segment: %v", err)
+	}
+	store := db.NewDecisionStore(database)
+	results := []db.SceneReviewUpdate{
+		{SceneIndex: 0, ReviewStatus: domain.ReviewStatusAutoApproved, AutoApproved: true},
+	}
+	autoApprovals := []db.AutoApprovalInput{{SceneIndex: 0, CriticScore: 0.91, Threshold: 0.85}}
+	if _, err := store.PrepareBatchReview(ctx, "r1", results, autoApprovals); err != nil {
+		t.Fatalf("PrepareBatchReview #1: %v", err)
+	}
+	if _, err := store.PrepareBatchReview(ctx, "r1", results, autoApprovals); err != nil {
+		t.Fatalf("PrepareBatchReview #2: %v", err)
+	}
+	var count int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM decisions WHERE run_id = 'r1' AND decision_type = 'system_auto_approved'`).Scan(&count); err != nil {
+		t.Fatalf("count decisions: %v", err)
+	}
+	testutil.AssertEqual(t, count, 1)
+}
+
+func TestPrepareBatchReview_SystemDecisionDoesNotFlipHumanOverride(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	ctx := context.Background()
+	database := testutil.NewTestDB(t)
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id, stage, status, human_override) VALUES ('r1', 'scp', 'batch_review', 'waiting', 0)`); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := database.Exec(`INSERT INTO segments (run_id, scene_index, critic_score) VALUES ('r1', 0, 0.91)`); err != nil {
+		t.Fatalf("seed segment: %v", err)
+	}
+	if _, err := db.NewDecisionStore(database).PrepareBatchReview(ctx, "r1",
+		[]db.SceneReviewUpdate{{SceneIndex: 0, ReviewStatus: domain.ReviewStatusAutoApproved, AutoApproved: true}},
+		[]db.AutoApprovalInput{{SceneIndex: 0, CriticScore: 0.91, Threshold: 0.85}},
+	); err != nil {
+		t.Fatalf("PrepareBatchReview: %v", err)
+	}
+	var humanOverride int
+	if err := database.QueryRow(`SELECT human_override FROM runs WHERE id = 'r1'`).Scan(&humanOverride); err != nil {
+		t.Fatalf("select run: %v", err)
+	}
+	testutil.AssertEqual(t, humanOverride, 0)
+}
+
+func TestOverrideMinorSafeguard_SetsRunHumanOverride(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	ctx := context.Background()
+	database := testutil.NewTestDB(t)
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id, human_override) VALUES ('r1', 'scp', 0)`); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := database.Exec(`
+		INSERT INTO segments (run_id, scene_index, review_status, safeguard_flags)
+		VALUES ('r1', 0, 'waiting_for_review', '["Safeguard Triggered: Minors"]')`); err != nil {
+		t.Fatalf("seed segment: %v", err)
+	}
+	store := db.NewDecisionStore(database)
+	if err := store.OverrideMinorSafeguard(ctx, "r1", 0, "운영자 판단으로 허용"); err != nil {
+		t.Fatalf("OverrideMinorSafeguard: %v", err)
+	}
+	var (
+		reviewStatus  string
+		humanOverride int
+		decisionType  string
+		note          string
+	)
+	if err := database.QueryRow(`SELECT review_status FROM segments WHERE run_id = 'r1' AND scene_index = 0`).Scan(&reviewStatus); err != nil {
+		t.Fatalf("select segment: %v", err)
+	}
+	if err := database.QueryRow(`SELECT human_override FROM runs WHERE id = 'r1'`).Scan(&humanOverride); err != nil {
+		t.Fatalf("select run: %v", err)
+	}
+	if err := database.QueryRow(`SELECT decision_type, note FROM decisions WHERE run_id = 'r1' AND scene_id = '0'`).Scan(&decisionType, &note); err != nil {
+		t.Fatalf("select decision: %v", err)
+	}
+	testutil.AssertEqual(t, reviewStatus, string(domain.ReviewStatusApproved))
+	testutil.AssertEqual(t, humanOverride, 1)
+	testutil.AssertEqual(t, decisionType, domain.DecisionTypeOverride)
+	testutil.AssertEqual(t, note, "운영자 판단으로 허용")
 }
 
 func TestDecisionStore_KappaPairsForRuns_FiltersSupersededAndNonScene(t *testing.T) {
@@ -548,7 +786,10 @@ func TestDecisionStore_KappaPairsForRuns_TieBreaksToReject(t *testing.T) {
 	}
 }
 
-func explainPlan(t *testing.T, rows interface{ Next() bool; Scan(...any) error }) string {
+func explainPlan(t *testing.T, rows interface {
+	Next() bool
+	Scan(...any) error
+}) string {
 	t.Helper()
 	var plan strings.Builder
 	for rows.Next() {

@@ -12,11 +12,11 @@ import (
 )
 
 // Load reads configuration from the Viper hierarchy:
-//   1. Defaults from domain.DefaultConfig()
-//   2. .env file (secrets) — populates environment variables
-//   3. config.yaml (non-secret settings)
-//   4. Environment variables (override yaml)
-//   5. CLI flags (highest priority, bound via BindFlags)
+//  1. Defaults from domain.DefaultConfig()
+//  2. .env file (secrets) — populates environment variables
+//  3. config.yaml (non-secret settings)
+//  4. Environment variables (override yaml)
+//  5. CLI flags (highest priority, bound via BindFlags)
 func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	cfg := domain.DefaultConfig()
 
@@ -49,6 +49,9 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("cost_cap_assemble", cfg.CostCapAssemble)
 	v.SetDefault("cost_cap_per_run", cfg.CostCapPerRun)
 	v.SetDefault("anti_progress_threshold", cfg.AntiProgressThreshold)
+	v.SetDefault("golden_staleness_days", cfg.GoldenStalenessDays)
+	v.SetDefault("shadow_eval_window", cfg.ShadowEvalWindow)
+	v.SetDefault("auto_approval_threshold", cfg.AutoApprovalThreshold)
 
 	// Read config.yaml if it exists.
 	if cfgPath != "" {
@@ -68,6 +71,20 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 
 	if err := v.Unmarshal(&cfg); err != nil {
 		return cfg, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	if cfg.GoldenStalenessDays < 1 {
+		return cfg, fmt.Errorf("golden_staleness_days must be >= 1, got %d: %w",
+			cfg.GoldenStalenessDays, domain.ErrValidation)
+	}
+
+	if cfg.ShadowEvalWindow < 1 {
+		return cfg, fmt.Errorf("shadow_eval_window must be >= 1, got %d: %w",
+			cfg.ShadowEvalWindow, domain.ErrValidation)
+	}
+	if cfg.AutoApprovalThreshold <= 0 || cfg.AutoApprovalThreshold >= 1 {
+		return cfg, fmt.Errorf("auto_approval_threshold must be in (0,1), got %v: %w",
+			cfg.AutoApprovalThreshold, domain.ErrValidation)
 	}
 
 	return cfg, nil

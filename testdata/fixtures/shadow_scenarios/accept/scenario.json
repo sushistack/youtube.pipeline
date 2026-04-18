@@ -1,0 +1,30 @@
+{
+  "run_id": "shadow-accept",
+  "scp_id": "SCP-ACCEPT",
+  "started_at": "2026-04-16T10:00:00Z",
+  "finished_at": "2026-04-16T10:10:00Z",
+  "narration": {
+    "scp_id": "SCP-ACCEPT",
+    "title": "Shadow accept narration",
+    "scenes": [
+      {"scene_num": 1, "act_id": "act_1", "narration": "경보음이 울립니다.", "fact_tags": [], "mood": "tense",  "entity_visible": true,  "location": "통제실",  "characters_present": ["경비원"], "color_palette": "red",    "atmosphere": "alert"},
+      {"scene_num": 2, "act_id": "act_1", "narration": "문이 잠깁니다.",   "fact_tags": [], "mood": "shock",  "entity_visible": true,  "location": "격리문",  "characters_present": ["경비원"], "color_palette": "amber",  "atmosphere": "locking down"},
+      {"scene_num": 3, "act_id": "act_2", "narration": "창 밖의 그림자.", "fact_tags": [], "mood": "unease", "entity_visible": true,  "location": "복도",   "characters_present": ["연구원"], "color_palette": "black",  "atmosphere": "shifting"},
+      {"scene_num": 4, "act_id": "act_2", "narration": "소리가 멀어집니다.","fact_tags": [], "mood": "neutral","entity_visible": false, "location": "복도",   "characters_present": ["연구원"], "color_palette": "gray",   "atmosphere": "receding"},
+      {"scene_num": 5, "act_id": "act_3", "narration": "기록이 재개됩니다.","fact_tags": [], "mood": "neutral","entity_visible": false, "location": "본부",   "characters_present": ["연구원"], "color_palette": "blue",   "atmosphere": "resuming"},
+      {"scene_num": 6, "act_id": "act_3", "narration": "잠시의 정적.",     "fact_tags": [], "mood": "neutral","entity_visible": false, "location": "본부",   "characters_present": ["연구원"], "color_palette": "blue",   "atmosphere": "steady"},
+      {"scene_num": 7, "act_id": "act_4", "narration": "경보가 해제됩니다.","fact_tags": [], "mood": "calm",   "entity_visible": false, "location": "통제실", "characters_present": ["경비원"], "color_palette": "white",  "atmosphere": "cleared"},
+      {"scene_num": 8, "act_id": "act_4", "narration": "상황 종료.",       "fact_tags": [], "mood": "neutral","entity_visible": false, "location": "본부",   "characters_present": ["연구원"], "color_palette": "white",  "atmosphere": "closing"}
+    ],
+    "metadata": {
+      "language": "ko",
+      "scene_count": 8,
+      "writer_model": "deepseek-chat",
+      "writer_provider": "deepseek",
+      "prompt_template": "v1-scenario-writer",
+      "format_guide_template": "v1-format-guide",
+      "forbidden_terms_version": "v1"
+    },
+    "source_version": "v1-llm-writer"
+  }
+}

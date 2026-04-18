@@ -45,7 +45,7 @@ func TestIntegration_BuildStatus_PausedNoChanges(t *testing.T) {
 
 	// With totalScenes=3 and scene_index=2 (from session), summary text
 	// "scene 3 of 3" (1-indexed). Session captured snapshot before scene 2
-	// was decided — current state still has it pending, so no changes.
+	// was decided — current state still has it waiting_for_review, so no changes.
 	want := "Run scp-049-run-1: reviewing scene 3 of 3, 2 approved, 0 rejected"
 	testutil.AssertEqual(t, got.Summary, want)
 
@@ -55,7 +55,7 @@ func TestIntegration_BuildStatus_PausedNoChanges(t *testing.T) {
 }
 
 // TestIntegration_BuildStatus_PausedWithChanges exercises FR50: the snapshot
-// shows scene 2 as pending, but live decisions approved it at T2 > T1.
+// shows scene 2 as waiting_for_review, but live decisions approved it at T2 > T1.
 func TestIntegration_BuildStatus_PausedWithChanges(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.LoadRunStateFixture(t, "paused_with_changes")
@@ -81,7 +81,7 @@ func TestIntegration_BuildStatus_PausedWithChanges(t *testing.T) {
 	ch := got.ChangesSince[0]
 	testutil.AssertEqual(t, ch.Kind, pipeline.ChangeKindSceneStatusFlipped)
 	testutil.AssertEqual(t, ch.SceneID, "2")
-	testutil.AssertEqual(t, ch.Before, "pending")
+	testutil.AssertEqual(t, ch.Before, "waiting_for_review")
 	testutil.AssertEqual(t, ch.After, "approved")
 	testutil.AssertEqual(t, ch.Timestamp, "2026-01-02T00:45:00Z")
 

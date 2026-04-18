@@ -139,19 +139,21 @@ type PhaseAAdvanceResult struct {
 
 // Episode represents a scene/segment. Maps to the segments database table.
 type Episode struct {
-	ID            int64    `json:"id"`
-	RunID         string   `json:"run_id"`
-	SceneIndex    int      `json:"scene_index"`
-	Narration     *string  `json:"narration,omitempty"`
-	ShotCount     int      `json:"shot_count"`
-	Shots         []Shot   `json:"shots"`
-	TTSPath       *string  `json:"tts_path,omitempty"`
-	TTSDurationMs *int     `json:"tts_duration_ms,omitempty"`
-	ClipPath      *string  `json:"clip_path,omitempty"`
-	CriticScore   *float64 `json:"critic_score,omitempty"`
-	CriticSub     *string  `json:"critic_sub,omitempty"`
-	Status        string   `json:"status"`
-	CreatedAt     string   `json:"created_at"`
+	ID             int64        `json:"id"`
+	RunID          string       `json:"run_id"`
+	SceneIndex     int          `json:"scene_index"`
+	Narration      *string      `json:"narration,omitempty"`
+	ShotCount      int          `json:"shot_count"`
+	Shots          []Shot       `json:"shots"`
+	TTSPath        *string      `json:"tts_path,omitempty"`
+	TTSDurationMs  *int         `json:"tts_duration_ms,omitempty"`
+	ClipPath       *string      `json:"clip_path,omitempty"`
+	CriticScore    *float64     `json:"critic_score,omitempty"`
+	CriticSub      *string      `json:"critic_sub,omitempty"`
+	Status         string       `json:"status"`
+	ReviewStatus   ReviewStatus `json:"review_status"`
+	SafeguardFlags []string     `json:"safeguard_flags,omitempty"`
+	CreatedAt      string       `json:"created_at"`
 }
 
 // Shot represents a single visual shot within an Episode.

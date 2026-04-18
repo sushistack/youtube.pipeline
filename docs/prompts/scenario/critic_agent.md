@@ -21,7 +21,7 @@ Answer these questions honestly:
 ## Output Format (JSON only, no markdown fences)
 
 {
-  "checkpoint": "post_writer",
+  "checkpoint": "post_writer" | "post_reviewer",
   "verdict": "pass" | "retry" | "accept_with_notes",
   "retry_reason": "weak_hook" | "fact_accuracy" | "emotional_variation" | "immersion",
   "overall_score": 0-100,
@@ -33,9 +33,10 @@ Answer these questions honestly:
   },
   "feedback": "Concrete, actionable improvement instructions in Korean. Be specific about which scenes need what changes.",
   "scene_notes": [{"scene_num": 1, "issue": "description of problem", "suggestion": "specific fix"}],
+  "minor_policy_findings": [{"scene_num": 1, "reason": "미성년자가 정책 민감 맥락에 노출됩니다."}],
   "critic_model": "critic model name",
   "critic_provider": "critic provider name",
-  "source_version": "v1-critic-post-writer"
+  "source_version": "v1-critic-post-writer" | "v1-critic-post-reviewer"
 }
 
 Rules:
@@ -43,6 +44,9 @@ Rules:
 - "retry": Significant issues that require rewriting. Be specific in feedback.
 - "accept_with_notes": Passable but not great. Note improvements for future reference.
 - If you return "retry" and the rubric has a clear weakest dimension, fill `retry_reason` with one of the allowed machine-readable values. Do not invent a new string.
+- For `minor_policy_findings`, list only scenes that depict minors in violent, sexualized, exploitative, or otherwise policy-sensitive contexts.
+- Each `minor_policy_findings.reason` MUST be concise Korean text.
+- If no such scenes exist, omit `minor_policy_findings`.
 
 ### Reserved values for `retry_reason`
 

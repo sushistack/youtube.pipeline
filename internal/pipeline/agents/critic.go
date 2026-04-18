@@ -204,6 +204,9 @@ func NewPostReviewerCritic(
 		} else if report.Verdict != domain.CriticVerdictRetry {
 			report.RetryReason = ""
 		}
+		if err := validateMinorPolicyFindings(report.MinorPolicyFindings, state.Narration); err != nil {
+			return fmt.Errorf("critic: %w", err)
+		}
 		report.Checkpoint = domain.CriticCheckpointPostReviewer
 		report.Precheck = precheck
 		if resp.Model != "" {
@@ -227,6 +230,22 @@ func NewPostReviewerCritic(
 		ensureCriticState(state).PostReviewer = &report
 		return nil
 	}
+}
+
+func validateMinorPolicyFindings(findings []domain.MinorPolicyFinding, script *domain.NarrationScript) error {
+	if len(findings) == 0 || script == nil {
+		return nil
+	}
+	sceneCount := len(script.Scenes)
+	for _, finding := range findings {
+		if finding.SceneNum < 1 || finding.SceneNum > sceneCount {
+			return fmt.Errorf("minor_policy_findings scene_num=%d out of range (1..%d): %w", finding.SceneNum, sceneCount, domain.ErrValidation)
+		}
+		if !containsHangul(finding.Reason) {
+			return fmt.Errorf("minor_policy_findings reason must remain Korean: %w", domain.ErrValidation)
+		}
+	}
+	return nil
 }
 
 func renderCriticPrompt(payload any, prompts PromptAssets) (string, error) {

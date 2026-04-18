@@ -1,0 +1,8 @@
+# Scenes that depict minors in violent, sexualized, exploitative, or otherwise
+# policy-sensitive contexts must be escalated for operator review.
+미성년자.{0,12}(폭행|구타|학대|살해|피범벅|시신)
+아동.{0,12}(폭행|학대|납치|살해|착취)
+소년.{0,12}(폭행|학대|착취)
+소녀.{0,12}(폭행|학대|착취)
+미성년자.{0,12}(성적|노출|성착취|매춘)
+아동.{0,12}(성적|노출|성착취|매춘)

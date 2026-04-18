@@ -1,9 +1,12 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
 
 func TestLoad_DefaultsWhenNoFiles(t *testing.T) {
@@ -128,6 +131,165 @@ func TestLoad_AntiProgressThresholdOverride(t *testing.T) {
 	}
 	if cfg.AntiProgressThreshold != 0.85 {
 		t.Errorf("AntiProgressThreshold = %v, want 0.85 (from yaml)", cfg.AntiProgressThreshold)
+	}
+}
+
+func TestLoad_GoldenStalenessDaysDefault(t *testing.T) {
+	cfg, err := Load("", "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.GoldenStalenessDays != 30 {
+		t.Errorf("GoldenStalenessDays = %d, want 30 default", cfg.GoldenStalenessDays)
+	}
+}
+
+func TestLoad_GoldenStalenessDaysOverride(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := `golden_staleness_days: 7
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	cfg, err := Load(cfgPath, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.GoldenStalenessDays != 7 {
+		t.Errorf("GoldenStalenessDays = %d, want 7", cfg.GoldenStalenessDays)
+	}
+}
+
+func TestLoad_GoldenStalenessDaysRejectsZero(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := `golden_staleness_days: 0
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	_, err := Load(cfgPath, "")
+	if err == nil {
+		t.Fatal("expected validation error for golden_staleness_days=0")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestLoad_GoldenStalenessDaysRejectsNegative(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := `golden_staleness_days: -5
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	_, err := Load(cfgPath, "")
+	if err == nil {
+		t.Fatal("expected validation error for negative golden_staleness_days")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestLoadConfig_ShadowEvalWindowDefault(t *testing.T) {
+	cfg, err := Load("", "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ShadowEvalWindow != 10 {
+		t.Errorf("ShadowEvalWindow = %d, want 10 default", cfg.ShadowEvalWindow)
+	}
+}
+
+func TestLoadConfig_ShadowEvalWindowOverride(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := `shadow_eval_window: 25
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	cfg, err := Load(cfgPath, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ShadowEvalWindow != 25 {
+		t.Errorf("ShadowEvalWindow = %d, want 25", cfg.ShadowEvalWindow)
+	}
+}
+
+func TestLoadConfig_ShadowEvalWindowRejectsZero(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := `shadow_eval_window: 0
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	_, err := Load(cfgPath, "")
+	if err == nil {
+		t.Fatal("expected validation error for shadow_eval_window=0")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestLoadConfig_ShadowEvalWindowRejectsNegative(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := `shadow_eval_window: -3
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	_, err := Load(cfgPath, "")
+	if err == nil {
+		t.Fatal("expected validation error for negative shadow_eval_window")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestConfigLoad_AutoApprovalThresholdFromYAML(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := `auto_approval_threshold: 0.91
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	cfg, err := Load(cfgPath, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AutoApprovalThreshold != 0.91 {
+		t.Errorf("AutoApprovalThreshold = %v, want 0.91", cfg.AutoApprovalThreshold)
+	}
+}
+
+func TestConfigLoad_RejectsOutOfRangeAutoApprovalThreshold(t *testing.T) {
+	for _, tc := range []string{"0", "1.0", "-0.2"} {
+		t.Run(tc, func(t *testing.T) {
+			tmp := t.TempDir()
+			cfgPath := filepath.Join(tmp, "config.yaml")
+			yaml := "auto_approval_threshold: " + tc + "\n"
+			if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+				t.Fatalf("write yaml: %v", err)
+			}
+			_, err := Load(cfgPath, "")
+			if err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if !errors.Is(err, domain.ErrValidation) {
+				t.Fatalf("expected ErrValidation, got %v", err)
+			}
+		})
 	}
 }
 

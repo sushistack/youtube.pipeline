@@ -34,6 +34,10 @@ var allowedImports = map[string][]string{
 	"internal/hitl":            {"internal/domain"},
 	"internal/testutil":        {"internal/domain", "internal/db"},
 	"internal/web":             {},
+	// Golden eval set governance (Story 4.1). Production code may only import
+	// domain and clock; db/service/api are explicitly excluded.
+	"internal/critic":      {"internal/domain", "internal/clock"},
+	"internal/critic/eval": {"internal/domain", "internal/clock"},
 }
 
 // nestedTrackedPackages lists internal/ subpackages that have their
@@ -41,6 +45,7 @@ var allowedImports = map[string][]string{
 // longest-match semantics BEFORE the generic two-segment collapse.
 var nestedTrackedPackages = []string{
 	"internal/pipeline/agents",
+	"internal/critic/eval",
 }
 
 func main() {

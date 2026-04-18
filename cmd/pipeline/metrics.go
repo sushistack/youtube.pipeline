@@ -21,7 +21,7 @@ var (
 	metricsCalibrationThreshold float64
 	metricsRegressionFile       string
 	metricsIdempotencyFile      string
-	metricsClock   clock.Clock  = clock.RealClock{}
+	metricsClock                clock.Clock = clock.RealClock{}
 )
 
 type metricsStoreAdapter struct {
@@ -66,7 +66,13 @@ func runMetrics(cmd *cobra.Command, _ []string) error {
 
 	runStore := db.NewRunStore(database)
 	decisionStore := db.NewDecisionStore(database)
-	svc := service.NewMetricsService(newMetricsStoreAdapter(runStore, decisionStore), metricsClock)
+	metricsStore := newMetricsStoreAdapter(runStore, decisionStore)
+	svc := service.NewMetricsService(metricsStore, metricsClock)
+	calibrationSvc := service.NewCalibrationService(
+		metricsStore,
+		db.NewCalibrationStore(database),
+		metricsClock,
+	)
 	renderer := newRenderer(cmd.OutOrStdout())
 
 	regression, err := readOptionalFloatFile(metricsRegressionFile)
@@ -82,6 +88,10 @@ func runMetrics(cmd *cobra.Command, _ []string) error {
 
 	report, err := svc.Report(cmd.Context(), metricsWindow, metricsCalibrationThreshold, regression, idempotency)
 	if err != nil {
+		renderer.RenderError(err)
+		return &silentErr{err}
+	}
+	if _, err := calibrationSvc.RefreshCriticCalibration(cmd.Context(), metricsWindow, metricsCalibrationThreshold); err != nil {
 		renderer.RenderError(err)
 		return &silentErr{err}
 	}

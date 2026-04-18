@@ -1,5 +1,5 @@
 # generated: 2026-04-16
-# last_updated: 2026-04-18 # Story 5-2 created, status ready-for-dev
+# last_updated: 2026-04-18 # Story 4-4 marked done after code review
 # project: youtube.pipeline
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-16
-last_updated: 2026-04-18 # Story 5-2 created, status ready-for-dev
+last_updated: 2026-04-18 # Story 4-4 marked done after code review
 project: youtube.pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -65,7 +65,7 @@ development_status:
   epic-2-retrospective: optional
 
   # ── Epic 3: Scenario Generation & Basic Quality Gate (Phase A) ───────────
-  epic-3: in-progress
+  epic-3: done
   3-1-agent-function-chain-pipeline-runner: done
   3-2-researcher-structurer-agents: done
   3-3-writer-agent-critic-post-writer-checkpoint: done
@@ -75,17 +75,17 @@ development_status:
 
   # ── Epic 4: Advanced Quality Infrastructure ──────────────────────────────
   epic-4: in-progress
-  4-1-golden-eval-set-governance-validation: ready-for-dev
-  4-2-shadow-eval-runner: ready-for-dev
-  4-3-cohens-kappa-calibration-tracking: ready-for-dev
-  4-4-minor-content-safeguard-auto-approval-thresholds: ready-for-dev
+  4-1-golden-eval-set-governance-validation: done
+  4-2-shadow-eval-runner: done
+  4-3-cohens-kappa-calibration-tracking: done
+  4-4-minor-content-safeguard-auto-approval-thresholds: done
   epic-4-retrospective: optional
 
   # ── Epic 5: Media Generation (Phase B — Image & TTS) ─────────────────────
   epic-5: in-progress
   5-1-common-rate-limiting-exponential-backoff: ready-for-dev
   5-2-parallel-media-generation-runner: ready-for-dev
-  5-3-character-reference-selection-search-result-cache: backlog
+  5-3-character-reference-selection-search-result-cache: ready-for-dev
   5-4-frozen-descriptor-propagation-per-shot-image-generation: backlog
   5-5-korean-tts-regex-transliteration: backlog
   epic-5-retrospective: optional

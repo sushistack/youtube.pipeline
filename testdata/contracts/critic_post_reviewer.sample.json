@@ -16,6 +16,12 @@
       "suggestion": "질문의 여운을 한 문장 더 압축해 마무리하세요."
     }
   ],
+  "minor_policy_findings": [
+    {
+      "scene_num": 3,
+      "reason": "미성년자가 폭력적 위협에 직접 노출됩니다."
+    }
+  ],
   "precheck": {
     "schema_valid": true,
     "forbidden_term_hits": [],

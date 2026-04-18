@@ -110,3 +110,32 @@ func TestCriticCheckpointPostReviewer_Constant(t *testing.T) {
 		t.Fatalf("got %q, want post_reviewer", CriticCheckpointPostReviewer)
 	}
 }
+
+func TestCriticCheckpointReport_JSONRoundTrip_MinorPolicyFindings(t *testing.T) {
+	orig := CriticCheckpointReport{
+		Checkpoint:   CriticCheckpointPostReviewer,
+		Verdict:      CriticVerdictPass,
+		OverallScore: 90,
+		Rubric:       CriticRubricScores{Hook: 90, FactAccuracy: 90, EmotionalVariation: 90, Immersion: 90},
+		Feedback:     "좋습니다.",
+		SceneNotes:   []CriticSceneNote{},
+		MinorPolicyFindings: []MinorPolicyFinding{
+			{SceneNum: 2, Reason: "미성년자가 폭력에 노출됩니다."},
+		},
+		Precheck:       CriticPrecheck{SchemaValid: true},
+		CriticModel:    "critic",
+		CriticProvider: "provider",
+		SourceVersion:  CriticSourceVersionPostReviewerV1,
+	}
+	raw, err := json.Marshal(orig)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var round CriticCheckpointReport
+	if err := json.Unmarshal(raw, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(round, orig) {
+		t.Fatalf("round-trip mismatch:\n got: %#v\nwant: %#v", round, orig)
+	}
+}

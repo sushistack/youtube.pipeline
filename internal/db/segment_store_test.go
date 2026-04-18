@@ -174,6 +174,34 @@ func TestSegmentStore_ListByRunID_DecodesShots(t *testing.T) {
 	}
 }
 
+func TestSegmentStore_ListByRunID_DecodesReviewGateFields(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+	ctx := context.Background()
+
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO runs (id, scp_id) VALUES (?, ?)`, "scp-049-run-1", "049"); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO segments (run_id, scene_index, review_status, safeguard_flags)
+		 VALUES (?, ?, ?, ?)`,
+		"scp-049-run-1", 0, "waiting_for_review", `["Safeguard Triggered: Minors"]`); err != nil {
+		t.Fatalf("seed segment: %v", err)
+	}
+
+	got, err := store.ListByRunID(ctx, "scp-049-run-1")
+	if err != nil {
+		t.Fatalf("ListByRunID: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(got))
+	}
+	testutil.AssertEqual(t, got[0].ReviewStatus, "waiting_for_review")
+	testutil.AssertEqual(t, got[0].SafeguardFlags[0], "Safeguard Triggered: Minors")
+}
+
 func seedRunWithSegments(t *testing.T, database *sql.DB, runID string) {
 	t.Helper()
 	ctx := context.Background()

@@ -81,8 +81,8 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 5 {
-		t.Errorf("user_version = %d, want %d", version, 5)
+	if version != 7 {
+		t.Errorf("user_version = %d, want %d", version, 7)
 	}
 
 	db.Close()
@@ -100,8 +100,8 @@ func TestMigrate_UserVersion(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 5 {
-		t.Errorf("user_version = %d, want %d", version, 5)
+	if version != 7 {
+		t.Errorf("user_version = %d, want %d", version, 7)
 	}
 }
 
@@ -113,7 +113,7 @@ func TestSchema_TablesExist(t *testing.T) {
 	}
 	defer db.Close()
 
-	tables := []string{"runs", "decisions", "segments", "hitl_sessions"}
+	tables := []string{"runs", "decisions", "segments", "hitl_sessions", "critic_calibration_snapshots"}
 	for _, table := range tables {
 		var name string
 		err := db.QueryRow(
@@ -122,6 +122,25 @@ func TestSchema_TablesExist(t *testing.T) {
 		if err != nil {
 			t.Errorf("table %q not found: %v", table, err)
 		}
+	}
+}
+
+func TestSchema_CriticCalibrationSnapshotsIndexExists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	var name string
+	if err := db.QueryRow(
+		"SELECT name FROM sqlite_master WHERE type='index' AND name='idx_critic_calibration_snapshots_window_computed_at'",
+	).Scan(&name); err != nil {
+		t.Fatalf("critic calibration snapshot index not found: %v", err)
+	}
+	if name != "idx_critic_calibration_snapshots_window_computed_at" {
+		t.Fatalf("index name = %q", name)
 	}
 }
 
@@ -223,7 +242,7 @@ func TestSchema_DecisionsColumns(t *testing.T) {
 		"run_id":           "TEXT",
 		"scene_id":         "TEXT",
 		"decision_type":    "TEXT",
-		"context_snapshot":  "TEXT",
+		"context_snapshot": "TEXT",
 		"outcome_link":     "TEXT",
 		"tags":             "TEXT",
 		"feedback_source":  "TEXT",
@@ -258,10 +277,47 @@ func TestSchema_SegmentsColumns(t *testing.T) {
 		"critic_score":    "REAL",
 		"critic_sub":      "TEXT",
 		"status":          "TEXT",
+		"review_status":   "TEXT",
+		"safeguard_flags": "TEXT",
 		"created_at":      "TEXT",
 	}
 
 	assertTableColumns(t, db, "segments", expected)
+}
+
+func TestMigration006_AddsSceneReviewGateColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	for _, tc := range []struct {
+		name string
+		typ  string
+	}{
+		{name: "review_status", typ: "TEXT"},
+		{name: "safeguard_flags", typ: "TEXT"},
+	} {
+		var got string
+		if err := db.QueryRow("SELECT type FROM pragma_table_info('segments') WHERE name = ?", tc.name).Scan(&got); err != nil {
+			t.Fatalf("column %s not found: %v", tc.name, err)
+		}
+		if got != tc.typ {
+			t.Fatalf("column %s type = %q, want %q", tc.name, got, tc.typ)
+		}
+	}
+
+	var name string
+	if err := db.QueryRow(
+		"SELECT name FROM sqlite_master WHERE type='index' AND name='idx_segments_run_review_status'",
+	).Scan(&name); err != nil {
+		t.Fatalf("scene review gate index not found: %v", err)
+	}
+	if name != "idx_segments_run_review_status" {
+		t.Fatalf("index name = %q", name)
+	}
 }
 
 func TestSchema_SegmentsUniqueConstraint(t *testing.T) {

@@ -1,7 +1,7 @@
 {
   "meta": {
     "grace": true,
-    "total_frs": 48,
+    "total_frs": 51,
     "last_updated": "2026-04-18"
   },
   "coverage": [
@@ -97,12 +97,72 @@
     },
     {
       "fr_id": "FR29",
-      "test_ids": ["TestCohensKappa_KnownTextbookExample", "TestCohensKappa_Degenerate_AllOneClass", "TestMetricsService_Report_FullWindow", "TestMetricsService_Report_ProvisionalWhenShort", "TestDecisionStore_KappaPairsForRuns_FiltersSupersededAndNonScene", "TestMetricsCmd_HumanOutput_Golden", "TestMetricsCmd_JSONOutput_Golden"],
-      "annotation": "Cohen's kappa calibration, rolling 25-run window, provisional label when n<25 (PRD §Technical Success; NFR-O4 indexes via Migration 005)"
+      "test_ids": ["TestCohensKappa_KnownTextbookExample", "TestCohensKappa_Degenerate_AllOneClass", "TestMetricsService_Report_FullWindow", "TestMetricsService_Report_ProvisionalWhenShort", "TestCalibrationService_Refresh_PersistsSnapshot", "TestCalibrationService_Refresh_ProvisionalWhenShort", "TestCalibrationService_Refresh_DegeneratePersistsReason", "TestCalibrationService_Refresh_NoCompletedRunsStillPersists", "TestCalibrationStore_UpsertCriticCalibrationSnapshot_IdempotentBySourceKey", "TestCalibrationStore_RecentCriticCalibrationTrend_OldestFirst", "TestDecisionStore_KappaPairsForRuns_FiltersSupersededAndNonScene", "TestMetricsCmd_HumanOutput_Golden", "TestMetricsCmd_JSONOutput_Golden", "TestMetricsCmd_PersistsCalibrationSnapshot"],
+      "annotation": "Cohen's kappa calibration uses the canonical rolling window of recent completed runs, marks provisional when n < window, and now persists snapshot plus trend history in SQLite for later calibration views."
+    },
+    {
+      "fr_id": "FR26",
+      "test_ids": ["TestAddPair_Happy_AssignsMonotonicIndex", "TestAddPair_RejectsMissingPositive", "TestAddPair_RejectsMissingNegative", "TestValidateBalancedSet_MissingNegativeRejected", "TestListPairs_SortedByIndexAscending", "TestGoldenAddCmd_Human", "TestGoldenAddCmd_JSON", "TestGoldenAddCmd_RejectsSchemaViolation", "TestGoldenListCmd_Human", "TestGoldenListCmd_JSON", "TestEvaluateFreshness_TimeThresholdWarning", "TestDoctorCmd_WarnsOnGoldenStaleness", "TestDoctorCmd_WarningsDoNotFailExitCode"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR27",
+      "test_ids": ["TestRunGolden_RecallHappy", "TestRunGolden_CountsFalseRejects", "TestRunGolden_UpdatesManifestOnSuccess", "TestGolden_LocalReport_PersistsToManifest", "TestGolden"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR28",
+      "test_ids": [
+        "TestRecentPassedCases_UsesConfiguredWindow",
+        "TestRecentPassedCases_CompletedOnly",
+        "TestRecentPassedCases_RejectsMissingScenarioPath",
+        "TestRecentPassedCases_QueryUsesIndex",
+        "TestLoadShadowInput_AbsolutePath",
+        "TestLoadShadowInput_ProjectRelativePath",
+        "TestLoadShadowInput_InvalidJSON",
+        "TestLoadShadowInput_RejectsNullNarration",
+        "TestLoadShadowInput_RejectsSchemaViolatingNarration",
+        "TestLoadShadowInput_ReusesGoldenFixtureShape",
+        "TestRunShadow_Happy",
+        "TestRunShadow_CountsFalseRejections",
+        "TestRunShadow_AcceptWithNotesIsNotFalseRejection",
+        "TestRunShadow_OverallDiffUsesNormalizedScore",
+        "TestRunShadow_EmptyResultSetMarksEmpty",
+        "TestRunShadow_NonEmptyResultSetLeavesEmptyFalse",
+        "TestRunShadow_UnknownVerdictFlaggedAsFalseRejection",
+        "TestRunShadow_HonorsContextCancellation",
+        "TestRunShadow_RejectsInvalidWindow",
+        "TestShadow_ReportLogsSummary",
+        "TestShadow_ReportLogsPerCaseDiff",
+        "TestIntegration_Shadow_ReplaysRecentPassedCases",
+        "TestIntegration_Shadow_DetectsFalseRejectionRegression",
+        "TestIntegration_Shadow_LogsScoreDiffs"
+      ],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR30",
+      "test_ids": ["TestDecideSceneGate_MinorsOverrideHighScore", "TestPrepareBatchReview_RejectsOutOfRangeMinorFinding"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR31a",
+      "test_ids": ["TestDefaultConfig_AutoApprovalThreshold", "TestConfigLoad_AutoApprovalThresholdFromYAML", "TestPrepareBatchReview_AutoApprovedSceneRecorded", "TestPrepareBatchReview_AutoApprovalIdempotentOnRerun"],
+      "annotation": null
+    },
+    {
+      "fr_id": "FR36",
+      "test_ids": ["TestOverrideMinorSafeguard_RejectsEmptyNote", "TestOverrideMinorSafeguard_Happy"],
+      "annotation": null
     },
     {
       "fr_id": "FR51",
-      "test_ids": ["TestContract_PipelineState", "TestLoadFixture_ContractFile", "TestLoadRunStateFixture_QueryRun", "TestBlockExternalHTTP_ExternalBlocked", "TestCILockout_PanicsWithAPIKeys"],
+      "test_ids": ["TestContract_PipelineState", "TestLoadFixture_ContractFile", "TestLoadRunStateFixture_QueryRun", "TestBlockExternalHTTP_ExternalBlocked", "TestCILockout_PanicsWithAPIKeys", "TestValidateFixture_PositiveSampleValidates", "TestValidateFixture_NegativeSampleValidates", "TestCurrentCriticPromptHash_StableForSameBytes", "TestIntegration_Shadow_ReplaysRecentPassedCases", "TestIntegration_Shadow_DetectsFalseRejectionRegression", "TestIntegration_Shadow_LogsScoreDiffs"],
+      "annotation": null
+    },
+    {
+      "fr_id": "NFR-T5",
+      "test_ids": ["TestGoldenEvalManifest_ContainsMinorsKnownFail", "TestGoldenEvalFixture_MinorsCategoryValidates"],
       "annotation": null
     },
     {

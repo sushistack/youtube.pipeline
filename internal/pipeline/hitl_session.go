@@ -48,9 +48,9 @@ type DecisionCounts struct {
 // without a nil-check).
 func BuildSessionSnapshot(decisions []*domain.Decision, totalScenes int) domain.DecisionSnapshot {
 	sceneStatuses := make(map[string]string, totalScenes)
-	// Seed all known scene indices as "pending".
+	// Batch review work starts in the actionable queue state.
 	for i := 0; i < totalScenes; i++ {
-		sceneStatuses[strconv.Itoa(i)] = "pending"
+		sceneStatuses[strconv.Itoa(i)] = string(domain.ReviewStatusWaitingForReview)
 	}
 	// Overlay decisions in order; later decisions on the same scene win.
 	// Only accept scene_ids within the known 0..totalScenes-1 universe to
@@ -66,7 +66,7 @@ func BuildSessionSnapshot(decisions []*domain.Decision, totalScenes int) domain.
 			continue
 		}
 		switch d.DecisionType {
-		case "approve":
+		case "approve", domain.DecisionTypeOverride, domain.DecisionTypeSystemAutoApproved:
 			sceneStatuses[*d.SceneID] = "approved"
 		case "reject":
 			sceneStatuses[*d.SceneID] = "rejected"
@@ -101,7 +101,7 @@ func BuildSessionSnapshot(decisions []*domain.Decision, totalScenes int) domain.
 func NextSceneIndex(sceneStatuses map[string]string, totalScenes int) int {
 	for i := 0; i < totalScenes; i++ {
 		status, ok := sceneStatuses[strconv.Itoa(i)]
-		if !ok || status == "pending" {
+		if !ok || status == string(domain.ReviewStatusPending) || status == string(domain.ReviewStatusWaitingForReview) {
 			return i
 		}
 	}

@@ -112,7 +112,7 @@ func TestHITLService_BuildStatus_PausedWithNoChanges(t *testing.T) {
 		session: &domain.HITLSession{
 			RunID: "r1", Stage: domain.StageBatchReview, SceneIndex: 2,
 			LastInteractionTimestamp: "2026-01-01T00:25:00Z",
-			SnapshotJSON:             `{"total_scenes":3,"approved_count":2,"rejected_count":0,"pending_count":1,"scene_statuses":{"0":"approved","1":"approved","2":"pending"}}`,
+			SnapshotJSON:             `{"total_scenes":3,"approved_count":2,"rejected_count":0,"pending_count":1,"scene_statuses":{"0":"approved","1":"approved","2":"waiting_for_review"}}`,
 		},
 	}
 	logger, _ := testutil.CaptureLog(t)
@@ -151,7 +151,7 @@ func TestHITLService_BuildStatus_PausedWithChanges(t *testing.T) {
 		session: &domain.HITLSession{
 			RunID: "r1", Stage: domain.StageBatchReview, SceneIndex: 2,
 			LastInteractionTimestamp: "2026-01-02T00:25:00Z",
-			SnapshotJSON:             `{"total_scenes":3,"approved_count":2,"rejected_count":0,"pending_count":1,"scene_statuses":{"0":"approved","1":"approved","2":"pending"}}`,
+			SnapshotJSON:             `{"total_scenes":3,"approved_count":2,"rejected_count":0,"pending_count":1,"scene_statuses":{"0":"approved","1":"approved","2":"waiting_for_review"}}`,
 		},
 	}
 	logger, _ := testutil.CaptureLog(t)
@@ -167,7 +167,7 @@ func TestHITLService_BuildStatus_PausedWithChanges(t *testing.T) {
 	ch := got.ChangesSince[0]
 	testutil.AssertEqual(t, ch.Kind, pipeline.ChangeKindSceneStatusFlipped)
 	testutil.AssertEqual(t, ch.SceneID, "2")
-	testutil.AssertEqual(t, ch.Before, "pending")
+	testutil.AssertEqual(t, ch.Before, "waiting_for_review")
 	testutil.AssertEqual(t, ch.After, "approved")
 	testutil.AssertEqual(t, ch.Timestamp, "2026-01-02T00:45:00Z")
 }

@@ -65,6 +65,31 @@ func TestRun_JSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestEpisode_JSONRoundTrip_ReviewStatusAndSafeguards(t *testing.T) {
+	score := 0.91
+	orig := Episode{
+		ID:             1,
+		RunID:          "r1",
+		SceneIndex:     0,
+		CriticScore:    &score,
+		Status:         "completed",
+		ReviewStatus:   ReviewStatusAutoApproved,
+		SafeguardFlags: []string{SafeguardFlagMinors},
+		CreatedAt:      "2026-04-18T00:00:00Z",
+	}
+	raw, err := json.Marshal(orig)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var round Episode
+	if err := json.Unmarshal(raw, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(round, orig) {
+		t.Fatalf("round-trip mismatch:\n got: %#v\nwant: %#v", round, orig)
+	}
+}
+
 func TestStage_IsValid(t *testing.T) {
 	for _, s := range AllStages() {
 		if !s.IsValid() {

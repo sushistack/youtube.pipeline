@@ -120,6 +120,54 @@ func TestInitCmd_WritesAntiProgressThreshold(t *testing.T) {
 	}
 }
 
+func TestInitCmd_WritesShadowEvalWindow(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.yaml")
+
+	prevCfgPath := cfgPath
+	cfgPath = configPath
+	t.Cleanup(func() { cfgPath = prevCfgPath })
+
+	cmd := newInitCmd()
+	cmd.SetOut(&bytes.Buffer{})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), "shadow_eval_window: 10") {
+		t.Errorf("config.yaml must include 'shadow_eval_window: 10', got:\n%s", data)
+	}
+}
+
+func TestInitCmd_WritesAutoApprovalThreshold(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.yaml")
+
+	prevCfgPath := cfgPath
+	cfgPath = configPath
+	t.Cleanup(func() { cfgPath = prevCfgPath })
+
+	cmd := newInitCmd()
+	cmd.SetOut(&bytes.Buffer{})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), "auto_approval_threshold: 0.85") {
+		t.Errorf("config.yaml must include 'auto_approval_threshold: 0.85', got:\n%s", data)
+	}
+}
+
 func TestInitCmd_DatabaseCreated(t *testing.T) {
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, "config.yaml")

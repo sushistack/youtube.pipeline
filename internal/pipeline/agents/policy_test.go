@@ -59,6 +59,55 @@ func TestForbiddenTerms_VersionStable(t *testing.T) {
 	testutil.AssertEqual(t, first.Version, second.Version)
 }
 
+func TestMinorSensitivePatterns_LoadAndMatch(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	root := minorsPolicyRoot(t, "# comment\n미성년자.{0,12}폭행\n아동.{0,12}성착취\n")
+	patterns, err := LoadMinorSensitivePatterns(root)
+	if err != nil {
+		t.Fatalf("LoadMinorSensitivePatterns: %v", err)
+	}
+	if len(patterns.Raw) != 2 {
+		t.Fatalf("got %d patterns, want 2", len(patterns.Raw))
+	}
+	hits := patterns.MatchNarration(&domain.NarrationScript{
+		Scenes: []domain.NarrationScene{
+			{SceneNum: 1, Narration: "미성년자 폭행 장면이 이어집니다."},
+			{SceneNum: 2, Narration: "아동 성착취 묘사는 금지입니다."},
+		},
+	})
+	if len(hits) != 2 {
+		t.Fatalf("got %d hits, want 2", len(hits))
+	}
+	testutil.AssertEqual(t, hits[0].SceneNum, 1)
+	testutil.AssertEqual(t, hits[1].SceneNum, 2)
+}
+
+func TestMinorSensitivePatterns_InvalidRegexRejected(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	root := minorsPolicyRoot(t, "[\n")
+	_, err := LoadMinorSensitivePatterns(root)
+	if err == nil || !strings.Contains(err.Error(), domain.ErrValidation.Error()) {
+		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestMinorSensitivePatterns_VersionStable(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	root := minorsPolicyRoot(t, "미성년자.{0,12}폭행\n")
+	first, err := LoadMinorSensitivePatterns(root)
+	if err != nil {
+		t.Fatalf("LoadMinorSensitivePatterns #1: %v", err)
+	}
+	second, err := LoadMinorSensitivePatterns(root)
+	if err != nil {
+		t.Fatalf("LoadMinorSensitivePatterns #2: %v", err)
+	}
+	testutil.AssertEqual(t, first.Version, second.Version)
+}
+
 func TestMatchNarration_ScansAllTextFields(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
@@ -210,6 +259,19 @@ func policyRoot(t *testing.T, content string) string {
 		t.Fatalf("mkdir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(path, "forbidden_terms.ko.txt"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+	return root
+}
+
+func minorsPolicyRoot(t *testing.T, content string) string {
+	t.Helper()
+	root := t.TempDir()
+	path := filepath.Join(root, "docs", "policy")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "minor_sensitive_contexts.ko.txt"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write policy: %v", err)
 	}
 	return root

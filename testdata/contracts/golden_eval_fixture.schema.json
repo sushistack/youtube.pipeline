@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["fixture_id", "kind", "checkpoint", "input", "expected_verdict", "category"],
+  "additionalProperties": false,
+  "properties": {
+    "fixture_id": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["positive", "negative"] },
+    "checkpoint": { "enum": ["post_writer"] },
+    "input": {
+      "type": "object",
+      "description": "NarrationScript payload — validated separately against writer_output.schema.json"
+    },
+    "expected_verdict": { "enum": ["pass", "retry"] },
+    "category": { "type": "string", "minLength": 1 },
+    "notes": { "type": "string" }
+  }
+}

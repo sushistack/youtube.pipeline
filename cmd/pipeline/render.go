@@ -42,8 +42,31 @@ type ErrorInfo struct {
 
 // DoctorOutput is the structured output for the doctor command.
 type DoctorOutput struct {
-	Checks []CheckResult `json:"checks"`
-	Passed bool          `json:"passed"`
+	Checks   []CheckResult `json:"checks"`
+	Passed   bool          `json:"passed"`
+	Warnings []string      `json:"warnings,omitempty"`
+}
+
+// GoldenAddOutput is the structured output for `pipeline golden add`.
+type GoldenAddOutput struct {
+	Index        int    `json:"index"`
+	CreatedAt    string `json:"created_at"`
+	PositivePath string `json:"positive_path"`
+	NegativePath string `json:"negative_path"`
+	PairCount    int    `json:"pair_count"`
+}
+
+// GoldenListOutput is the structured output for `pipeline golden list`.
+type GoldenListOutput struct {
+	Pairs []GoldenPairRow `json:"pairs"`
+}
+
+// GoldenPairRow is one row in the `pipeline golden list` output.
+type GoldenPairRow struct {
+	Index        int    `json:"index"`
+	CreatedAt    string `json:"created_at"`
+	PositivePath string `json:"positive_path"`
+	NegativePath string `json:"negative_path"`
 }
 
 // CheckResult is one item in a doctor report.
@@ -164,6 +187,10 @@ func (r *HumanRenderer) RenderSuccess(data any) {
 		r.renderResume(v)
 	case *domain.MetricsReport:
 		r.renderMetrics(v)
+	case *GoldenAddOutput:
+		r.renderGoldenAdd(v)
+	case *GoldenListOutput:
+		r.renderGoldenList(v)
 	default:
 		fmt.Fprintf(r.w, "%v\n", data)
 	}
@@ -194,6 +221,33 @@ func (r *HumanRenderer) renderDoctor(d *DoctorOutput) {
 		fmt.Fprint(r.w, " \u2014 fix failing checks before running the pipeline")
 	}
 	fmt.Fprintln(r.w)
+	if len(d.Warnings) > 0 {
+		fmt.Fprintln(r.w)
+		for _, w := range d.Warnings {
+			fmt.Fprintf(r.w, "%s\u26a0 %s%s\n", colorYellow, w, colorReset)
+		}
+	}
+}
+
+func (r *HumanRenderer) renderGoldenAdd(o *GoldenAddOutput) {
+	fmt.Fprintf(r.w, "%sGolden pair added:%s\n", colorGreen, colorReset)
+	fmt.Fprintf(r.w, "  Index:    %d\n", o.Index)
+	fmt.Fprintf(r.w, "  Created:  %s\n", o.CreatedAt)
+	fmt.Fprintf(r.w, "  Positive: %s\n", o.PositivePath)
+	fmt.Fprintf(r.w, "  Negative: %s\n", o.NegativePath)
+	fmt.Fprintf(r.w, "  Total pairs: %d\n", o.PairCount)
+}
+
+func (r *HumanRenderer) renderGoldenList(o *GoldenListOutput) {
+	if len(o.Pairs) == 0 {
+		fmt.Fprintln(r.w, "No Golden pairs registered.")
+		return
+	}
+	for _, p := range o.Pairs {
+		fmt.Fprintf(r.w, "  [%d] %s  pos=%s  neg=%s\n",
+			p.Index, p.CreatedAt, p.PositivePath, p.NegativePath)
+	}
+	fmt.Fprintf(r.w, "\n%d pair(s) total\n", len(o.Pairs))
 }
 
 func (r *HumanRenderer) renderInit(o *InitOutput) {

@@ -44,6 +44,20 @@ type PipelineConfig struct {
 	// the operator is escalated via domain.ErrAntiProgress (NFR-R2).
 	// Must be in (0.0, 1.0]; 1.0 disables the detector (no value can exceed).
 	AntiProgressThreshold float64 `yaml:"anti_progress_threshold" mapstructure:"anti_progress_threshold"`
+
+	// GoldenStalenessDays is the number of days after last_refreshed_at before
+	// pipeline doctor emits a staleness warning for the Golden eval set (FR26).
+	// Default is 30. Values < 1 are rejected as domain.ErrValidation.
+	GoldenStalenessDays int `yaml:"golden_staleness_days" mapstructure:"golden_staleness_days"`
+
+	// ShadowEvalWindow is the number of most recent passed runs the Shadow
+	// runner replays (FR28). Default is 10. Values < 1 are rejected as
+	// domain.ErrValidation.
+	ShadowEvalWindow int `yaml:"shadow_eval_window" mapstructure:"shadow_eval_window"`
+
+	// AutoApprovalThreshold is the strict scene-level critic_score cutoff
+	// above which a scene can be system-auto-approved when no safeguards fire.
+	AutoApprovalThreshold float64 `yaml:"auto_approval_threshold" mapstructure:"auto_approval_threshold"`
 }
 
 // DefaultConfig returns a PipelineConfig with sensible defaults.
@@ -70,5 +84,8 @@ func DefaultConfig() PipelineConfig {
 		CostCapAssemble:       0.10,
 		CostCapPerRun:         5.00,
 		AntiProgressThreshold: 0.92,
+		GoldenStalenessDays:   30,
+		ShadowEvalWindow:      10,
+		AutoApprovalThreshold: 0.85,
 	}
 }

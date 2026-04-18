@@ -33,6 +33,18 @@
         }
       }
     },
+    "minor_policy_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["scene_num", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "scene_num": { "type": "integer", "minimum": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "precheck": {
       "type": "object",
       "required": ["schema_valid", "forbidden_term_hits", "short_circuited"],

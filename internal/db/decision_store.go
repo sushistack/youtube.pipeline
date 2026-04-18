@@ -3,8 +3,10 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
@@ -28,6 +30,20 @@ type DecisionCounts struct {
 	Approved    int
 	Rejected    int
 	TotalScenes int
+}
+
+type AutoApprovalInput struct {
+	SceneIndex   int
+	CriticScore  float64
+	Threshold    float64
+	ReviewStatus domain.ReviewStatus
+}
+
+type SceneReviewUpdate struct {
+	SceneIndex     int
+	ReviewStatus   domain.ReviewStatus
+	SafeguardFlags []string
+	AutoApproved   bool
 }
 
 // KappaPair is one run-level observation for Cohen's kappa.
@@ -142,7 +158,7 @@ func (s *DecisionStore) DecisionCountsByRunID(ctx context.Context, runID string)
 	const q = `
 SELECT
   (SELECT COUNT(DISTINCT scene_id) FROM decisions
-    WHERE run_id = ? AND decision_type = 'approve'
+    WHERE run_id = ? AND decision_type IN ('approve', 'override', 'system_auto_approved')
       AND superseded_by IS NULL AND scene_id IS NOT NULL) AS approved,
   (SELECT COUNT(DISTINCT scene_id) FROM decisions
     WHERE run_id = ? AND decision_type = 'reject'
@@ -156,6 +172,175 @@ SELECT
 		return DecisionCounts{}, fmt.Errorf("decision counts for %s: %w", runID, err)
 	}
 	return counts, nil
+}
+
+func (s *DecisionStore) PrepareBatchReview(
+	ctx context.Context,
+	runID string,
+	sceneResults []SceneReviewUpdate,
+	autoApprovals []AutoApprovalInput,
+) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("prepare batch review %s: begin tx: %w", runID, err)
+	}
+	defer tx.Rollback()
+
+	for _, result := range sceneResults {
+		sceneIndex := result.SceneIndex
+		if !result.ReviewStatus.IsValid() {
+			return false, fmt.Errorf("prepare batch review %s[%d]: invalid review status %q: %w", runID, sceneIndex, result.ReviewStatus, domain.ErrValidation)
+		}
+		flagsJSON, err := json.Marshal(normalizeSafeguardFlags(result.SafeguardFlags))
+		if err != nil {
+			return false, fmt.Errorf("prepare batch review %s[%d]: marshal safeguard flags: %w", runID, sceneIndex, err)
+		}
+		res, err := tx.ExecContext(ctx,
+			`UPDATE segments
+			    SET review_status = ?, safeguard_flags = ?
+			  WHERE run_id = ? AND scene_index = ?`,
+			string(result.ReviewStatus), string(flagsJSON), runID, sceneIndex,
+		)
+		if err != nil {
+			return false, fmt.Errorf("prepare batch review %s[%d]: update segment: %w", runID, sceneIndex, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return false, fmt.Errorf("prepare batch review %s[%d]: rows affected: %w", runID, sceneIndex, err)
+		}
+		if n == 0 {
+			return false, fmt.Errorf("prepare batch review %s[%d]: %w", runID, sceneIndex, domain.ErrNotFound)
+		}
+	}
+
+	for _, approval := range autoApprovals {
+		var exists int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*)
+			   FROM decisions
+			  WHERE run_id = ?
+			    AND scene_id = ?
+			    AND decision_type = ?
+			    AND superseded_by IS NULL`,
+			runID, strconv.Itoa(approval.SceneIndex), domain.DecisionTypeSystemAutoApproved,
+		).Scan(&exists); err != nil {
+			return false, fmt.Errorf("prepare batch review %s[%d]: check existing system decision: %w", runID, approval.SceneIndex, err)
+		}
+		if exists > 0 {
+			continue
+		}
+		snapshot, err := json.Marshal(map[string]any{
+			"threshold":    approval.Threshold,
+			"critic_score": approval.CriticScore,
+		})
+		if err != nil {
+			return false, fmt.Errorf("prepare batch review %s[%d]: marshal context snapshot: %w", runID, approval.SceneIndex, err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO decisions (run_id, scene_id, decision_type, context_snapshot, note)
+			 VALUES (?, ?, ?, ?, NULL)`,
+			runID, strconv.Itoa(approval.SceneIndex), domain.DecisionTypeSystemAutoApproved, string(snapshot),
+		); err != nil {
+			return false, fmt.Errorf("prepare batch review %s[%d]: insert system decision: %w", runID, approval.SceneIndex, err)
+		}
+	}
+
+	var waitingCount int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*)
+		   FROM segments
+		  WHERE run_id = ? AND review_status = ?`,
+		runID, string(domain.ReviewStatusWaitingForReview),
+	).Scan(&waitingCount); err != nil {
+		return false, fmt.Errorf("prepare batch review %s: count waiting scenes: %w", runID, err)
+	}
+	autoContinue := waitingCount == 0
+	if autoContinue {
+		res, err := tx.ExecContext(ctx,
+			`UPDATE runs
+			    SET stage = ?, status = ?
+			  WHERE id = ?`,
+			string(domain.StageAssemble), string(domain.StatusRunning), runID,
+		)
+		if err != nil {
+			return false, fmt.Errorf("prepare batch review %s: advance run: %w", runID, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return false, fmt.Errorf("prepare batch review %s: advance rows affected: %w", runID, err)
+		}
+		if n == 0 {
+			return false, fmt.Errorf("prepare batch review %s: %w", runID, domain.ErrNotFound)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("prepare batch review %s: commit: %w", runID, err)
+	}
+	return autoContinue, nil
+}
+
+func (s *DecisionStore) OverrideMinorSafeguard(ctx context.Context, runID string, sceneIndex int, note string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("override minor safeguard %s[%d]: begin tx: %w", runID, sceneIndex, err)
+	}
+	defer tx.Rollback()
+
+	var (
+		reviewStatus  string
+		safeguardJSON string
+	)
+	err = tx.QueryRowContext(ctx,
+		`SELECT review_status, safeguard_flags
+		   FROM segments
+		  WHERE run_id = ? AND scene_index = ?`,
+		runID, sceneIndex,
+	).Scan(&reviewStatus, &safeguardJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("override minor safeguard %s[%d]: %w", runID, sceneIndex, domain.ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("override minor safeguard %s[%d]: load segment: %w", runID, sceneIndex, err)
+	}
+
+	var flags []string
+	if safeguardJSON != "" {
+		if err := json.Unmarshal([]byte(safeguardJSON), &flags); err != nil {
+			return fmt.Errorf("override minor safeguard %s[%d]: decode safeguard flags: %w", runID, sceneIndex, err)
+		}
+	}
+	if reviewStatus != string(domain.ReviewStatusWaitingForReview) || !containsString(flags, domain.SafeguardFlagMinors) {
+		return fmt.Errorf("override minor safeguard %s[%d]: %w", runID, sceneIndex, domain.ErrConflict)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO decisions (run_id, scene_id, decision_type, note)
+		 VALUES (?, ?, ?, ?)`,
+		runID, strconv.Itoa(sceneIndex), domain.DecisionTypeOverride, note,
+	); err != nil {
+		return fmt.Errorf("override minor safeguard %s[%d]: insert override decision: %w", runID, sceneIndex, err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE segments
+		    SET review_status = ?
+		  WHERE run_id = ? AND scene_index = ?`,
+		string(domain.ReviewStatusApproved), runID, sceneIndex,
+	); err != nil {
+		return fmt.Errorf("override minor safeguard %s[%d]: update segment: %w", runID, sceneIndex, err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE runs
+		    SET human_override = (human_override | 1)
+		  WHERE id = ?`,
+		runID,
+	); err != nil {
+		return fmt.Errorf("override minor safeguard %s[%d]: update run: %w", runID, sceneIndex, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("override minor safeguard %s[%d]: commit: %w", runID, sceneIndex, err)
+	}
+	return nil
 }
 
 // KappaPairsForRuns returns one run-level pair per run with a non-null
@@ -244,6 +429,34 @@ SELECT d.run_id, d.decision_type, r.critic_score, COUNT(DISTINCT d.scene_id) AS 
 		return nil, nil
 	}
 	return pairs, nil
+}
+
+// LatestDecisionIDForRuns returns the max non-superseded approve/reject
+// decision id in the evaluated run window, or 0 when none exist.
+func (s *DecisionStore) LatestDecisionIDForRuns(ctx context.Context, runIDs []string) (int, error) {
+	if len(runIDs) == 0 {
+		return 0, nil
+	}
+
+	placeholders := make([]string, len(runIDs))
+	args := make([]any, 0, len(runIDs))
+	for i, id := range runIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf(`
+SELECT COALESCE(MAX(id), 0)
+  FROM decisions
+ WHERE run_id IN (%s)
+   AND decision_type IN ('approve', 'reject')
+   AND superseded_by IS NULL`, strings.Join(placeholders, ","))
+
+	var latest int
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&latest); err != nil {
+		return 0, fmt.Errorf("latest decision id for runs: %w", err)
+	}
+	return latest, nil
 }
 
 // DefectEscapeInRuns returns aggregate auto-passed and escaped scene counts for
@@ -343,4 +556,13 @@ func scanDecision(sc scanner) (*domain.Decision, error) {
 		d.Note = &note.String
 	}
 	return &d, nil
+}
+
+func containsString(values []string, needle string) bool {
+	for _, v := range values {
+		if v == needle {
+			return true
+		}
+	}
+	return false
 }

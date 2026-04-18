@@ -1,7 +1,7 @@
 package domain
 
 const (
-	CriticSourceVersionV1            = "v1-critic-post-writer"
+	CriticSourceVersionV1             = "v1-critic-post-writer"
 	CriticSourceVersionPostReviewerV1 = "v1-critic-post-reviewer"
 
 	CriticVerdictPass            = "pass"
@@ -25,17 +25,18 @@ type CriticOutput struct {
 }
 
 type CriticCheckpointReport struct {
-	Checkpoint     string             `json:"checkpoint"`
-	Verdict        string             `json:"verdict"`
-	RetryReason    string             `json:"retry_reason,omitempty"`
-	OverallScore   int                `json:"overall_score"`
-	Rubric         CriticRubricScores `json:"rubric"`
-	Feedback       string             `json:"feedback"`
-	SceneNotes     []CriticSceneNote  `json:"scene_notes"`
-	Precheck       CriticPrecheck     `json:"precheck"`
-	CriticModel    string             `json:"critic_model"`
-	CriticProvider string             `json:"critic_provider"`
-	SourceVersion  string             `json:"source_version"`
+	Checkpoint          string               `json:"checkpoint"`
+	Verdict             string               `json:"verdict"`
+	RetryReason         string               `json:"retry_reason,omitempty"`
+	OverallScore        int                  `json:"overall_score"`
+	Rubric              CriticRubricScores   `json:"rubric"`
+	Feedback            string               `json:"feedback"`
+	SceneNotes          []CriticSceneNote    `json:"scene_notes"`
+	MinorPolicyFindings []MinorPolicyFinding `json:"minor_policy_findings,omitempty"`
+	Precheck            CriticPrecheck       `json:"precheck"`
+	CriticModel         string               `json:"critic_model"`
+	CriticProvider      string               `json:"critic_provider"`
+	SourceVersion       string               `json:"source_version"`
 }
 
 type CriticRubricScores struct {

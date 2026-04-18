@@ -25,7 +25,7 @@ VALUES (
   'batch_review',
   2,
   '2026-01-01T00:25:00Z',
-  '{"total_scenes":3,"approved_count":2,"rejected_count":0,"pending_count":1,"scene_statuses":{"0":"approved","1":"approved","2":"pending"}}',
+  '{"total_scenes":3,"approved_count":2,"rejected_count":0,"pending_count":1,"scene_statuses":{"0":"approved","1":"approved","2":"waiting_for_review"}}',
   '2026-01-01T00:00:00Z',
   '2026-01-01T00:25:00Z'
 );

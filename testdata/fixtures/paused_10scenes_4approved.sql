@@ -32,7 +32,7 @@ VALUES (
   'batch_review',
   4,
   '2026-02-01T00:40:00Z',
-  '{"total_scenes":10,"approved_count":4,"rejected_count":0,"pending_count":6,"scene_statuses":{"0":"approved","1":"approved","2":"approved","3":"approved","4":"pending","5":"pending","6":"pending","7":"pending","8":"pending","9":"pending"}}',
+  '{"total_scenes":10,"approved_count":4,"rejected_count":0,"pending_count":6,"scene_statuses":{"0":"approved","1":"approved","2":"approved","3":"approved","4":"waiting_for_review","5":"waiting_for_review","6":"waiting_for_review","7":"waiting_for_review","8":"waiting_for_review","9":"waiting_for_review"}}',
   '2026-02-01T00:00:00Z',
   '2026-02-01T00:40:00Z'
 );

@@ -45,7 +45,7 @@ func TestBuildSessionSnapshot_ClassifiesPerSceneStatus(t *testing.T) {
 	testutil.AssertEqual(t, snap.PendingCount, 5)
 	testutil.AssertEqual(t, snap.SceneStatuses["0"], "approved")
 	testutil.AssertEqual(t, snap.SceneStatuses["4"], "rejected")
-	testutil.AssertEqual(t, snap.SceneStatuses["9"], "pending")
+	testutil.AssertEqual(t, snap.SceneStatuses["9"], "waiting_for_review")
 }
 
 func TestBuildSessionSnapshot_SupersededDecisionsIgnored(t *testing.T) {
@@ -71,7 +71,7 @@ func TestBuildSessionSnapshot_NullSceneIDIgnored(t *testing.T) {
 	testutil.AssertEqual(t, snap.ApprovedCount, 1)
 	testutil.AssertEqual(t, snap.PendingCount, 1)
 	testutil.AssertEqual(t, snap.SceneStatuses["0"], "approved")
-	testutil.AssertEqual(t, snap.SceneStatuses["1"], "pending")
+	testutil.AssertEqual(t, snap.SceneStatuses["1"], "waiting_for_review")
 }
 
 // --- NextSceneIndex ---
@@ -79,7 +79,7 @@ func TestBuildSessionSnapshot_NullSceneIDIgnored(t *testing.T) {
 func TestNextSceneIndex_AllPending(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	got := pipeline.NextSceneIndex(map[string]string{
-		"0": "pending", "1": "pending", "2": "pending",
+		"0": "waiting_for_review", "1": "waiting_for_review", "2": "waiting_for_review",
 	}, 3)
 	testutil.AssertEqual(t, got, 0)
 }
@@ -87,7 +87,7 @@ func TestNextSceneIndex_AllPending(t *testing.T) {
 func TestNextSceneIndex_FirstPendingIsMiddle(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	got := pipeline.NextSceneIndex(map[string]string{
-		"0": "approved", "1": "approved", "2": "pending", "3": "pending",
+		"0": "approved", "1": "approved", "2": "waiting_for_review", "3": "waiting_for_review",
 	}, 4)
 	testutil.AssertEqual(t, got, 2)
 }
@@ -103,9 +103,33 @@ func TestNextSceneIndex_AllDecided(t *testing.T) {
 func TestNextSceneIndex_HoleAtStart(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	got := pipeline.NextSceneIndex(map[string]string{
-		"0": "pending", "1": "approved", "2": "approved",
+		"0": "waiting_for_review", "1": "approved", "2": "approved",
 	}, 3)
 	testutil.AssertEqual(t, got, 0)
+}
+
+func TestBuildSessionSnapshot_TracksAutoApprovedAndWaitingForReview(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	decisions := []*domain.Decision{
+		{RunID: "r1", SceneID: strp("0"), DecisionType: domain.DecisionTypeSystemAutoApproved},
+		{RunID: "r1", SceneID: strp("1"), DecisionType: "reject"},
+	}
+	snap := pipeline.BuildSessionSnapshot(decisions, 3)
+	testutil.AssertEqual(t, snap.ApprovedCount, 1)
+	testutil.AssertEqual(t, snap.RejectedCount, 1)
+	testutil.AssertEqual(t, snap.PendingCount, 1)
+	testutil.AssertEqual(t, snap.SceneStatuses["0"], "approved")
+	testutil.AssertEqual(t, snap.SceneStatuses["2"], "waiting_for_review")
+}
+
+func TestNextSceneIndex_SkipsAutoApprovedScenes(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	got := pipeline.NextSceneIndex(map[string]string{
+		"0": "approved",
+		"1": "waiting_for_review",
+		"2": "approved",
+	}, 3)
+	testutil.AssertEqual(t, got, 1)
 }
 
 // --- SummaryString ---
@@ -142,14 +166,14 @@ func TestSummaryString_FallbackForNonHITL(t *testing.T) {
 // --- UpsertSessionFromState ---
 
 type fakeSessionStore struct {
-	decisions      []*domain.Decision
-	counts         pipeline.DecisionCounts
-	upserted       *domain.HITLSession
-	deletedRun     string
-	upsertErr      error
-	listErr        error
-	countsErr      error
-	deleteErr      error
+	decisions  []*domain.Decision
+	counts     pipeline.DecisionCounts
+	upserted   *domain.HITLSession
+	deletedRun string
+	upsertErr  error
+	listErr    error
+	countsErr  error
+	deleteErr  error
 }
 
 func (f *fakeSessionStore) ListByRunID(_ context.Context, _ string) ([]*domain.Decision, error) {

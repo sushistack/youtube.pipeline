@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["version", "next_index", "last_refreshed_at", "pairs"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "next_index": { "type": "integer", "minimum": 1 },
+    "last_refreshed_at": { "type": "string", "format": "date-time" },
+    "last_successful_run_at": { "type": "string", "format": "date-time" },
+    "last_successful_prompt_hash": { "type": "string" },
+    "last_report": {
+      "type": "object",
+      "required": ["recall", "total_negative", "detected_negative", "false_rejects"],
+      "additionalProperties": false,
+      "properties": {
+        "recall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "total_negative": { "type": "integer", "minimum": 0 },
+        "detected_negative": { "type": "integer", "minimum": 0 },
+        "false_rejects": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "pairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["index", "created_at", "positive_path", "negative_path"],
+        "additionalProperties": false,
+        "properties": {
+          "index": { "type": "integer", "minimum": 1 },
+          "created_at": { "type": "string", "format": "date-time" },
+          "positive_path": { "type": "string", "minLength": 1 },
+          "negative_path": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

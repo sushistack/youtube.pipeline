@@ -1,7 +1,11 @@
 package service
 
-// CohensKappa computes Cohen's kappa for a 2x2 agreement table:
-//   a = yes/yes, b = yes/no, c = no/yes, d = no/no.
+// CohensKappa computes unweighted binary Cohen's kappa (2x2 table):
+//
+//	a = Critic pass + operator approve
+//	b = Critic pass + operator reject
+//	c = Critic fail + operator approve
+//	d = Critic fail + operator reject
 func CohensKappa(a, b, c, d int) (kappa float64, ok bool, reason string) {
 	n := a + b + c + d
 	if n == 0 {

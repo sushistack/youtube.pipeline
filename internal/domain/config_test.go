@@ -78,6 +78,20 @@ func TestDefaultConfig_AntiProgressThreshold(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ShadowEvalWindow(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.ShadowEvalWindow != 10 {
+		t.Errorf("ShadowEvalWindow = %d, want 10 (FR28 default)", cfg.ShadowEvalWindow)
+	}
+}
+
+func TestDefaultConfig_AutoApprovalThreshold(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.AutoApprovalThreshold != 0.85 {
+		t.Errorf("AutoApprovalThreshold = %v, want 0.85", cfg.AutoApprovalThreshold)
+	}
+}
+
 func TestDefaultConfig_PathsUnderHome(t *testing.T) {
 	cfg := DefaultConfig()
 	if !strings.Contains(cfg.OutputDir, ".youtube-pipeline") {

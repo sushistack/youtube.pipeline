@@ -206,6 +206,60 @@ func TestMetricsCmd_RegressionFileMissing_PropagatesError(t *testing.T) {
 	}
 }
 
+func TestMetricsCmd_PersistsCalibrationSnapshot(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	dbPath, cfg := seedMetricsCommandDB(t)
+	prevCfgPath, prevJSON, prevClock := cfgPath, jsonOutput, metricsClock
+	cfgPath, jsonOutput, metricsClock = cfg, false, clock.NewFakeClock(time.Date(2026, 4, 18, 12, 34, 56, 0, time.UTC))
+	defer func() {
+		cfgPath, jsonOutput, metricsClock = prevCfgPath, prevJSON, prevClock
+		resetMetricsGlobals()
+	}()
+
+	cmd := newMetricsCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--window", "25", "--regression-rate", writeFloatFile(t, "regression.txt", "0.82"), "--idempotency-rate", writeFloatFile(t, "idempotency.txt", "1.0")})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	database, err := db.OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	var (
+		windowSize       int
+		windowCount      int
+		provisional      int
+		threshold        float64
+		kappa            sql.NullFloat64
+		reason           sql.NullString
+		latestDecisionID int
+		computedAt       string
+	)
+	if err := database.QueryRow(`
+		SELECT window_size, window_count, provisional, calibration_threshold, kappa, reason, latest_decision_id, computed_at
+		  FROM critic_calibration_snapshots`,
+	).Scan(&windowSize, &windowCount, &provisional, &threshold, &kappa, &reason, &latestDecisionID, &computedAt); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	testutil.AssertEqual(t, windowSize, 25)
+	testutil.AssertEqual(t, windowCount, 25)
+	testutil.AssertEqual(t, provisional, 0)
+	testutil.AssertFloatNear(t, threshold, 0.70, 1e-9)
+	if !kappa.Valid {
+		t.Fatal("expected persisted kappa value")
+	}
+	testutil.AssertFloatNear(t, kappa.Float64, 0.714828897338403, 1e-9)
+	testutil.AssertEqual(t, reason.Valid, false)
+	testutil.AssertEqual(t, latestDecisionID > 0, true)
+	testutil.AssertEqual(t, computedAt, "2026-04-18T12:34:56Z")
+}
+
 func seedMetricsCommandDB(t *testing.T) (string, string) {
 	t.Helper()
 	tmp := t.TempDir()
