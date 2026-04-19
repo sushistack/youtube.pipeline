@@ -16,18 +16,20 @@ test('loads the Go-served SPA shell and honors Enter/Escape keyboard actions', a
   })
 
   await page.goto('/production')
+  await page.getByRole('button', { name: 'Continue to workspace' }).click()
 
   await expect(page.getByRole('heading', { name: 'Production' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Keyboard-first command rail' })).toBeVisible()
-  await expect(page.getByText('Waiting for keyboard command')).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Create a new pipeline run' }),
+  ).toBeVisible()
 
-  await page.keyboard.press('Enter')
-  await expect(page.getByText('Approved Shot 1')).toBeVisible()
+  await page.keyboard.press('Control+N')
+  const panel = page.getByRole('alertdialog', { name: 'Create a new pipeline run' })
+  await expect(panel).toBeVisible()
 
-  await page.keyboard.press('Escape')
-  await expect(page.getByText('Rejected Shot 1')).toBeVisible()
+  await panel.getByRole('textbox', { name: 'SCP ID' }).press('Escape')
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
 
   expect(pageErrors).toEqual([])
   expect(consoleErrors).toEqual([])
 })
-

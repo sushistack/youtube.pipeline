@@ -4,11 +4,17 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   characterGroupResponseSchema,
+  createRunRequestSchema,
+  createRunResponseSchema,
   descriptorPrefillResponseSchema,
+  reviewItemListResponseSchema,
   runDetailResponseSchema,
   runListResponseSchema,
   runResumeResponseSchema,
   runStatusResponseSchema,
+  timelineListResponseSchema,
+  sceneDecisionRequestSchema,
+  sceneDecisionResponseSchema,
   sceneEditResponseSchema,
   sceneListResponseSchema,
 } from './runContracts'
@@ -54,6 +60,95 @@ describe('run contract fixtures', () => {
     ).not.toThrow()
   })
 
+  it('parses the batch review item fixture', () => {
+    expect(() =>
+      reviewItemListResponseSchema.parse(
+        loadContractFixture('run.review-items.response.json'),
+      ),
+    ).not.toThrow()
+  })
+
+  it('parses approve, reject, and skip decision contracts', () => {
+    expect(() =>
+      sceneDecisionRequestSchema.parse({
+        scene_index: 3,
+        decision_type: 'approve',
+      }),
+    ).not.toThrow()
+
+    expect(() =>
+      sceneDecisionRequestSchema.parse({
+        scene_index: 3,
+        decision_type: 'reject',
+        note: null,
+      }),
+    ).not.toThrow()
+
+    expect(() =>
+      sceneDecisionRequestSchema.parse({
+        scene_index: 3,
+        decision_type: 'skip_and_remember',
+        context_snapshot: {
+          action_source: 'batch_review',
+          content_flags: ['Safeguard Triggered: Minors'],
+          critic_score: 84,
+          critic_sub: { hook_strength: 91 },
+          review_status_before: 'waiting_for_review',
+          scene_index: 3,
+        },
+      }),
+    ).not.toThrow()
+
+    expect(() =>
+      sceneDecisionResponseSchema.parse({
+        version: 1,
+        data: {
+          scene_index: 3,
+          decision_type: 'approve',
+          next_scene_index: 4,
+        },
+      }),
+    ).not.toThrow()
+  })
+
+  it('parses the decisions timeline contract with nullable timeline fields', () => {
+    expect(() =>
+      timelineListResponseSchema.parse({
+        version: 1,
+        data: {
+          items: [
+            {
+              id: 10,
+              run_id: 'run-1',
+              scp_id: '049',
+              scene_id: '3',
+              decision_type: 'reject',
+              note: null,
+              reason_from_snapshot: 'needs a clearer rationale',
+              superseded_by: 11,
+              created_at: '2026-04-19T01:02:03Z',
+            },
+            {
+              id: 11,
+              run_id: 'run-1',
+              scp_id: '049',
+              scene_id: null,
+              decision_type: 'undo',
+              note: 'undo of decision 10',
+              reason_from_snapshot: null,
+              superseded_by: null,
+              created_at: '2026-04-19T01:03:03Z',
+            },
+          ],
+          next_cursor: {
+            before_created_at: '2026-04-19T01:02:03Z',
+            before_id: 10,
+          },
+        },
+      }),
+    ).not.toThrow()
+  })
+
   it('parses the character candidate group fixture', () => {
     expect(() =>
       characterGroupResponseSchema.parse(
@@ -94,5 +189,34 @@ describe('run contract fixtures', () => {
     invalidFixture.data.retry_count = 'two'
 
     expect(() => runDetailResponseSchema.parse(invalidFixture)).toThrow(/retry_count/i)
+  })
+
+  it('parses the create-run request and success envelope', () => {
+    expect(() =>
+      createRunRequestSchema.parse({
+        scp_id: '173-J',
+      }),
+    ).not.toThrow()
+
+    expect(() =>
+      createRunResponseSchema.parse({
+        version: 1,
+        data: {
+          cost_usd: 0,
+          created_at: '2026-04-19T00:00:00Z',
+          duration_ms: 0,
+          human_override: false,
+          id: 'scp-049-run-1',
+          retry_count: 0,
+          scp_id: '049',
+          stage: 'pending',
+          status: 'pending',
+          token_in: 0,
+          token_out: 0,
+          updated_at: '2026-04-19T00:00:00Z',
+        },
+        error: null,
+      }),
+    ).not.toThrow()
   })
 })

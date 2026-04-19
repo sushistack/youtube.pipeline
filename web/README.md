@@ -5,6 +5,7 @@
 - `npm run lint` validates the keyboard shortcut invariance rule through the normal ESLint path.
 - `npm run test:unit` runs the Vitest suite for component, contract, and style checks.
 - `npm run test:e2e` runs the single Chromium Playwright smoke spec.
+- `web/e2e/new-run-creation.spec.ts` exercises the real UI create-run flow and pending-state handoff.
 - `npm run test` runs the full Story 6.5 verification sequence in order.
 
 ## Playwright Server Path

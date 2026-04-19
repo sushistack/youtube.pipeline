@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router'
@@ -8,6 +8,17 @@ import { ProductionShell } from './ProductionShell'
 import { renderWithProviders } from '../../test/renderWithProviders'
 import { KeyboardShortcutsProvider } from '../../hooks/useKeyboardShortcuts'
 import { useUIStore } from '../../stores/useUIStore'
+import * as clipboard from '../../lib/clipboard'
+
+function requestUrl(input: string | URL | Request) {
+  if (typeof input === 'string') {
+    return input
+  }
+  if (input instanceof URL) {
+    return input.href
+  }
+  return input.url
+}
 
 const run_list_response = {
   data: {
@@ -86,7 +97,7 @@ describe('ProductionShell integration', () => {
     const user = userEvent.setup()
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url = requestUrl(input)
 
       if (url.endsWith('/api/runs')) {
         return new Response(JSON.stringify(run_list_response), {
@@ -135,7 +146,7 @@ describe('ProductionShell integration', () => {
 
   it('does not render a continuity banner on the first production visit for a run', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url = requestUrl(input)
 
       if (url.endsWith('/api/runs')) {
         return new Response(JSON.stringify(run_list_response), {
@@ -188,7 +199,7 @@ describe('ProductionShell integration', () => {
     })
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url = requestUrl(input)
 
       if (url.endsWith('/api/runs')) {
         return new Response(JSON.stringify(run_list_response), {
@@ -239,7 +250,7 @@ describe('ProductionShell integration', () => {
     })
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url = requestUrl(input)
 
       if (url.endsWith('/api/runs')) {
         return new Response(JSON.stringify(run_list_response), {
@@ -294,7 +305,7 @@ describe('ProductionShell integration', () => {
     })
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url = requestUrl(input)
 
       if (url.endsWith('/api/runs')) {
         return new Response(JSON.stringify(run_list_response), {
@@ -359,5 +370,192 @@ describe('ProductionShell integration', () => {
     await waitFor(() => {
       expect(screen.queryByText('What changed since last session')).not.toBeInTheDocument()
     })
+  })
+
+  it('renders the batch review surface when the selected run is paused at batch_review', async () => {
+    const batchReviewRun = {
+      ...run_list_response.data.items[1],
+      stage: 'batch_review',
+      status: 'waiting',
+    }
+    const batchStatusResponse = {
+      ...run_status_response,
+      data: {
+        ...run_status_response.data,
+        run: batchReviewRun,
+      },
+    }
+    const reviewItemsResponse = {
+      data: {
+        items: [
+          {
+            clip_path: null,
+            critic_breakdown: null,
+            critic_score: 84,
+            high_leverage: true,
+            high_leverage_reason: 'Opening hook scene',
+            high_leverage_reason_code: 'hook_scene',
+            narration: 'Scene 0 review copy',
+            previous_version: null,
+            review_status: 'waiting_for_review',
+            scene_index: 0,
+            shots: [
+              {
+                image_path: '/images/scene-0.png',
+                duration_s: 4,
+                transition: 'cut',
+                visual_descriptor: 'scene zero',
+              },
+            ],
+          },
+        ],
+        total: 1,
+      },
+      version: 1,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = requestUrl(input)
+
+      if (url.endsWith('/api/runs')) {
+        return new Response(JSON.stringify({
+          ...run_list_response,
+          data: {
+            ...run_list_response.data,
+            items: [run_list_response.data.items[0], batchReviewRun],
+          },
+        }), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        })
+      }
+
+      if (url.endsWith('/api/runs/scp-049-run-2/status')) {
+        return new Response(JSON.stringify(batchStatusResponse), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        })
+      }
+
+      if (url.endsWith('/api/runs/scp-049-run-2/review-items')) {
+        return new Response(JSON.stringify(reviewItemsResponse), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        })
+      }
+
+      throw new Error(`Unexpected fetch in test: ${url}`)
+    })
+
+    renderWithProviders(
+      <KeyboardShortcutsProvider>
+        <Routes>
+          <Route path="/" element={<AppShell />}>
+            <Route path="production" element={<ProductionShell />} />
+          </Route>
+        </Routes>
+      </KeyboardShortcutsProvider>,
+      {
+        initialEntries: ['/production'],
+      },
+    )
+
+    expect(await screen.findByLabelText(/batch review layout/i)).toBeInTheDocument()
+    expect(screen.getAllByText('Scene 0 review copy')).toHaveLength(2)
+  })
+
+  it('renders the pending run guidance card and copies the resume command', async () => {
+    const clipboard_write_text = vi
+      .spyOn(clipboard, 'copyText')
+      .mockResolvedValue(true)
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = requestUrl(input)
+
+      if (url.endsWith('/api/runs')) {
+        return new Response(JSON.stringify(run_list_response), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        })
+      }
+
+      if (url.endsWith('/api/runs/scp-173-run-1/status')) {
+        return new Response(JSON.stringify({
+          data: {
+            run: run_list_response.data.items[0],
+            summary: 'Queued and waiting to start',
+          },
+          version: 1,
+        }), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        })
+      }
+
+      throw new Error(`Unexpected fetch in test: ${url}`)
+    })
+
+    const user = userEvent.setup()
+
+    renderWithProviders(
+      <KeyboardShortcutsProvider>
+        <Routes>
+          <Route path="/" element={<AppShell />}>
+            <Route path="production" element={<ProductionShell />} />
+          </Route>
+        </Routes>
+      </KeyboardShortcutsProvider>,
+      {
+        initialEntries: ['/production?run=scp-173-run-1'],
+      },
+    )
+
+    const pending_guidance = await screen.findByLabelText('Pending run guidance')
+    expect(pending_guidance).toBeInTheDocument()
+    expect(within(pending_guidance).getByText('scp-173-run-1')).toBeInTheDocument()
+    expect(within(pending_guidance).getByText('SCP-173')).toBeInTheDocument()
+    expect(
+      screen.getByText(/Run created\. It has not started yet\./i),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Copy command' }))
+
+    await waitFor(() => {
+      expect(clipboard_write_text).toHaveBeenCalledWith(
+        'pipeline resume scp-173-run-1',
+      )
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent('Copied.')
+  })
+
+  it('renders the empty-state New Run CTA when no runs exist', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: { items: [], total: 0 },
+          version: 1,
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        },
+      ),
+    )
+
+    renderWithProviders(
+      <KeyboardShortcutsProvider>
+        <Routes>
+          <Route path="/" element={<AppShell />}>
+            <Route path="production" element={<ProductionShell />} />
+          </Route>
+        </Routes>
+      </KeyboardShortcutsProvider>,
+      {
+        initialEntries: ['/production'],
+      },
+    )
+
+    expect(await screen.findByText('No runs yet')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New Run' })).toBeInTheDocument()
   })
 })

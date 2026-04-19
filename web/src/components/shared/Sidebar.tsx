@@ -1,10 +1,14 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { NavLink } from 'react-router'
 import { useLocation, useSearchParams } from 'react-router'
 import { fetchRunList } from '../../lib/apiClient'
+import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { compareRunsForInventory } from '../../lib/formatters'
+import { formatShortcutHint } from '../../lib/keyboardShortcuts'
 import { queryKeys } from '../../lib/queryKeys'
+import { NewRunPanel } from '../production/NewRunPanel'
+import { useNewRunCoordinator } from '../production/useNewRunCoordinator'
 import { RunCard } from './RunCard'
 
 interface SidebarProps {
@@ -24,11 +28,20 @@ export function Sidebar({
   forced_collapsed,
   on_toggle,
 }: SidebarProps) {
+  const query_client = useQueryClient()
   const [inventory_query, set_inventory_query] = useState('')
   const [search_params, set_search_params] = useSearchParams()
   const location = useLocation()
+  const new_run_button_ref = useRef<HTMLButtonElement | null>(null)
+  const {
+    close_new_run_panel,
+    is_open: new_run_open,
+    open_new_run_panel,
+    restore_focus,
+  } = useNewRunCoordinator()
   const can_toggle = !forced_collapsed
   const selected_run_id = search_params.get('run')
+  const is_production_route = location.pathname === '/production'
   const show_inventory = location.pathname === '/production' && !collapsed
   const runs_query = useQuery({
     queryFn: fetchRunList,
@@ -52,6 +65,40 @@ export function Sidebar({
       )
     })
 
+  useKeyboardShortcuts(
+    [
+      {
+        enabled: is_production_route,
+        handler: () => {
+          openNewRunPanel()
+        },
+        key: 'mod+n',
+        prevent_default: true,
+        scope: 'context',
+      },
+    ],
+    { enabled: is_production_route },
+  )
+
+  function openNewRunPanel() {
+    open_new_run_panel({
+      restore_focus_to: new_run_button_ref.current,
+    })
+  }
+
+  function handleNewRunSuccess(run_id: string) {
+    set_search_params((current) => {
+      const next = new URLSearchParams(current)
+      next.set('run', run_id)
+      return next
+    })
+    close_new_run_panel()
+    window.requestAnimationFrame(() => {
+      restore_focus()
+    })
+    void query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
+  }
+
   return (
     <aside
       className="sidebar"
@@ -59,36 +106,78 @@ export function Sidebar({
       data-collapsed={String(collapsed)}
     >
       <div className="sidebar__header">
-        <div className="sidebar__brand" aria-label="youtube.pipeline">
-          <span className="sidebar__brand-mark" aria-hidden="true">
-            YP
-          </span>
-          <span className="sidebar__brand-label">youtube.pipeline</span>
+        <div className="sidebar__header-row">
+          <div className="sidebar__brand" aria-label="youtube.pipeline">
+            <span className="sidebar__brand-mark" aria-hidden="true">
+              YP
+            </span>
+            <span className="sidebar__brand-label">youtube.pipeline</span>
+          </div>
+          <button
+            type="button"
+            className="sidebar__toggle"
+            onClick={can_toggle ? on_toggle : undefined}
+            disabled={!can_toggle}
+            aria-disabled={!can_toggle}
+            aria-expanded={!collapsed}
+            aria-label={
+              forced_collapsed
+                ? 'Viewport is forcing the collapsed shell'
+                : collapsed
+                  ? 'Expand sidebar'
+                  : 'Collapse sidebar'
+            }
+            title={
+              forced_collapsed
+                ? 'Viewport is forcing the collapsed shell'
+                : collapsed
+                  ? 'Expand sidebar'
+                  : 'Collapse sidebar'
+            }
+          >
+            <span aria-hidden="true">{collapsed ? '»' : '«'}</span>
+          </button>
         </div>
-        <button
-          type="button"
-          className="sidebar__toggle"
-          onClick={can_toggle ? on_toggle : undefined}
-          disabled={!can_toggle}
-          aria-disabled={!can_toggle}
-          aria-expanded={!collapsed}
-          aria-label={
-            forced_collapsed
-              ? 'Viewport is forcing the collapsed shell'
-              : collapsed
-                ? 'Expand sidebar'
-                : 'Collapse sidebar'
-          }
-          title={
-            forced_collapsed
-              ? 'Viewport is forcing the collapsed shell'
-              : collapsed
-                ? 'Expand sidebar'
-                : 'Collapse sidebar'
-          }
-        >
-          <span aria-hidden="true">{collapsed ? '»' : '«'}</span>
-        </button>
+
+        {is_production_route ? (
+          <>
+            <button
+              ref={new_run_button_ref}
+              type="button"
+              className="sidebar__new-run-btn"
+              aria-label="Create a new pipeline run"
+              aria-expanded={new_run_open}
+              onClick={openNewRunPanel}
+              title={
+                collapsed
+                  ? `Create a new pipeline run (${formatShortcutHint('mod+n')})`
+                  : undefined
+              }
+            >
+              <span aria-hidden="true" className="sidebar__new-run-icon">
+                +
+              </span>
+              <span className="sidebar__new-run-label">New Run</span>
+              <span className="sidebar__new-run-hint">
+                {formatShortcutHint('mod+n')}
+              </span>
+            </button>
+
+            {new_run_open ? (
+              <NewRunPanel
+                on_cancel={() => {
+                  close_new_run_panel()
+                  window.requestAnimationFrame(() => {
+                    restore_focus()
+                  })
+                }}
+                on_success={(run) => {
+                  handleNewRunSuccess(run.id)
+                }}
+              />
+            ) : null}
+          </>
+        ) : null}
       </div>
 
       <nav className="sidebar__nav" aria-label="Workflow modes">
