@@ -132,6 +132,20 @@ func TestNextSceneIndex_SkipsAutoApprovedScenes(t *testing.T) {
 	testutil.AssertEqual(t, got, 1)
 }
 
+func TestBuildSessionSnapshot_SkipAdvancesNextScene(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	decisions := []*domain.Decision{
+		{RunID: "r1", SceneID: strp("0"), DecisionType: domain.DecisionTypeSkipAndRemember},
+	}
+	snap := pipeline.BuildSessionSnapshot(decisions, 2)
+	testutil.AssertEqual(t, snap.SceneStatuses["0"], "skipped")
+	testutil.AssertEqual(t, snap.SceneStatuses["1"], "waiting_for_review")
+	// NextSceneIndex must skip past the skipped scene so the UI can
+	// move forward even though segments.review_status is unchanged.
+	got := pipeline.NextSceneIndex(snap.SceneStatuses, 2)
+	testutil.AssertEqual(t, got, 1)
+}
+
 // --- SummaryString ---
 
 func TestSummaryString_BatchReview(t *testing.T) {

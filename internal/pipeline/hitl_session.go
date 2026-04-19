@@ -22,6 +22,11 @@ type HITLSessionStore interface {
 	DeleteSession(ctx context.Context, runID string) error
 }
 
+// snapshotStatusSkipped is the internal-only pseudo-status used by
+// BuildSessionSnapshot to advance NextSceneIndex past skipped scenes.
+// It is never written to segments.review_status.
+const snapshotStatusSkipped = "skipped"
+
 // DecisionCounts mirrors db.DecisionCounts at the pipeline boundary (avoids
 // a direct import of db/ from pipeline/). Populated by the DecisionStore.
 type DecisionCounts struct {
@@ -70,6 +75,12 @@ func BuildSessionSnapshot(decisions []*domain.Decision, totalScenes int) domain.
 			sceneStatuses[*d.SceneID] = "approved"
 		case "reject":
 			sceneStatuses[*d.SceneID] = "rejected"
+		case domain.DecisionTypeSkipAndRemember:
+			// V1 skip leaves segments.review_status unchanged but must
+			// advance NextSceneIndex past this scene; a non-pending
+			// pseudo-status does that without introducing a new segment
+			// review_status value.
+			sceneStatuses[*d.SceneID] = snapshotStatusSkipped
 		}
 	}
 	var approved, rejected, pending int

@@ -150,7 +150,9 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	characterCache := db.NewCharacterCacheStore(database)
 	characterClient := service.NewDuckDuckGoClient(nil)
 	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
-	sceneSvc := service.NewSceneService(store, segStore)
+	characterSvc.SetDescriptorRecorder(decisionStore)
+	sceneSvc := service.NewSceneService(store, segStore, decisionStore, clock.RealClock{})
+	sceneSvc.SetSceneRegenerator(service.NewNoOpSceneRegenerator(segStore))
 
 	deps := api.NewDependencies(svc, hitlSvc, characterSvc, sceneSvc, cfg.OutputDir, logger, web.FS)
 	mux := http.NewServeMux()

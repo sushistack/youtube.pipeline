@@ -32,11 +32,17 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("GET /api/runs/{id}/status", deps.Run.Status)
 	api.HandleFunc("POST /api/runs/{id}/cancel", deps.Run.Cancel)
 	api.HandleFunc("POST /api/runs/{id}/resume", deps.Run.Resume)
+	api.HandleFunc("GET /api/decisions", deps.Scene.ListDecisions)
 	api.HandleFunc("GET /api/runs/{id}/characters", deps.Character.Search)
 	api.HandleFunc("GET /api/runs/{id}/characters/descriptor", deps.Character.Descriptor)
 	api.HandleFunc("POST /api/runs/{id}/characters/pick", deps.Character.Pick)
 	api.HandleFunc("GET /api/runs/{id}/scenes", deps.Scene.List)
+	api.HandleFunc("GET /api/runs/{id}/review-items", deps.Scene.ListReviewItems)
+	api.HandleFunc("POST /api/runs/{id}/decisions", deps.Scene.RecordDecision)
+	api.HandleFunc("POST /api/runs/{id}/approve-all-remaining", deps.Scene.ApproveAllRemaining)
+	api.HandleFunc("POST /api/runs/{id}/undo", deps.Scene.Undo)
 	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/edit", deps.Scene.Edit)
+	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/regen", deps.Scene.Regenerate)
 
 	apiChain := Chain(api,
 		WithRequestID,

@@ -38,15 +38,28 @@ type CharacterSearchResult struct {
 	SourceLabel string
 }
 
+// DescriptorDecisionRecorder persists descriptor_edit decisions for undo tracking.
+// *db.DecisionStore satisfies this interface structurally.
+type DescriptorDecisionRecorder interface {
+	RecordDescriptorEdit(ctx context.Context, runID, before, after string) (int64, error)
+}
+
 // CharacterService orchestrates DDG-backed search, cache reuse, and operator picks.
 type CharacterService struct {
-	runs   CharacterRunStore
-	cache  CharacterCacheStore
-	client CharacterSearchClient
+	runs      CharacterRunStore
+	cache     CharacterCacheStore
+	client    CharacterSearchClient
+	decisions DescriptorDecisionRecorder
 }
 
 func NewCharacterService(runs CharacterRunStore, cache CharacterCacheStore, client CharacterSearchClient) *CharacterService {
 	return &CharacterService{runs: runs, cache: cache, client: client}
+}
+
+// SetDescriptorRecorder injects an optional decision recorder for descriptor_edit
+// undo tracking. If not set, descriptor edits are not recorded.
+func (s *CharacterService) SetDescriptorRecorder(r DescriptorDecisionRecorder) {
+	s.decisions = r
 }
 
 func (s *CharacterService) Search(ctx context.Context, runID, query string) (*domain.CharacterGroup, error) {
@@ -113,6 +126,12 @@ func (s *CharacterService) Pick(ctx context.Context, runID, candidateID, frozenD
 	if err != nil {
 		return nil, fmt.Errorf("character pick: next stage: %w", err)
 	}
+	// Capture previous descriptor for undo traceability before overwriting.
+	prevDescriptor := ""
+	if run.FrozenDescriptor != nil {
+		prevDescriptor = *run.FrozenDescriptor
+	}
+
 	var descriptorPtr *string
 	if trimmed := strings.TrimSpace(frozenDescriptor); trimmed != "" {
 		descriptorPtr = &trimmed
@@ -120,6 +139,19 @@ func (s *CharacterService) Pick(ctx context.Context, runID, candidateID, frozenD
 	if err := s.runs.ApplyCharacterPick(ctx, runID, queryKey, candidateID, descriptorPtr, nextStage, pipeline.StatusForStage(nextStage)); err != nil {
 		return nil, fmt.Errorf("character pick: persist selection: %w", err)
 	}
+
+	// Record descriptor_edit decision when the descriptor actually changed.
+	// This must succeed for undo history to remain consistent with the pick.
+	newDescriptor := ""
+	if descriptorPtr != nil {
+		newDescriptor = *descriptorPtr
+	}
+	if s.decisions != nil && newDescriptor != prevDescriptor {
+		if _, err := s.decisions.RecordDescriptorEdit(ctx, runID, prevDescriptor, newDescriptor); err != nil {
+			return nil, fmt.Errorf("character pick: record descriptor edit: %w", err)
+		}
+	}
+
 	updated, err := s.runs.Get(ctx, runID)
 	if err != nil {
 		return nil, fmt.Errorf("character pick: reload run: %w", err)

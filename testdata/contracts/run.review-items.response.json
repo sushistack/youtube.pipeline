@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "data": {
+    "items": [
+      {
+        "scene_index": 0,
+        "narration": "Opening hook narration",
+        "shots": [
+          {
+            "image_path": "/artifacts/scene-0-shot-1.png",
+            "duration_s": 4.2,
+            "transition": "cut",
+            "visual_descriptor": "hero frame"
+          }
+        ],
+        "tts_path": "/tts/scene-0.wav",
+        "tts_duration_ms": 4200,
+        "clip_path": "/clips/scene-0.mp4",
+        "critic_score": 88,
+        "content_flags": [
+          "Safeguard Triggered: Minors"
+        ],
+        "critic_breakdown": {
+          "aggregate_score": 88,
+          "hook_strength": 91,
+          "fact_accuracy": 84,
+          "emotional_variation": 73,
+          "immersion": 79
+        },
+        "review_status": "waiting_for_review",
+        "high_leverage": true,
+        "high_leverage_reason_code": "hook_scene",
+        "high_leverage_reason": "Opening hook scene",
+        "previous_version": {
+          "narration": "Earlier narration",
+          "shots": [
+            {
+              "image_path": "/artifacts/scene-0-old.png",
+              "duration_s": 4,
+              "transition": "fade",
+              "visual_descriptor": "older frame"
+            }
+          ]
+        }
+      }
+    ],
+    "total": 1
+  }
+}
