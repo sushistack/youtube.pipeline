@@ -713,6 +713,7 @@ func TestPhaseBRunner_ImageTrackParticipatesWithoutCancellingSiblingTrack(t *tes
 		clock.RealClock{},
 		nil,
 		nil,
+		nil,
 	)
 
 	done := make(chan struct{})
@@ -815,5 +816,133 @@ func TestImageTrack_OutputIsConsumableByConsistencyCheck(t *testing.T) {
 	}
 	if len(report.Mismatches) != 0 {
 		t.Fatalf("expected zero mismatches, got %+v", report.Mismatches)
+	}
+}
+
+// TestImageTrack_FrozenDescriptorOverridePrecedesArtifactValue verifies that
+// when the operator has edited the descriptor and saved it to
+// runs.frozen_descriptor, the pipeline caller passes it via
+// PhaseBRequest.FrozenDescriptorOverride and every image prompt begins with
+// the override bytes (ComposeImagePrompt uses the override as the frozen
+// prefix). The artifact shot strings may still include the original artifact
+// frozen text because they were composed pre-override — that is expected;
+// the contract here is about what bytes go into the frozen prefix position.
+func TestImageTrack_FrozenDescriptorOverridePrecedesArtifactValue(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// Use shot descriptors that do NOT embed the artifact frozen prefix so
+	// the override's precedence is observable on the final prompt.
+	outputDir := t.TempDir()
+	runID := "scp-049-run-1"
+	frozen := "Appearance: slender humanoid; Environment: concrete chamber"
+	state := &agents.PipelineState{
+		RunID: runID,
+		SCPID: "049",
+		Narration: &domain.NarrationScript{
+			SCPID: "049",
+			Scenes: []domain.NarrationScene{
+				{SceneNum: 1, Narration: "n1", EntityVisible: false},
+			},
+		},
+		VisualBreakdown: &domain.VisualBreakdownOutput{
+			SCPID:            "049",
+			FrozenDescriptor: frozen,
+			Scenes: []domain.VisualBreakdownScene{
+				{
+					SceneNum:  1,
+					Narration: "n1",
+					ShotCount: 1,
+					Shots: []domain.VisualShot{
+						{
+							ShotIndex:          1,
+							VisualDescriptor:   "camera: low wide establishing",
+							EstimatedDurationS: 4.0,
+							Transition:         domain.TransitionKenBurns,
+						},
+					},
+				},
+			},
+			ShotOverrides: map[int]domain.ShotOverride{},
+		},
+	}
+	scenarioPath := writeScenario(t, outputDir, runID, state)
+
+	images := newFakeImageGen()
+	track, err := pipeline.NewImageTrack(pipeline.ImageTrackConfig{
+		OutputDir:         outputDir,
+		Provider:          "dashscope",
+		GenerateModel:     "qwen-image",
+		EditModel:         "qwen-image-edit",
+		Width:             1024,
+		Height:            1024,
+		Images:            images,
+		CharacterResolver: &fakeCharacterResolver{},
+		Shots:             newFakeShotStore(),
+		Limiter:           &passthroughLimiter{},
+		Clock:             clock.RealClock{},
+	})
+	if err != nil {
+		t.Fatalf("NewImageTrack: %v", err)
+	}
+	override := "OPERATOR EDIT: porcelain mask; dim teal uplight"
+	req := pipeline.PhaseBRequest{
+		RunID:                    runID,
+		Stage:                    domain.StageImage,
+		ScenarioPath:             scenarioPath,
+		FrozenDescriptorOverride: &override,
+	}
+	if _, err := track(context.Background(), req); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+
+	if len(images.generateCalls) != 1 {
+		t.Fatalf("expected 1 generate call, got %d", len(images.generateCalls))
+	}
+	prompt := images.generateCalls[0].Prompt
+	if !strings.HasPrefix(prompt, override) {
+		t.Fatalf("prompt missing override prefix: %q", prompt)
+	}
+	if strings.Contains(prompt, frozen) {
+		t.Fatalf("override must replace (not supplement) artifact frozen: %q", prompt)
+	}
+}
+
+func TestImageTrack_NilFrozenDescriptorOverrideFallsThroughToArtifact(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	scenes := []sceneFixture{
+		{sceneNum: 1, narration: "n1", entityVisible: false, shots: []string{"shot a"}},
+	}
+	f := newImageTrackFixture(t, scenes)
+	// No override set.
+	if _, err := f.track(context.Background(), f.req); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+
+	artifactFrozen := "Appearance: slender humanoid; Environment: concrete chamber"
+	if len(f.images.generateCalls) != 1 {
+		t.Fatalf("expected 1 generate call, got %d", len(f.images.generateCalls))
+	}
+	if !strings.HasPrefix(f.images.generateCalls[0].Prompt, artifactFrozen) {
+		t.Fatalf("prompt should retain artifact frozen descriptor when no override: %q", f.images.generateCalls[0].Prompt)
+	}
+}
+
+func TestImageTrack_EmptyFrozenDescriptorOverrideFallsThroughToArtifact(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	scenes := []sceneFixture{
+		{sceneNum: 1, narration: "n1", entityVisible: false, shots: []string{"shot a"}},
+	}
+	f := newImageTrackFixture(t, scenes)
+	empty := "   "
+	f.req.FrozenDescriptorOverride = &empty
+
+	if _, err := f.track(context.Background(), f.req); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+	artifactFrozen := "Appearance: slender humanoid; Environment: concrete chamber"
+	if !strings.HasPrefix(f.images.generateCalls[0].Prompt, artifactFrozen) {
+		t.Fatalf("blank override must fall through to artifact: %q", f.images.generateCalls[0].Prompt)
 	}
 }

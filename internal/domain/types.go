@@ -125,6 +125,7 @@ type Run struct {
 	ScenarioPath        *string  `json:"scenario_path,omitempty"`
 	CharacterQueryKey   *string  `json:"character_query_key,omitempty"`
 	SelectedCharacterID *string  `json:"selected_character_id,omitempty"`
+	FrozenDescriptor    *string  `json:"frozen_descriptor,omitempty"`
 	CreatedAt           string   `json:"created_at"`
 	UpdatedAt           string   `json:"updated_at"`
 }

@@ -37,6 +37,7 @@ const viteDevServerURL = "http://localhost:5173"
 // absence (warn + skip vs. fatal).
 func buildPhaseBRunner(
 	cfg domain.PipelineConfig,
+	runStore *db.RunStore,
 	segStore *db.SegmentStore,
 	logger *slog.Logger,
 ) (*pipeline.PhaseBRunner, error) {
@@ -83,7 +84,13 @@ func buildPhaseBRunner(
 		return pipeline.ImageTrackResult{Observation: domain.NewStageObservation(domain.StageImage)}, nil
 	})
 
-	return pipeline.NewPhaseBRunner(imageTrackStub, ttsTrack, nil, clock.RealClock{}, logger, nil), nil
+	// runStore is passed as the PhaseBRunLoader: whenever image_track or the
+	// tts_track is invoked, PhaseBRunner.prepareRequest resolves
+	// runs.frozen_descriptor from the DB and populates
+	// PhaseBRequest.FrozenDescriptorOverride. This makes AC-6 propagation
+	// load-bearing at the Phase B entry point — no future wiring can forget
+	// to thread the operator's edited descriptor.
+	return pipeline.NewPhaseBRunner(imageTrackStub, ttsTrack, nil, clock.RealClock{}, logger, nil, runStore), nil
 }
 
 func newServeCmd() *cobra.Command {
@@ -130,7 +137,7 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	// Build Phase B TTS track. Requires DASHSCOPE_API_KEY in environment.
 	// The TTS track and image track share the same DashScope limiter budget
 	// via ProviderLimiterFactory.DashScopeTTS() == DashScopeImage().
-	phaseBRunner, err := buildPhaseBRunner(cfg, segStore, logger)
+	phaseBRunner, err := buildPhaseBRunner(cfg, store, segStore, logger)
 	if err != nil {
 		logger.Warn("phase b runner unavailable (TTS disabled)", "error", err.Error())
 		phaseBRunner = nil
@@ -143,8 +150,9 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	characterCache := db.NewCharacterCacheStore(database)
 	characterClient := service.NewDuckDuckGoClient(nil)
 	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
+	sceneSvc := service.NewSceneService(store, segStore)
 
-	deps := api.NewDependencies(svc, hitlSvc, characterSvc, cfg.OutputDir, logger, web.FS)
+	deps := api.NewDependencies(svc, hitlSvc, characterSvc, sceneSvc, cfg.OutputDir, logger, web.FS)
 	mux := http.NewServeMux()
 	if err := configureServeMux(mux, deps, devMode, mustParseURL(viteDevServerURL), cmd.OutOrStdout()); err != nil {
 		return err

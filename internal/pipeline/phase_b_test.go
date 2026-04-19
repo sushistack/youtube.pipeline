@@ -53,6 +53,7 @@ func TestPhaseBRunner_Run_UsesErrgroupWithoutSiblingCancellation(t *testing.T) {
 		clock.RealClock{},
 		logger,
 		nil,
+		nil,
 	)
 
 	res, err := runner.Run(context.Background(), req)
@@ -101,6 +102,7 @@ func TestPhaseBRunner_Run_WaitsForBothTracksBeforeReturning(t *testing.T) {
 		nil,
 		clock.RealClock{},
 		logger,
+		nil,
 		nil,
 	)
 
@@ -152,6 +154,7 @@ func TestPhaseBRunner_Run_ImageFailsTTSSucceeds_PreservesTTSArtifacts(t *testing
 			atomic.AddInt32(&assembleCalls, 1)
 			return nil
 		},
+		nil,
 	)
 
 	res, err := runner.Run(context.Background(), req)
@@ -194,6 +197,7 @@ func TestPhaseBRunner_Run_TTSFailsImageSucceeds_PreservesImages(t *testing.T) {
 		nil,
 		clock.RealClock{},
 		logger,
+		nil,
 		nil,
 	)
 
@@ -242,6 +246,7 @@ func TestPhaseBRunner_Run_BothTrackObservabilityRecordedOnMixedFailure(t *testin
 		rec,
 		clock.RealClock{},
 		logger,
+		nil,
 		nil,
 	)
 
@@ -302,6 +307,7 @@ func TestPhaseBRunner_Run_DoesNotAssembleUntilBothTracksSucceed(t *testing.T) {
 			assembleCalled <- struct{}{}
 			return nil
 		},
+		nil,
 	)
 
 	done := make(chan struct{})
@@ -346,6 +352,7 @@ func TestPhaseBRunner_Run_NoAssemblyOnMixedFailure(t *testing.T) {
 			atomic.AddInt32(&assembleCalls, 1)
 			return nil
 		},
+		nil,
 	)
 
 	if _, err := runner.Run(context.Background(), req); err == nil {
@@ -384,6 +391,7 @@ func TestPhaseBRunner_Run_CapturesWallClockElapsed(t *testing.T) {
 		fakeClock,
 		logger,
 		nil,
+		nil,
 	)
 
 	resCh := make(chan pipeline.PhaseBResult, 1)
@@ -415,6 +423,119 @@ func TestPhaseBRunner_Run_CapturesWallClockElapsed(t *testing.T) {
 
 	if !strings.Contains(logs.String(), `"wall_clock_ms":5000`) {
 		t.Fatalf("expected structured wall_clock_ms log entry; logs: %s", logs.String())
+	}
+}
+
+// fakePhaseBRunLoader is a minimal PhaseBRunLoader implementation used to
+// assert that the runner resolves runs.frozen_descriptor from the store and
+// sets PhaseBRequest.FrozenDescriptorOverride before the image/tts tracks run.
+type fakePhaseBRunLoader struct {
+	run *domain.Run
+	err error
+}
+
+func (f *fakePhaseBRunLoader) Get(ctx context.Context, id string) (*domain.Run, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.run, nil
+}
+
+// TestPhaseBRunner_Run_PopulatesFrozenDescriptorOverrideFromRunStore enforces
+// AC-6 propagation at the Phase B entry point: if the caller did not already
+// set FrozenDescriptorOverride and a RunLoader is configured, the runner must
+// load runs.frozen_descriptor and inject it into the request before invoking
+// the image/tts tracks. This prevents the "wired-but-forgotten" regression
+// flagged in the Story 7.3 code review.
+func TestPhaseBRunner_Run_PopulatesFrozenDescriptorOverrideFromRunStore(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	req := phaseBRequest(t)
+	logger, _ := testutil.CaptureLog(t)
+	descriptor := "operator-edited descriptor"
+	loader := &fakePhaseBRunLoader{run: &domain.Run{
+		ID:               req.RunID,
+		SCPID:            "049",
+		FrozenDescriptor: &descriptor,
+	}}
+
+	var observedOverride *string
+	runner := pipeline.NewPhaseBRunner(
+		func(ctx context.Context, r pipeline.PhaseBRequest) (pipeline.ImageTrackResult, error) {
+			if r.FrozenDescriptorOverride != nil {
+				v := *r.FrozenDescriptorOverride
+				observedOverride = &v
+			}
+			return pipeline.ImageTrackResult{
+				Observation: domain.StageObservation{Stage: domain.StageImage},
+			}, nil
+		},
+		func(ctx context.Context, r pipeline.PhaseBRequest) (pipeline.TTSTrackResult, error) {
+			return pipeline.TTSTrackResult{
+				Observation: domain.StageObservation{Stage: domain.StageTTS},
+			}, nil
+		},
+		nil,
+		clock.RealClock{},
+		logger,
+		nil,
+		loader,
+	)
+
+	if _, err := runner.Run(context.Background(), req); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if observedOverride == nil {
+		t.Fatal("expected FrozenDescriptorOverride to be set by runner, got nil")
+	}
+	if *observedOverride != descriptor {
+		t.Fatalf("FrozenDescriptorOverride = %q, want %q", *observedOverride, descriptor)
+	}
+}
+
+// TestPhaseBRunner_Run_PreservesCallerSuppliedOverride verifies that when the
+// caller pre-populates FrozenDescriptorOverride, the runner does NOT overwrite
+// it from the run store — preserves the legacy contract where the caller can
+// bypass the DB lookup (e.g., for testing or forced re-runs).
+func TestPhaseBRunner_Run_PreservesCallerSuppliedOverride(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	req := phaseBRequest(t)
+	caller := "caller-supplied"
+	req.FrozenDescriptorOverride = &caller
+
+	stored := "stored-in-db"
+	loader := &fakePhaseBRunLoader{run: &domain.Run{
+		ID:               req.RunID,
+		SCPID:            "049",
+		FrozenDescriptor: &stored,
+	}}
+
+	logger, _ := testutil.CaptureLog(t)
+	var observedOverride *string
+	runner := pipeline.NewPhaseBRunner(
+		func(ctx context.Context, r pipeline.PhaseBRequest) (pipeline.ImageTrackResult, error) {
+			if r.FrozenDescriptorOverride != nil {
+				v := *r.FrozenDescriptorOverride
+				observedOverride = &v
+			}
+			return pipeline.ImageTrackResult{Observation: domain.StageObservation{Stage: domain.StageImage}}, nil
+		},
+		func(ctx context.Context, r pipeline.PhaseBRequest) (pipeline.TTSTrackResult, error) {
+			return pipeline.TTSTrackResult{Observation: domain.StageObservation{Stage: domain.StageTTS}}, nil
+		},
+		nil,
+		clock.RealClock{},
+		logger,
+		nil,
+		loader,
+	)
+
+	if _, err := runner.Run(context.Background(), req); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if observedOverride == nil || *observedOverride != caller {
+		t.Fatalf("caller override was overwritten: got %v, want %q", observedOverride, caller)
 	}
 }
 

@@ -1,4 +1,11 @@
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { NavLink } from 'react-router'
+import { useLocation, useSearchParams } from 'react-router'
+import { fetchRunList } from '../../lib/apiClient'
+import { compareRunsForInventory } from '../../lib/formatters'
+import { queryKeys } from '../../lib/queryKeys'
+import { RunCard } from './RunCard'
 
 interface SidebarProps {
   collapsed: boolean
@@ -17,7 +24,33 @@ export function Sidebar({
   forced_collapsed,
   on_toggle,
 }: SidebarProps) {
+  const [inventory_query, set_inventory_query] = useState('')
+  const [search_params, set_search_params] = useSearchParams()
+  const location = useLocation()
   const can_toggle = !forced_collapsed
+  const selected_run_id = search_params.get('run')
+  const show_inventory = location.pathname === '/production' && !collapsed
+  const runs_query = useQuery({
+    queryFn: fetchRunList,
+    queryKey: queryKeys.runs.list(),
+    staleTime: 5_000,
+  })
+  const filtered_runs = (runs_query.data ?? [])
+    .slice()
+    .sort(compareRunsForInventory)
+    .filter((run) => {
+      if (inventory_query.trim().length === 0) {
+        return true
+      }
+
+      const query = inventory_query.trim().toLowerCase()
+      return (
+        run.id.toLowerCase().includes(query) ||
+        run.scp_id.toLowerCase().includes(query) ||
+        run.stage.toLowerCase().includes(query) ||
+        run.status.toLowerCase().includes(query)
+      )
+    })
 
   return (
     <aside
@@ -77,6 +110,55 @@ export function Sidebar({
           </NavLink>
         ))}
       </nav>
+
+      {show_inventory ? (
+        <section className="sidebar__inventory" aria-labelledby="sidebar-runs-title">
+          <div className="sidebar__inventory-header">
+            <p className="sidebar__inventory-eyebrow">Run inventory</p>
+            <h2 id="sidebar-runs-title" className="sidebar__inventory-title">
+              Active runs
+            </h2>
+          </div>
+
+          <label className="sidebar__search">
+            <span className="stage-stepper__sr-only">Search runs</span>
+            <input
+              type="search"
+              className="sidebar__search-input"
+              placeholder="Search runs"
+              value={inventory_query}
+              onChange={(event) => {
+                set_inventory_query(event.target.value)
+              }}
+            />
+          </label>
+
+          <div className="sidebar__inventory-list">
+            {filtered_runs.length > 0 ? (
+              filtered_runs.map((run) => (
+                <RunCard
+                  key={run.id}
+                  run={run}
+                  selected={selected_run_id === run.id}
+                  on_select={(run_id) => {
+                    set_search_params((current) => {
+                      const next = new URLSearchParams(current)
+                      next.set('run', run_id)
+                      return next
+                    })
+                  }}
+                />
+              ))
+            ) : (
+              <p className="sidebar__inventory-empty">
+                {(runs_query.data ?? []).length === 0
+                  ? 'No runs yet.'
+                  : 'No runs match the current search.'}
+              </p>
+            )}
+          </div>
+        </section>
+      ) : null}
     </aside>
   )
 }

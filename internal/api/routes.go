@@ -12,6 +12,7 @@ import (
 type Dependencies struct {
 	Run       *RunHandler
 	Character *CharacterHandler
+	Scene     *SceneHandler
 	HITL      *service.HITLService
 	Logger    *slog.Logger
 	WebFS     fs.FS
@@ -32,7 +33,10 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("POST /api/runs/{id}/cancel", deps.Run.Cancel)
 	api.HandleFunc("POST /api/runs/{id}/resume", deps.Run.Resume)
 	api.HandleFunc("GET /api/runs/{id}/characters", deps.Character.Search)
+	api.HandleFunc("GET /api/runs/{id}/characters/descriptor", deps.Character.Descriptor)
 	api.HandleFunc("POST /api/runs/{id}/characters/pick", deps.Character.Pick)
+	api.HandleFunc("GET /api/runs/{id}/scenes", deps.Scene.List)
+	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/edit", deps.Scene.Edit)
 
 	apiChain := Chain(api,
 		WithRequestID,
@@ -54,6 +58,7 @@ func NewDependencies(
 	svc *service.RunService,
 	hitl *service.HITLService,
 	characters *service.CharacterService,
+	scenes *service.SceneService,
 	outputDir string,
 	logger *slog.Logger,
 	webFS fs.FS,
@@ -61,6 +66,7 @@ func NewDependencies(
 	return &Dependencies{
 		Run:       NewRunHandler(svc, hitl, outputDir, logger),
 		Character: NewCharacterHandler(characters),
+		Scene:     NewSceneHandler(scenes),
 		Logger:    logger,
 		WebFS:     webFS,
 		OutputDir: outputDir,

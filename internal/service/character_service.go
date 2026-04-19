@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,7 +17,8 @@ import (
 type CharacterRunStore interface {
 	Get(ctx context.Context, id string) (*domain.Run, error)
 	SetCharacterQueryKey(ctx context.Context, id, queryKey string) error
-	ApplyCharacterPick(ctx context.Context, id, queryKey, selectedCharacterID string, stage domain.Stage, status domain.Status) error
+	ApplyCharacterPick(ctx context.Context, id, queryKey, selectedCharacterID string, frozenDescriptor *string, stage domain.Stage, status domain.Status) error
+	LatestFrozenDescriptorBySCPID(ctx context.Context, scpID, excludeRunID string) (*string, error)
 }
 
 type CharacterCacheStore interface {
@@ -75,7 +78,13 @@ func (s *CharacterService) Search(ctx context.Context, runID, query string) (*do
 	return group, nil
 }
 
-func (s *CharacterService) Pick(ctx context.Context, runID, candidateID string) (*domain.Run, error) {
+// Pick finalizes the operator's character selection and, when frozenDescriptor
+// is non-empty, persists the edited Vision Descriptor atomically with the
+// stage advance. A blank frozenDescriptor leaves the prior runs.frozen_descriptor
+// column unchanged (per AC-3: pick + descriptor are one write, but the
+// descriptor half is optional to preserve backward compatibility with callers
+// that have not yet adopted the extended request shape).
+func (s *CharacterService) Pick(ctx context.Context, runID, candidateID, frozenDescriptor string) (*domain.Run, error) {
 	run, err := s.runs.Get(ctx, runID)
 	if err != nil {
 		return nil, fmt.Errorf("character pick: load run: %w", err)
@@ -104,7 +113,11 @@ func (s *CharacterService) Pick(ctx context.Context, runID, candidateID string) 
 	if err != nil {
 		return nil, fmt.Errorf("character pick: next stage: %w", err)
 	}
-	if err := s.runs.ApplyCharacterPick(ctx, runID, queryKey, candidateID, nextStage, pipeline.StatusForStage(nextStage)); err != nil {
+	var descriptorPtr *string
+	if trimmed := strings.TrimSpace(frozenDescriptor); trimmed != "" {
+		descriptorPtr = &trimmed
+	}
+	if err := s.runs.ApplyCharacterPick(ctx, runID, queryKey, candidateID, descriptorPtr, nextStage, pipeline.StatusForStage(nextStage)); err != nil {
 		return nil, fmt.Errorf("character pick: persist selection: %w", err)
 	}
 	updated, err := s.runs.Get(ctx, runID)
@@ -112,6 +125,81 @@ func (s *CharacterService) Pick(ctx context.Context, runID, candidateID string) 
 		return nil, fmt.Errorf("character pick: reload run: %w", err)
 	}
 	return updated, nil
+}
+
+// GetCandidatesByRun returns the cached character group for a run without
+// performing an external search. Callers should invoke this path to restore
+// the operator-facing grid on page reload — the run must have been through at
+// least one successful Search so that character_query_key is set.
+func (s *CharacterService) GetCandidatesByRun(ctx context.Context, runID string) (*domain.CharacterGroup, error) {
+	run, err := s.runs.Get(ctx, runID)
+	if err != nil {
+		return nil, fmt.Errorf("character candidates by run: load run: %w", err)
+	}
+	if run.CharacterQueryKey == nil || *run.CharacterQueryKey == "" {
+		return nil, fmt.Errorf("character candidates by run: no active query key: %w", domain.ErrNotFound)
+	}
+	group, err := s.cache.Get(ctx, *run.CharacterQueryKey)
+	if err != nil {
+		return nil, fmt.Errorf("character candidates by run: load cache: %w", err)
+	}
+	return group, nil
+}
+
+// DescriptorPrefill carries the two possible sources of a Vision Descriptor
+// pre-fill. The operator-facing component chooses prior when non-nil (UX-DR62)
+// and falls back to auto otherwise.
+type DescriptorPrefill struct {
+	Auto  string  `json:"auto"`
+	Prior *string `json:"prior"`
+}
+
+// GetDescriptorPrefill returns both candidate pre-fill values for the Vision
+// Descriptor editor. "auto" is parsed from the run's scenario artifact (the
+// original Phase A output); "prior" is the most-recently-saved descriptor for
+// any other run sharing the same SCP ID. The artifact is the source of truth
+// for auto because the column on runs is only populated after a pick.
+func (s *CharacterService) GetDescriptorPrefill(ctx context.Context, runID string) (*DescriptorPrefill, error) {
+	run, err := s.runs.Get(ctx, runID)
+	if err != nil {
+		return nil, fmt.Errorf("descriptor prefill: load run: %w", err)
+	}
+	// scenario_path is populated by Phase A; its absence means the run has
+	// not yet completed Phase A. Treat as NotFound so the handler maps to
+	// 404 (matching AC-4 test intent: "404 vs valid descriptor response
+	// shapes"). Returning ErrValidation here would surface as 400 and
+	// mislead the client into thinking its input was malformed.
+	if run.ScenarioPath == nil || *run.ScenarioPath == "" {
+		return nil, fmt.Errorf("descriptor prefill: run has no scenario path: %w", domain.ErrNotFound)
+	}
+	raw, err := os.ReadFile(*run.ScenarioPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("descriptor prefill: scenario.json missing at %s: %w", *run.ScenarioPath, domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("descriptor prefill: read scenario: %w", err)
+	}
+	var envelope struct {
+		VisualBreakdown *struct {
+			FrozenDescriptor string `json:"frozen_descriptor"`
+		} `json:"visual_breakdown"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, fmt.Errorf("descriptor prefill: decode scenario.json: %w", err)
+	}
+	// Missing visual_breakdown means Phase A produced a malformed artifact.
+	// Silently returning auto="" would let the operator confirm an empty
+	// descriptor and propagate the bad state downstream. Surface as NotFound
+	// so the client can retry or fall back to prior-run lookup.
+	if envelope.VisualBreakdown == nil {
+		return nil, fmt.Errorf("descriptor prefill: scenario.json has no visual_breakdown: %w", domain.ErrNotFound)
+	}
+	auto := envelope.VisualBreakdown.FrozenDescriptor
+	prior, err := s.runs.LatestFrozenDescriptorBySCPID(ctx, run.SCPID, runID)
+	if err != nil {
+		return nil, fmt.Errorf("descriptor prefill: lookup prior: %w", err)
+	}
+	return &DescriptorPrefill{Auto: auto, Prior: prior}, nil
 }
 
 func (s *CharacterService) GetSelectedCandidate(ctx context.Context, runID string) (*domain.CharacterCandidate, error) {

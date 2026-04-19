@@ -40,14 +40,23 @@ type createRequest struct {
 
 // runResponse is the API representation of a pipeline run.
 type runResponse struct {
-	ID         string  `json:"id"`
-	SCPID      string  `json:"scp_id"`
-	Stage      string  `json:"stage"`
-	Status     string  `json:"status"`
-	RetryCount int     `json:"retry_count"`
-	CostUSD    float64 `json:"cost_usd"`
-	CreatedAt  string  `json:"created_at"`
-	UpdatedAt  string  `json:"updated_at"`
+	ID                  string   `json:"id"`
+	SCPID               string   `json:"scp_id"`
+	Stage               string   `json:"stage"`
+	Status              string   `json:"status"`
+	RetryCount          int      `json:"retry_count"`
+	RetryReason         *string  `json:"retry_reason,omitempty"`
+	CriticScore         *float64 `json:"critic_score,omitempty"`
+	CostUSD             float64  `json:"cost_usd"`
+	TokenIn             int      `json:"token_in"`
+	TokenOut            int      `json:"token_out"`
+	DurationMs          int64    `json:"duration_ms"`
+	HumanOverride       bool     `json:"human_override"`
+	CharacterQueryKey   *string  `json:"character_query_key,omitempty"`
+	SelectedCharacterID *string  `json:"selected_character_id,omitempty"`
+	FrozenDescriptor    *string  `json:"frozen_descriptor,omitempty"`
+	CreatedAt           string   `json:"created_at"`
+	UpdatedAt           string   `json:"updated_at"`
 }
 
 // resumeResponse wraps runResponse with optional warnings populated when
@@ -238,13 +247,22 @@ func mismatchStrings(report *domain.InconsistencyReport) []string {
 // HITLService.BuildStatus so cost/token/duration are carried in the response.
 func toRunResponse(r *domain.Run) *runResponse {
 	return &runResponse{
-		ID:         r.ID,
-		SCPID:      r.SCPID,
-		Stage:      string(r.Stage),
-		Status:     string(r.Status),
-		RetryCount: r.RetryCount,
-		CostUSD:    r.CostUSD,
-		CreatedAt:  r.CreatedAt,
-		UpdatedAt:  r.UpdatedAt,
+		ID:                  r.ID,
+		SCPID:               r.SCPID,
+		Stage:               string(r.Stage),
+		Status:              string(r.Status),
+		RetryCount:          r.RetryCount,
+		RetryReason:         r.RetryReason,
+		CriticScore:         r.CriticScore,
+		CostUSD:             r.CostUSD,
+		TokenIn:             r.TokenIn,
+		TokenOut:            r.TokenOut,
+		DurationMs:          r.DurationMs,
+		HumanOverride:       r.HumanOverride,
+		CharacterQueryKey:   r.CharacterQueryKey,
+		SelectedCharacterID: r.SelectedCharacterID,
+		FrozenDescriptor:    r.FrozenDescriptor,
+		CreatedAt:           r.CreatedAt,
+		UpdatedAt:           r.UpdatedAt,
 	}
 }

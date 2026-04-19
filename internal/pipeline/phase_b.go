@@ -26,6 +26,12 @@ type PhaseBRequest struct {
 	ScenarioPath string
 	Segments     []*domain.Episode
 	Scenario     *agents.PipelineState
+	// FrozenDescriptorOverride, when non-nil and non-empty, replaces the
+	// scenario artifact's FrozenDescriptor in every image prompt. Populated
+	// by the pipeline runner from runs.frozen_descriptor after the operator
+	// confirms a Vision Descriptor in the character pick phase. A nil
+	// pointer preserves prior behavior (artifact value is used verbatim).
+	FrozenDescriptorOverride *string
 }
 
 type ImageTrackResult struct {
@@ -75,13 +81,23 @@ func (e *PhaseBTrackError) Unwrap() error {
 	return e.Err
 }
 
+// PhaseBRunLoader is the minimal surface PhaseBRunner needs to resolve the
+// operator-edited frozen descriptor at invocation time. It is satisfied by
+// *db.RunStore but tests can supply a trivial fake. The loader is optional:
+// when nil, PhaseBRunner consumes whatever FrozenDescriptorOverride the
+// caller set on the request (or falls through to the artifact value).
+type PhaseBRunLoader interface {
+	Get(ctx context.Context, id string) (*domain.Run, error)
+}
+
 type PhaseBRunner struct {
-	images   ImageTrack
-	tts      TTSTrack
-	recorder *Recorder
-	clock    clock.Clock
-	logger   *slog.Logger
-	assemble PhaseBAssembler
+	images    ImageTrack
+	tts       TTSTrack
+	recorder  *Recorder
+	clock     clock.Clock
+	logger    *slog.Logger
+	assemble  PhaseBAssembler
+	runLoader PhaseBRunLoader
 }
 
 func NewPhaseBRunner(
@@ -91,6 +107,7 @@ func NewPhaseBRunner(
 	clk clock.Clock,
 	logger *slog.Logger,
 	assemble PhaseBAssembler,
+	runLoader PhaseBRunLoader,
 ) *PhaseBRunner {
 	if clk == nil {
 		clk = clock.RealClock{}
@@ -99,12 +116,13 @@ func NewPhaseBRunner(
 		logger = slog.Default()
 	}
 	return &PhaseBRunner{
-		images:   images,
-		tts:      tts,
-		recorder: recorder,
-		clock:    clk,
-		logger:   logger,
-		assemble: assemble,
+		images:    images,
+		tts:       tts,
+		recorder:  recorder,
+		clock:     clk,
+		logger:    logger,
+		assemble:  assemble,
+		runLoader: runLoader,
 	}
 }
 
@@ -112,7 +130,7 @@ func (r *PhaseBRunner) Run(ctx context.Context, req PhaseBRequest) (PhaseBResult
 	if r.images == nil || r.tts == nil {
 		return PhaseBResult{}, fmt.Errorf("phase b runner: missing track dependency: %w", domain.ErrValidation)
 	}
-	preparedReq, err := r.prepareRequest(req)
+	preparedReq, err := r.prepareRequest(ctx, req)
 	if err != nil {
 		return PhaseBResult{}, err
 	}
@@ -176,13 +194,33 @@ func (r *PhaseBRunner) Run(ctx context.Context, req PhaseBRequest) (PhaseBResult
 	return res, nil
 }
 
-func (r *PhaseBRunner) prepareRequest(req PhaseBRequest) (PhaseBRequest, error) {
+func (r *PhaseBRunner) prepareRequest(ctx context.Context, req PhaseBRequest) (PhaseBRequest, error) {
 	if req.RunID == "" {
 		return PhaseBRequest{}, fmt.Errorf("phase b runner: run id required: %w", domain.ErrValidation)
 	}
 	if req.Stage != domain.StageImage && req.Stage != domain.StageTTS {
 		return PhaseBRequest{}, fmt.Errorf("phase b runner: invalid phase b stage %q: %w", req.Stage, domain.ErrValidation)
 	}
+
+	// Resolve the operator-edited Vision Descriptor from runs.frozen_descriptor
+	// when the caller did not pre-populate the override. This keeps AC-6's
+	// "operator edit overrides artifact" invariant local to the Phase B
+	// entry point: every image_track invocation picks up the latest column
+	// value without the caller needing to remember to thread it through. A
+	// nil runLoader preserves the legacy behavior (caller-supplied override
+	// or artifact fallback) so existing tests and any non-production call
+	// sites are unaffected.
+	if req.FrozenDescriptorOverride == nil && r.runLoader != nil {
+		run, err := r.runLoader.Get(ctx, req.RunID)
+		if err != nil {
+			return PhaseBRequest{}, fmt.Errorf("phase b runner: load run for frozen descriptor: %w", err)
+		}
+		if run != nil && run.FrozenDescriptor != nil && *run.FrozenDescriptor != "" {
+			override := *run.FrozenDescriptor
+			req.FrozenDescriptorOverride = &override
+		}
+	}
+
 	if req.Scenario != nil {
 		return req, nil
 	}

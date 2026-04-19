@@ -607,3 +607,62 @@ func TestSegmentStore_UpsertTTSArtifact_CoexistsWithUpsertImageShots(t *testing.
 		t.Errorf("run-2 TTSPath = %v, want \"tts/scene_01.wav\"", ep2.TTSPath)
 	}
 }
+
+// ── UpdateNarration ───────────────────────────────────────────────────────────
+
+func TestSegmentStore_UpdateNarration_PersistsText(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+	ctx := context.Background()
+
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO runs (id, scp_id) VALUES (?, ?)`, "run-narr", "049"); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO segments (run_id, scene_index, narration, status) VALUES (?, 0, ?, 'pending')`,
+		"run-narr", "원래 텍스트"); err != nil {
+		t.Fatalf("seed segment: %v", err)
+	}
+
+	if err := store.UpdateNarration(ctx, "run-narr", 0, "새 텍스트"); err != nil {
+		t.Fatalf("UpdateNarration: %v", err)
+	}
+
+	row, err := store.GetByRunIDAndSceneIndex(ctx, "run-narr", 0)
+	if err != nil {
+		t.Fatalf("GetByRunIDAndSceneIndex: %v", err)
+	}
+	if row.Narration == nil || *row.Narration != "새 텍스트" {
+		t.Errorf("narration = %v, want \"새 텍스트\"", row.Narration)
+	}
+}
+
+func TestSegmentStore_UpdateNarration_ReturnsNotFoundForMissingScene(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+	ctx := context.Background()
+
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO runs (id, scp_id) VALUES (?, ?)`, "run-narr2", "049"); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	err := store.UpdateNarration(ctx, "run-narr2", 99, "text")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestSegmentStore_UpdateNarration_ReturnsValidationErrorForEmptyRunID(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+
+	err := store.UpdateNarration(context.Background(), "", 0, "text")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("want ErrValidation, got %v", err)
+	}
+}

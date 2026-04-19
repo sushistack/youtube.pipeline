@@ -119,7 +119,7 @@ func (s *RunStore) Get(ctx context.Context, id string) (*domain.Run, error) {
 		`SELECT id, scp_id, stage, status, retry_count, retry_reason,
 		        critic_score, cost_usd, token_in, token_out, duration_ms,
 		        human_override, scenario_path, character_query_key,
-		        selected_character_id, created_at, updated_at
+		        selected_character_id, frozen_descriptor, created_at, updated_at
 		   FROM runs WHERE id = ?`, id)
 
 	run, err := scanRun(row)
@@ -138,7 +138,7 @@ func (s *RunStore) List(ctx context.Context) ([]*domain.Run, error) {
 		`SELECT id, scp_id, stage, status, retry_count, retry_reason,
 		        critic_score, cost_usd, token_in, token_out, duration_ms,
 		        human_override, scenario_path, character_query_key,
-		        selected_character_id, created_at, updated_at
+		        selected_character_id, frozen_descriptor, created_at, updated_at
 		   FROM runs ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list runs: %w", err)
@@ -311,24 +311,35 @@ func (s *RunStore) SetSelectedCharacterID(ctx context.Context, id, selectedChara
 	return nil
 }
 
-// ApplyCharacterPick atomically persists the selected character and advances the run.
+// ApplyCharacterPick atomically persists the selected character, optionally
+// records the operator-edited frozen descriptor, and advances the run in a
+// single UPDATE. A nil frozenDescriptor leaves the existing value unchanged
+// (COALESCE preserves whatever was already there); a non-nil pointer writes
+// the new value verbatim (empty string is allowed to explicitly clear).
 func (s *RunStore) ApplyCharacterPick(
 	ctx context.Context,
 	id string,
 	queryKey string,
 	selectedCharacterID string,
+	frozenDescriptor *string,
 	stage domain.Stage,
 	status domain.Status,
 ) error {
+	var fd sql.NullString
+	if frozenDescriptor != nil {
+		fd = sql.NullString{String: *frozenDescriptor, Valid: true}
+	}
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE runs
 		    SET character_query_key = ?,
 		        selected_character_id = ?,
+		        frozen_descriptor = COALESCE(?, frozen_descriptor),
 		        stage = ?,
 		        status = ?
 		  WHERE id = ?`,
 		queryKey,
 		selectedCharacterID,
+		fd,
 		string(stage),
 		string(status),
 		id,
@@ -344,6 +355,63 @@ func (s *RunStore) ApplyCharacterPick(
 		return fmt.Errorf("apply character pick for %s: %w", id, domain.ErrNotFound)
 	}
 	return nil
+}
+
+// SetFrozenDescriptor writes the operator-edited frozen descriptor to the run
+// row. An empty string explicitly clears the column (NULL is not an option via
+// this entry point). Returns ErrNotFound when the run does not exist.
+func (s *RunStore) SetFrozenDescriptor(ctx context.Context, id, descriptor string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET frozen_descriptor = ? WHERE id = ?`,
+		descriptor, id,
+	)
+	if err != nil {
+		return fmt.Errorf("set frozen descriptor for %s: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set frozen descriptor for %s rows affected: %w", id, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("set frozen descriptor for %s: %w", id, domain.ErrNotFound)
+	}
+	return nil
+}
+
+// LatestFrozenDescriptorBySCPID returns the most-recently-updated non-null
+// frozen_descriptor for *completed* runs sharing scpID, excluding excludeRunID
+// (typically the current run). Returns (nil, nil) when no prior run has a
+// saved value — callers interpret that as "no prior descriptor available".
+//
+// The status=completed filter implements AC-4's "most recent other *completed*
+// run" rule: a cancelled/failed/mid-flight run that happened to persist a
+// descriptor must not shadow the last descriptor an operator shipped to
+// completion. Without this predicate, a blown-up run whose only artifact is a
+// saved descriptor would pollute the prefill of every future pick for this SCP.
+func (s *RunStore) LatestFrozenDescriptorBySCPID(ctx context.Context, scpID, excludeRunID string) (*string, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT frozen_descriptor
+		   FROM runs
+		  WHERE scp_id = ?
+		    AND id != ?
+		    AND status = ?
+		    AND frozen_descriptor IS NOT NULL
+		  ORDER BY updated_at DESC, id DESC
+		  LIMIT 1`,
+		scpID, excludeRunID, string(domain.StatusCompleted),
+	)
+	var fd sql.NullString
+	if err := row.Scan(&fd); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("latest frozen descriptor by scp %s: %w", scpID, err)
+	}
+	if !fd.Valid {
+		return nil, nil
+	}
+	value := fd.String
+	return &value, nil
 }
 
 // RecordStageObservation folds a StageObservation into the target run row.
@@ -570,6 +638,7 @@ func scanRun(s scanner) (*domain.Run, error) {
 	var scenarioPath sql.NullString
 	var characterQueryKey sql.NullString
 	var selectedCharacterID sql.NullString
+	var frozenDescriptor sql.NullString
 	var humanOverride int
 
 	err := s.Scan(
@@ -577,7 +646,7 @@ func scanRun(s scanner) (*domain.Run, error) {
 		&r.RetryCount, &retryReason,
 		&criticScore, &r.CostUSD, &r.TokenIn, &r.TokenOut, &r.DurationMs,
 		&humanOverride, &scenarioPath, &characterQueryKey, &selectedCharacterID,
-		&r.CreatedAt, &r.UpdatedAt,
+		&frozenDescriptor, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -598,6 +667,9 @@ func scanRun(s scanner) (*domain.Run, error) {
 	}
 	if selectedCharacterID.Valid {
 		r.SelectedCharacterID = &selectedCharacterID.String
+	}
+	if frozenDescriptor.Valid {
+		r.FrozenDescriptor = &frozenDescriptor.String
 	}
 	return &r, nil
 }

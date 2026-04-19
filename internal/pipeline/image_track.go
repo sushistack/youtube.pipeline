@@ -145,6 +145,12 @@ func runImageTrack(
 		return ImageTrackResult{}, fmt.Errorf("image track: %w: scenario.json missing visual_breakdown", domain.ErrValidation)
 	}
 	frozen := state.VisualBreakdown.FrozenDescriptor
+	if req.FrozenDescriptorOverride != nil && strings.TrimSpace(*req.FrozenDescriptorOverride) != "" {
+		// Operator-edited descriptor (runs.frozen_descriptor) takes precedence
+		// over the artifact value. The artifact itself is read-only — we only
+		// swap the bytes used by ComposeImagePrompt.
+		frozen = *req.FrozenDescriptorOverride
+	}
 	if strings.TrimSpace(frozen) == "" {
 		return ImageTrackResult{}, fmt.Errorf("image track: %w: frozen descriptor is empty", domain.ErrValidation)
 	}

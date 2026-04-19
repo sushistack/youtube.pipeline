@@ -266,6 +266,32 @@ func (s *SegmentStore) UpsertTTSArtifact(
 	return nil
 }
 
+// UpdateNarration replaces the narration text for a specific scene. Returns
+// ErrNotFound when no row exists for (runID, sceneIndex).
+func (s *SegmentStore) UpdateNarration(ctx context.Context, runID string, sceneIndex int, narration string) error {
+	if runID == "" {
+		return fmt.Errorf("update narration: %w: run_id is empty", domain.ErrValidation)
+	}
+	if sceneIndex < 0 {
+		return fmt.Errorf("update narration %s[%d]: %w: scene_index is negative", runID, sceneIndex, domain.ErrValidation)
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE segments SET narration = ? WHERE run_id = ? AND scene_index = ?`,
+		narration, runID, sceneIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("update narration %s[%d]: %w", runID, sceneIndex, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update narration %s[%d] rows affected: %w", runID, sceneIndex, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("update narration %s[%d]: %w", runID, sceneIndex, domain.ErrNotFound)
+	}
+	return nil
+}
+
 func (s *SegmentStore) GetByRunIDAndSceneIndex(ctx context.Context, runID string, sceneIndex int) (*domain.Episode, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, run_id, scene_index, narration, shot_count, shots,

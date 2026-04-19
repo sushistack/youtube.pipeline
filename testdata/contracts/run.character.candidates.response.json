@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "data": {
+    "query": "SCP-049",
+    "query_key": "scp-049",
+    "candidates": [
+      {
+        "id": "scp-049#1",
+        "page_url": "https://example.com/scp-049/1",
+        "image_url": "https://example.com/scp-049/1.jpg",
+        "preview_url": "https://example.com/scp-049/1-thumb.jpg",
+        "title": "Plague doctor render 1",
+        "source_label": "Example Archive"
+      },
+      {
+        "id": "scp-049#2",
+        "page_url": "https://example.com/scp-049/2",
+        "image_url": "https://example.com/scp-049/2.jpg"
+      }
+    ]
+  }
+}

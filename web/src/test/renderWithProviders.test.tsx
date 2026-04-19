@@ -6,9 +6,23 @@ import { ProductionShell } from '../components/shells/ProductionShell'
 import { AppShell } from '../components/shared/AppShell'
 import { KeyboardShortcutsProvider } from '../hooks/useKeyboardShortcuts'
 import { renderWithProviders } from './renderWithProviders'
+import { vi } from 'vitest'
 
 describe('renderWithProviders', () => {
   it('renders a routed shell through MemoryRouter and a fresh QueryClient', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: { items: [], total: 0 },
+          version: 1,
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        },
+      ),
+    )
+
     const firstRender = renderWithProviders(
       <KeyboardShortcutsProvider>
         <Routes>
@@ -23,7 +37,7 @@ describe('renderWithProviders', () => {
     )
 
     expect(await screen.findByRole('heading', { name: 'Production' })).toBeInTheDocument()
-    expect(firstRender.queryClient.getQueryCache().getAll()).toHaveLength(0)
+    expect(firstRender.queryClient.getQueryCache().getAll().length).toBeGreaterThan(0)
 
     firstRender.unmount()
 
@@ -31,4 +45,3 @@ describe('renderWithProviders', () => {
     expect(secondRender.queryClient).not.toBe(firstRender.queryClient)
   })
 })
-

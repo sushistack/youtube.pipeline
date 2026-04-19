@@ -3,7 +3,7 @@ import '@testing-library/jest-dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { useUIStore } from './stores/useUIStore'
+import { UI_STORE_PERSIST_KEY, useUIStore } from './stores/useUIStore'
 
 type MediaListener = (event: MediaQueryListEvent) => void
 
@@ -67,7 +67,11 @@ function setViewportWidth(width: number) {
 describe('App', () => {
   beforeEach(() => {
     localStorage.clear()
-    useUIStore.setState({ sidebar_collapsed: false })
+    useUIStore.setState({
+      onboarding_dismissed: true,
+      production_last_seen: {},
+      sidebar_collapsed: false,
+    })
     window.history.pushState({}, '', '/')
     installMatchMedia(1440)
   })
@@ -82,6 +86,36 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Production' })).toBeInTheDocument()
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-sidebar', 'shell')
     expect(window.location.pathname).toBe('/production')
+  })
+
+  it('shows the onboarding modal on first render and keeps it dismissed after rerender', async () => {
+    const user = userEvent.setup()
+    useUIStore.setState({
+      onboarding_dismissed: false,
+      production_last_seen: {},
+      sidebar_collapsed: false,
+    })
+
+    const { rerender } = render(<App />)
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Continue to workspace' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(useUIStore.getState().onboarding_dismissed).toBe(true)
+    expect(JSON.parse(localStorage.getItem(UI_STORE_PERSIST_KEY) ?? '{}')).toEqual({
+      state: {
+        onboarding_dismissed: true,
+        production_last_seen: {},
+        sidebar_collapsed: false,
+      },
+      version: 0,
+    })
+
+    rerender(<App />)
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('renders route-specific shell content for each workflow route', async () => {

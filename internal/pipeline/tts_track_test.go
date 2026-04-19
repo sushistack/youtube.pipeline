@@ -512,6 +512,7 @@ func TestPhaseBRunner_TTSFailureDoesNotCancelImageTrack(t *testing.T) {
 		clock.RealClock{},
 		logger,
 		nil,
+		nil,
 	)
 
 	_, _ = runner.Run(context.Background(), req)

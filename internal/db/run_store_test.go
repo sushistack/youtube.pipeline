@@ -819,3 +819,204 @@ FROM (
 		t.Errorf("query plan must not full-scan runs; got plan:\n%s", planStr)
 	}
 }
+
+func TestRunStore_ApplyCharacterPick_PersistsFrozenDescriptor(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+
+	run, err := store.Create(context.Background(), "049", outDir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := database.ExecContext(context.Background(),
+		`UPDATE runs SET stage = 'character_pick', status = 'waiting' WHERE id = ?`,
+		run.ID,
+	); err != nil {
+		t.Fatalf("seed stage: %v", err)
+	}
+
+	descriptor := "appearance: plague doctor; environment: dim corridor"
+	if err := store.ApplyCharacterPick(context.Background(),
+		run.ID, "scp-049", "scp-049#3", &descriptor,
+		domain.StageImage, domain.StatusRunning,
+	); err != nil {
+		t.Fatalf("ApplyCharacterPick: %v", err)
+	}
+
+	reloaded, err := store.Get(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	testutil.AssertEqual(t, reloaded.Stage, domain.StageImage)
+	testutil.AssertEqual(t, reloaded.Status, domain.StatusRunning)
+	if reloaded.FrozenDescriptor == nil || *reloaded.FrozenDescriptor != descriptor {
+		t.Fatalf("FrozenDescriptor = %v, want %q", reloaded.FrozenDescriptor, descriptor)
+	}
+	if reloaded.SelectedCharacterID == nil || *reloaded.SelectedCharacterID != "scp-049#3" {
+		t.Fatalf("SelectedCharacterID = %v, want scp-049#3", reloaded.SelectedCharacterID)
+	}
+}
+
+func TestRunStore_ApplyCharacterPick_NilDescriptorPreservesPriorValue(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+
+	run, err := store.Create(context.Background(), "049", outDir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := database.ExecContext(context.Background(),
+		`UPDATE runs SET stage = 'character_pick', status = 'waiting',
+		 frozen_descriptor = 'pre-existing' WHERE id = ?`,
+		run.ID,
+	); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := store.ApplyCharacterPick(context.Background(),
+		run.ID, "scp-049", "scp-049#1", nil,
+		domain.StageImage, domain.StatusRunning,
+	); err != nil {
+		t.Fatalf("ApplyCharacterPick: %v", err)
+	}
+	reloaded, err := store.Get(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if reloaded.FrozenDescriptor == nil || *reloaded.FrozenDescriptor != "pre-existing" {
+		t.Fatalf("nil descriptor must preserve prior value; got %v", reloaded.FrozenDescriptor)
+	}
+}
+
+func TestRunStore_LatestFrozenDescriptorBySCPID_PrefersMostRecentAndExcludesCurrent(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	// Three runs for SCP-049: two with frozen_descriptor values, one is the
+	// current run (must be excluded), plus one unrelated SCP.
+	runOldest, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create oldest: %v", err)
+	}
+	runNewer, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create newer: %v", err)
+	}
+	runCurrent, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create current: %v", err)
+	}
+	runOther, err := store.Create(ctx, "050", outDir)
+	if err != nil {
+		t.Fatalf("Create other: %v", err)
+	}
+
+	// Prior runs must be status='completed' to count per AC-4; the test
+	// explicitly seeds that predicate alongside the descriptor + updated_at
+	// timestamp so ordering and completion-filter semantics are both covered.
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET frozen_descriptor = ?, status = 'completed', updated_at = ? WHERE id = ?`,
+		"oldest-049", "2026-01-01 00:00:00", runOldest.ID,
+	); err != nil {
+		t.Fatalf("update oldest: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET frozen_descriptor = ?, status = 'completed', updated_at = ? WHERE id = ?`,
+		"newer-049", "2026-03-01 00:00:00", runNewer.ID,
+	); err != nil {
+		t.Fatalf("update newer: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET frozen_descriptor = 'current-should-be-ignored' WHERE id = ?`,
+		runCurrent.ID,
+	); err != nil {
+		t.Fatalf("update current: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET frozen_descriptor = 'other-scp', status = 'completed' WHERE id = ?`,
+		runOther.ID,
+	); err != nil {
+		t.Fatalf("update other: %v", err)
+	}
+
+	got, err := store.LatestFrozenDescriptorBySCPID(ctx, "049", runCurrent.ID)
+	if err != nil {
+		t.Fatalf("LatestFrozenDescriptorBySCPID: %v", err)
+	}
+	if got == nil || *got != "newer-049" {
+		t.Fatalf("got %v, want pointer to \"newer-049\"", got)
+	}
+}
+
+func TestRunStore_LatestFrozenDescriptorBySCPID_ReturnsNilWhenNoPrior(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := store.LatestFrozenDescriptorBySCPID(ctx, "049", run.ID)
+	if err != nil {
+		t.Fatalf("LatestFrozenDescriptorBySCPID: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil pointer, got %q", *got)
+	}
+}
+
+// TestRunStore_LatestFrozenDescriptorBySCPID_ExcludesNonCompletedRuns enforces
+// AC-4's "most recent other *completed* run" predicate. A non-completed run
+// (running/failed/cancelled) that happened to persist a frozen_descriptor via
+// the character_pick flow must not surface as the prior-run prefill source.
+func TestRunStore_LatestFrozenDescriptorBySCPID_ExcludesNonCompletedRuns(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	runFailed, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create failed run: %v", err)
+	}
+	runCancelled, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create cancelled run: %v", err)
+	}
+	runCurrent, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create current run: %v", err)
+	}
+
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET frozen_descriptor = 'failed-desc', status = 'failed' WHERE id = ?`,
+		runFailed.ID,
+	); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET frozen_descriptor = 'cancelled-desc', status = 'cancelled' WHERE id = ?`,
+		runCancelled.ID,
+	); err != nil {
+		t.Fatalf("seed cancelled: %v", err)
+	}
+
+	got, err := store.LatestFrozenDescriptorBySCPID(ctx, "049", runCurrent.ID)
+	if err != nil {
+		t.Fatalf("LatestFrozenDescriptorBySCPID: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil (no completed prior), got %q", *got)
+	}
+}
