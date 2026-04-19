@@ -154,7 +154,7 @@ describe('InlineNarrationEditor — save on Enter', () => {
   it('Enter key calls mutation.mutate with updated narration', async () => {
     const user = userEvent.setup()
     const mutate = vi.fn()
-    const mutation = buildMutation({ mutate } as Partial<MutationResult>)
+    const mutation = buildMutation({ mutate } as unknown as Partial<MutationResult>)
 
     render(
       <InlineNarrationEditor
@@ -180,7 +180,7 @@ describe('InlineNarrationEditor — save on Enter', () => {
   it('Shift+Enter does not save', async () => {
     const user = userEvent.setup()
     const mutate = vi.fn()
-    const mutation = buildMutation({ mutate } as Partial<MutationResult>)
+    const mutation = buildMutation({ mutate } as unknown as Partial<MutationResult>)
 
     render(
       <InlineNarrationEditor
@@ -201,7 +201,7 @@ describe('InlineNarrationEditor — save on Enter', () => {
   it('concurrent blur + Enter does not trigger duplicate save', async () => {
     const user = userEvent.setup()
     const mutate = vi.fn()
-    const mutation = buildMutation({ mutate } as Partial<MutationResult>)
+    const mutation = buildMutation({ mutate } as unknown as Partial<MutationResult>)
 
     render(
       <InlineNarrationEditor
@@ -264,7 +264,7 @@ describe('InlineNarrationEditor — error recovery', () => {
     const mutate = vi.fn((_vars: unknown, opts: { onError: (err: ApiClientError) => void }) => {
       onErrorCb = opts.onError
     })
-    const mutation = buildMutation({ mutate } as Partial<MutationResult>)
+    const mutation = buildMutation({ mutate } as unknown as Partial<MutationResult>)
 
     render(
       <InlineNarrationEditor

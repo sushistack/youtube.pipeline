@@ -1,3 +1,5 @@
+import { TimelineView } from '../settings/TimelineView'
+
 export function SettingsShell() {
   return (
     <section className="route-shell" aria-labelledby="settings-shell-title">
@@ -9,6 +11,7 @@ export function SettingsShell() {
         Manage application preferences, provider configuration, and shell-level
         defaults for local operator workflows.
       </p>
+      <TimelineView />
     </section>
   )
 }

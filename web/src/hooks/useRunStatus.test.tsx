@@ -4,6 +4,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useRunStatus } from './useRunStatus'
 import { renderWithProviders } from '../test/renderWithProviders'
 
+function requestUrl(input: string | URL | Request) {
+  if (typeof input === 'string') {
+    return input
+  }
+  if (input instanceof URL) {
+    return input.href
+  }
+  return input.url
+}
+
 const running_status = {
   data: {
     run: {
@@ -56,7 +66,7 @@ describe('useRunStatus', () => {
     let status_calls = 0
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url = requestUrl(input)
       if (url.endsWith('/api/runs/scp-049-run-2/status')) {
         status_calls += 1
         const payload = status_calls === 1 ? running_status : completed_status

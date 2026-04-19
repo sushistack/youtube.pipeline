@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Scene } from '../contracts/runContracts'
-import { editSceneNarration, fetchRunScenes } from '../lib/apiClient'
+import { ApiClientError, editSceneNarration, fetchRunScenes } from '../lib/apiClient'
 import { queryKeys } from '../lib/queryKeys'
 
 export function useRunScenes(run_id: string | null) {
@@ -14,7 +14,7 @@ export function useRunScenes(run_id: string | null) {
 
 export function useEditNarration(run_id: string) {
   const client = useQueryClient()
-  return useMutation({
+  return useMutation<Scene, ApiClientError, { narration: string; scene_index: number }>({
     mutationFn: ({ narration, scene_index }: { narration: string; scene_index: number }) =>
       editSceneNarration(run_id, scene_index, narration),
     onSuccess: (saved, { scene_index }) => {

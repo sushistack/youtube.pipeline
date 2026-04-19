@@ -14,6 +14,7 @@ import {
   searchCharacterCandidates,
 } from '../../lib/apiClient'
 import { queryKeys } from '../../lib/queryKeys'
+import { useUIStore } from '../../stores/useUIStore'
 import { VisionDescriptorEditor } from './VisionDescriptorEditor'
 
 interface CharacterPickProps {
@@ -114,6 +115,7 @@ function CharacterGrid({
 
 export function CharacterPick({ run }: CharacterPickProps) {
   const query_client = useQueryClient()
+  const push_undo_command = useUIStore((s) => s.push_undo_command)
   const initial_phase: Phase = run.character_query_key ? 'grid' : 'search'
   const [phase, set_phase] = useState<Phase>(initial_phase)
   // Initialize query_input from the run's stored query key so the input is
@@ -164,7 +166,18 @@ export function CharacterPick({ run }: CharacterPickProps) {
   >({
     mutationFn: ({ candidate_id, frozen_descriptor }) =>
       pickCharacterWithDescriptor(run.id, candidate_id, frozen_descriptor),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      // Push descriptor_edit undo command when the descriptor actually changes.
+      const prev_descriptor = run.frozen_descriptor ?? ''
+      if (variables.frozen_descriptor !== prev_descriptor) {
+        push_undo_command({
+          command_id: `${run.id}-descriptor_edit-${Date.now()}`,
+          run_id: run.id,
+          kind: 'descriptor_edit',
+          focus_target: 'descriptor',
+          created_at: new Date().toISOString(),
+        })
+      }
       // Narrow invalidation: only the list + this run's status/detail need
       // to refetch. Using queryKeys.runs.all would refetch characters and
       // descriptor queries for a run that has just advanced past the
