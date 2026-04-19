@@ -110,21 +110,23 @@ func (s Status) IsValid() bool {
 
 // Run maps to the runs database table.
 type Run struct {
-	ID            string   `json:"id"`
-	SCPID         string   `json:"scp_id"`
-	Stage         Stage    `json:"stage"`
-	Status        Status   `json:"status"`
-	RetryCount    int      `json:"retry_count"`
-	RetryReason   *string  `json:"retry_reason,omitempty"`
-	CriticScore   *float64 `json:"critic_score,omitempty"`
-	CostUSD       float64  `json:"cost_usd"`
-	TokenIn       int      `json:"token_in"`
-	TokenOut      int      `json:"token_out"`
-	DurationMs    int64    `json:"duration_ms"`
-	HumanOverride bool     `json:"human_override"`
-	ScenarioPath  *string  `json:"scenario_path,omitempty"`
-	CreatedAt     string   `json:"created_at"`
-	UpdatedAt     string   `json:"updated_at"`
+	ID                  string   `json:"id"`
+	SCPID               string   `json:"scp_id"`
+	Stage               Stage    `json:"stage"`
+	Status              Status   `json:"status"`
+	RetryCount          int      `json:"retry_count"`
+	RetryReason         *string  `json:"retry_reason,omitempty"`
+	CriticScore         *float64 `json:"critic_score,omitempty"`
+	CostUSD             float64  `json:"cost_usd"`
+	TokenIn             int      `json:"token_in"`
+	TokenOut            int      `json:"token_out"`
+	DurationMs          int64    `json:"duration_ms"`
+	HumanOverride       bool     `json:"human_override"`
+	ScenarioPath        *string  `json:"scenario_path,omitempty"`
+	CharacterQueryKey   *string  `json:"character_query_key,omitempty"`
+	SelectedCharacterID *string  `json:"selected_character_id,omitempty"`
+	CreatedAt           string   `json:"created_at"`
+	UpdatedAt           string   `json:"updated_at"`
 }
 
 // PhaseAAdvanceResult is the atomic persistence surface used when the engine
@@ -135,6 +137,23 @@ type PhaseAAdvanceResult struct {
 	RetryReason  *string  `json:"retry_reason,omitempty"`
 	CriticScore  *float64 `json:"critic_score,omitempty"`
 	ScenarioPath *string  `json:"scenario_path,omitempty"`
+}
+
+// CharacterCandidate is the normalized operator-facing image candidate.
+type CharacterCandidate struct {
+	ID          string  `json:"id"`
+	PageURL     string  `json:"page_url"`
+	ImageURL    string  `json:"image_url"`
+	PreviewURL  *string `json:"preview_url,omitempty"`
+	Title       *string `json:"title,omitempty"`
+	SourceLabel *string `json:"source_label,omitempty"`
+}
+
+// CharacterGroup is the stable API/domain schema for character search results.
+type CharacterGroup struct {
+	Query      string               `json:"query"`
+	QueryKey   string               `json:"query_key"`
+	Candidates []CharacterCandidate `json:"candidates"`
 }
 
 // Episode represents a scene/segment. Maps to the segments database table.

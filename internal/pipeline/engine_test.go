@@ -64,21 +64,21 @@ func TestNextStage_InvalidTransitions(t *testing.T) {
 		event domain.Event
 	}
 	valid := map[pair]bool{
-		{domain.StagePending, domain.EventStart}:             true,
-		{domain.StageResearch, domain.EventComplete}:         true,
-		{domain.StageStructure, domain.EventComplete}:        true,
-		{domain.StageWrite, domain.EventComplete}:            true,
-		{domain.StageVisualBreak, domain.EventComplete}:      true,
-		{domain.StageReview, domain.EventComplete}:           true,
-		{domain.StageCritic, domain.EventComplete}:           true,
-		{domain.StageCritic, domain.EventRetry}:              true,
-		{domain.StageScenarioReview, domain.EventApprove}:    true,
-		{domain.StageCharacterPick, domain.EventApprove}:     true,
-		{domain.StageImage, domain.EventComplete}:            true,
-		{domain.StageTTS, domain.EventComplete}:              true,
-		{domain.StageBatchReview, domain.EventApprove}:       true,
-		{domain.StageAssemble, domain.EventComplete}:         true,
-		{domain.StageMetadataAck, domain.EventApprove}:       true,
+		{domain.StagePending, domain.EventStart}:          true,
+		{domain.StageResearch, domain.EventComplete}:      true,
+		{domain.StageStructure, domain.EventComplete}:     true,
+		{domain.StageWrite, domain.EventComplete}:         true,
+		{domain.StageVisualBreak, domain.EventComplete}:   true,
+		{domain.StageReview, domain.EventComplete}:        true,
+		{domain.StageCritic, domain.EventComplete}:        true,
+		{domain.StageCritic, domain.EventRetry}:           true,
+		{domain.StageScenarioReview, domain.EventApprove}: true,
+		{domain.StageCharacterPick, domain.EventApprove}:  true,
+		{domain.StageImage, domain.EventComplete}:         true,
+		{domain.StageTTS, domain.EventComplete}:           true,
+		{domain.StageBatchReview, domain.EventApprove}:    true,
+		{domain.StageAssemble, domain.EventComplete}:      true,
+		{domain.StageMetadataAck, domain.EventApprove}:    true,
 	}
 
 	invalidCount := 0
@@ -197,6 +197,14 @@ func (engineTestSegmentStore) DeleteByRunID(ctx context.Context, runID string) (
 }
 
 func (engineTestSegmentStore) ClearClipPathsByRunID(ctx context.Context, runID string) (int64, error) {
+	return 0, nil
+}
+
+func (engineTestSegmentStore) ClearImageArtifactsByRunID(ctx context.Context, runID string) (int64, error) {
+	return 0, nil
+}
+
+func (engineTestSegmentStore) ClearTTSArtifactsByRunID(ctx context.Context, runID string) (int64, error) {
 	return 0, nil
 }
 

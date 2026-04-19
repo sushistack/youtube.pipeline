@@ -35,6 +35,8 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("writer_model", cfg.WriterModel)
 	v.SetDefault("critic_model", cfg.CriticModel)
 	v.SetDefault("tts_model", cfg.TTSModel)
+	v.SetDefault("tts_voice", cfg.TTSVoice)
+	v.SetDefault("tts_audio_format", cfg.TTSAudioFormat)
 	v.SetDefault("image_model", cfg.ImageModel)
 	v.SetDefault("writer_provider", cfg.WriterProvider)
 	v.SetDefault("critic_provider", cfg.CriticProvider)

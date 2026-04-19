@@ -11,6 +11,7 @@ import (
 // Dependencies holds all handler dependencies injected at startup.
 type Dependencies struct {
 	Run       *RunHandler
+	Character *CharacterHandler
 	HITL      *service.HITLService
 	Logger    *slog.Logger
 	WebFS     fs.FS
@@ -30,6 +31,8 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("GET /api/runs/{id}/status", deps.Run.Status)
 	api.HandleFunc("POST /api/runs/{id}/cancel", deps.Run.Cancel)
 	api.HandleFunc("POST /api/runs/{id}/resume", deps.Run.Resume)
+	api.HandleFunc("GET /api/runs/{id}/characters", deps.Character.Search)
+	api.HandleFunc("POST /api/runs/{id}/characters/pick", deps.Character.Pick)
 
 	apiChain := Chain(api,
 		WithRequestID,
@@ -47,9 +50,17 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 
 // NewDependencies constructs a Dependencies value wiring the standard objects.
 // outputDir is the server-configured run output base (never client-controlled).
-func NewDependencies(svc *service.RunService, hitl *service.HITLService, outputDir string, logger *slog.Logger, webFS fs.FS) *Dependencies {
+func NewDependencies(
+	svc *service.RunService,
+	hitl *service.HITLService,
+	characters *service.CharacterService,
+	outputDir string,
+	logger *slog.Logger,
+	webFS fs.FS,
+) *Dependencies {
 	return &Dependencies{
 		Run:       NewRunHandler(svc, hitl, outputDir, logger),
+		Character: NewCharacterHandler(characters),
 		Logger:    logger,
 		WebFS:     webFS,
 		OutputDir: outputDir,

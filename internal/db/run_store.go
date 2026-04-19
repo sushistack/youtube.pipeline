@@ -118,7 +118,8 @@ func (s *RunStore) Get(ctx context.Context, id string) (*domain.Run, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, scp_id, stage, status, retry_count, retry_reason,
 		        critic_score, cost_usd, token_in, token_out, duration_ms,
-		        human_override, scenario_path, created_at, updated_at
+		        human_override, scenario_path, character_query_key,
+		        selected_character_id, created_at, updated_at
 		   FROM runs WHERE id = ?`, id)
 
 	run, err := scanRun(row)
@@ -136,7 +137,8 @@ func (s *RunStore) List(ctx context.Context) ([]*domain.Run, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, scp_id, stage, status, retry_count, retry_reason,
 		        critic_score, cost_usd, token_in, token_out, duration_ms,
-		        human_override, scenario_path, created_at, updated_at
+		        human_override, scenario_path, character_query_key,
+		        selected_character_id, created_at, updated_at
 		   FROM runs ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list runs: %w", err)
@@ -267,6 +269,79 @@ func (s *RunStore) ApplyPhaseAResult(ctx context.Context, runID string, res doma
 	}
 	if n == 0 {
 		return fmt.Errorf("apply phase a result for %s: %w", runID, domain.ErrNotFound)
+	}
+	return nil
+}
+
+// SetCharacterQueryKey records the active normalized character query for a run.
+func (s *RunStore) SetCharacterQueryKey(ctx context.Context, id, queryKey string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET character_query_key = ? WHERE id = ?`,
+		queryKey, id,
+	)
+	if err != nil {
+		return fmt.Errorf("set character query key for %s: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set character query key for %s rows affected: %w", id, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("set character query key for %s: %w", id, domain.ErrNotFound)
+	}
+	return nil
+}
+
+// SetSelectedCharacterID persists the operator's selected character candidate ID.
+func (s *RunStore) SetSelectedCharacterID(ctx context.Context, id, selectedCharacterID string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET selected_character_id = ? WHERE id = ?`,
+		selectedCharacterID, id,
+	)
+	if err != nil {
+		return fmt.Errorf("set selected character id for %s: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set selected character id for %s rows affected: %w", id, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("set selected character id for %s: %w", id, domain.ErrNotFound)
+	}
+	return nil
+}
+
+// ApplyCharacterPick atomically persists the selected character and advances the run.
+func (s *RunStore) ApplyCharacterPick(
+	ctx context.Context,
+	id string,
+	queryKey string,
+	selectedCharacterID string,
+	stage domain.Stage,
+	status domain.Status,
+) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs
+		    SET character_query_key = ?,
+		        selected_character_id = ?,
+		        stage = ?,
+		        status = ?
+		  WHERE id = ?`,
+		queryKey,
+		selectedCharacterID,
+		string(stage),
+		string(status),
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("apply character pick for %s: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("apply character pick for %s rows affected: %w", id, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("apply character pick for %s: %w", id, domain.ErrNotFound)
 	}
 	return nil
 }
@@ -493,13 +568,15 @@ func scanRun(s scanner) (*domain.Run, error) {
 	var retryReason sql.NullString
 	var criticScore sql.NullFloat64
 	var scenarioPath sql.NullString
+	var characterQueryKey sql.NullString
+	var selectedCharacterID sql.NullString
 	var humanOverride int
 
 	err := s.Scan(
 		&r.ID, &r.SCPID, &r.Stage, &r.Status,
 		&r.RetryCount, &retryReason,
 		&criticScore, &r.CostUSD, &r.TokenIn, &r.TokenOut, &r.DurationMs,
-		&humanOverride, &scenarioPath,
+		&humanOverride, &scenarioPath, &characterQueryKey, &selectedCharacterID,
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
@@ -515,6 +592,12 @@ func scanRun(s scanner) (*domain.Run, error) {
 	}
 	if scenarioPath.Valid {
 		r.ScenarioPath = &scenarioPath.String
+	}
+	if characterQueryKey.Valid {
+		r.CharacterQueryKey = &characterQueryKey.String
+	}
+	if selectedCharacterID.Valid {
+		r.SelectedCharacterID = &selectedCharacterID.String
 	}
 	return &r, nil
 }

@@ -81,8 +81,8 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 7 {
-		t.Errorf("user_version = %d, want %d", version, 7)
+	if version != 8 {
+		t.Errorf("user_version = %d, want %d", version, 8)
 	}
 
 	db.Close()
@@ -100,8 +100,8 @@ func TestMigrate_UserVersion(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 7 {
-		t.Errorf("user_version = %d, want %d", version, 7)
+	if version != 8 {
+		t.Errorf("user_version = %d, want %d", version, 8)
 	}
 }
 
@@ -113,7 +113,7 @@ func TestSchema_TablesExist(t *testing.T) {
 	}
 	defer db.Close()
 
-	tables := []string{"runs", "decisions", "segments", "hitl_sessions", "critic_calibration_snapshots"}
+	tables := []string{"runs", "decisions", "segments", "hitl_sessions", "critic_calibration_snapshots", "character_search_cache"}
 	for _, table := range tables {
 		var name string
 		err := db.QueryRow(
@@ -164,6 +164,24 @@ func TestSchema_HITLSessionsColumns(t *testing.T) {
 	assertTableColumns(t, db, "hitl_sessions", expected)
 }
 
+func TestSchema_CharacterSearchCacheColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	expected := map[string]string{
+		"query_key":   "TEXT",
+		"query_text":  "TEXT",
+		"result_json": "TEXT",
+		"created_at":  "TEXT",
+		"updated_at":  "TEXT",
+	}
+	assertTableColumns(t, db, "character_search_cache", expected)
+}
+
 func TestSchema_HITLSessionsUpdatedAtTrigger(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	db, err := OpenDB(path)
@@ -209,21 +227,23 @@ func TestSchema_RunsColumns(t *testing.T) {
 	defer db.Close()
 
 	expected := map[string]string{
-		"id":             "TEXT",
-		"scp_id":         "TEXT",
-		"stage":          "TEXT",
-		"status":         "TEXT",
-		"retry_count":    "INTEGER",
-		"retry_reason":   "TEXT",
-		"critic_score":   "REAL",
-		"cost_usd":       "REAL",
-		"token_in":       "INTEGER",
-		"token_out":      "INTEGER",
-		"duration_ms":    "INTEGER",
-		"human_override": "INTEGER",
-		"scenario_path":  "TEXT",
-		"created_at":     "TEXT",
-		"updated_at":     "TEXT",
+		"id":                    "TEXT",
+		"scp_id":                "TEXT",
+		"stage":                 "TEXT",
+		"status":                "TEXT",
+		"retry_count":           "INTEGER",
+		"retry_reason":          "TEXT",
+		"critic_score":          "REAL",
+		"cost_usd":              "REAL",
+		"token_in":              "INTEGER",
+		"token_out":             "INTEGER",
+		"duration_ms":           "INTEGER",
+		"human_override":        "INTEGER",
+		"scenario_path":         "TEXT",
+		"character_query_key":   "TEXT",
+		"selected_character_id": "TEXT",
+		"created_at":            "TEXT",
+		"updated_at":            "TEXT",
 	}
 
 	assertTableColumns(t, db, "runs", expected)

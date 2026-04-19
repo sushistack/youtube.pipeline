@@ -31,6 +31,8 @@ type SegmentStore interface {
 	ListByRunID(ctx context.Context, runID string) ([]*domain.Episode, error)
 	DeleteByRunID(ctx context.Context, runID string) (int64, error)
 	ClearClipPathsByRunID(ctx context.Context, runID string) (int64, error)
+	ClearImageArtifactsByRunID(ctx context.Context, runID string) (int64, error)
+	ClearTTSArtifactsByRunID(ctx context.Context, runID string) (int64, error)
 }
 
 // HITLSessionCleaner is the narrow persistence surface the Engine uses to
@@ -166,10 +168,11 @@ func (e *Engine) Resume(ctx context.Context, runID string) (*domain.Inconsistenc
 //  3. Load segments.
 //  4. FS/DB consistency check (BEFORE any cleanup).
 //  5. Abort on mismatches unless opts.Force.
-//  6. Clean partial artifacts scoped to the failed stage. Phase B failure
-//     cleans BOTH tracks (image AND tts) because segments are wiped
-//     wholesale and the two tracks share the same "phase" boundary.
-//  7. If Phase B: DELETE all segments for the run.
+//  6. Clean partial artifacts scoped to the failed stage. Phase B failures
+//     preserve successful sibling-track artifacts when partial success exists;
+//     otherwise they fall back to the historical clean-slate rerun.
+//  7. If Phase B without preservable partial success: DELETE all segments for
+//     the run. Mixed-result resumes instead clear only failed-track fields.
 //     If assemble: NULL every segment's clip_path (the file is gone).
 //  8. ResetForResume — a single UPDATE that sets status, clears
 //     retry_reason, and increments retry_count atomically (no torn-state
@@ -212,13 +215,19 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 		}
 	}
 
+	preserveSibling := phaseBPreservesSibling(run.Stage, segments)
 	if isPhaseB(run.Stage) {
-		// Phase B = one phase with two tracks. Failure in either clears both.
-		if err := CleanStageArtifacts(runDir, domain.StageImage); err != nil {
-			return report, fmt.Errorf("resume %s: clean images: %w", runID, err)
-		}
-		if err := CleanStageArtifacts(runDir, domain.StageTTS); err != nil {
-			return report, fmt.Errorf("resume %s: clean tts: %w", runID, err)
+		if preserveSibling {
+			if err := cleanFailedPhaseBTrack(runDir, run.Stage); err != nil {
+				return report, fmt.Errorf("resume %s: clean failed phase b track: %w", runID, err)
+			}
+		} else {
+			if err := CleanStageArtifacts(runDir, domain.StageImage); err != nil {
+				return report, fmt.Errorf("resume %s: clean images: %w", runID, err)
+			}
+			if err := CleanStageArtifacts(runDir, domain.StageTTS); err != nil {
+				return report, fmt.Errorf("resume %s: clean tts: %w", runID, err)
+			}
 		}
 	} else {
 		if err := CleanStageArtifacts(runDir, run.Stage); err != nil {
@@ -227,12 +236,18 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 	}
 
 	if isPhaseB(run.Stage) {
-		n, err := e.segments.DeleteByRunID(ctx, runID)
-		if err != nil {
-			return report, fmt.Errorf("resume %s: delete segments: %w", runID, err)
+		if preserveSibling {
+			if err := clearFailedPhaseBTrack(ctx, e.segments, runID, run.Stage); err != nil {
+				return report, fmt.Errorf("resume %s: clear failed phase b track state: %w", runID, err)
+			}
+		} else {
+			n, err := e.segments.DeleteByRunID(ctx, runID)
+			if err != nil {
+				return report, fmt.Errorf("resume %s: delete segments: %w", runID, err)
+			}
+			e.logger.Info("segments deleted for phase b resume",
+				"run_id", runID, "count", n)
 		}
-		e.logger.Info("segments deleted for phase b resume",
-			"run_id", runID, "count", n)
 	} else if run.Stage == domain.StageAssemble {
 		// clips/ is gone on disk; null the DB references so subsequent
 		// consistency checks don't flag every segment forever.
@@ -293,6 +308,61 @@ func validateResumable(run *domain.Run) error {
 
 func isPhaseB(s domain.Stage) bool {
 	return s == domain.StageImage || s == domain.StageTTS
+}
+
+func phaseBPreservesSibling(stage domain.Stage, segments []*domain.Episode) bool {
+	switch stage {
+	case domain.StageImage:
+		return hasSuccessfulTTSArtifacts(segments)
+	case domain.StageTTS:
+		return hasSuccessfulImageArtifacts(segments)
+	default:
+		return false
+	}
+}
+
+func hasSuccessfulTTSArtifacts(segments []*domain.Episode) bool {
+	for _, seg := range segments {
+		if seg.TTSPath != nil && *seg.TTSPath != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSuccessfulImageArtifacts(segments []*domain.Episode) bool {
+	for _, seg := range segments {
+		for _, shot := range seg.Shots {
+			if shot.ImagePath != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func cleanFailedPhaseBTrack(runDir string, stage domain.Stage) error {
+	switch stage {
+	case domain.StageImage:
+		return CleanStageArtifacts(runDir, domain.StageImage)
+	case domain.StageTTS:
+		return CleanStageArtifacts(runDir, domain.StageTTS)
+	default:
+		return fmt.Errorf("unsupported phase b stage %s: %w", stage, domain.ErrValidation)
+	}
+}
+
+func clearFailedPhaseBTrack(ctx context.Context, store SegmentStore, runID string, stage domain.Stage) error {
+	switch stage {
+	case domain.StageImage:
+		_, err := store.ClearImageArtifactsByRunID(ctx, runID)
+		return err
+	case domain.StageTTS:
+		_, err := store.ClearTTSArtifactsByRunID(ctx, runID)
+		return err
+	default:
+		return fmt.Errorf("unsupported phase b stage %s: %w", stage, domain.ErrValidation)
+	}
 }
 
 func isPhaseAEntryStage(s domain.Stage) bool {

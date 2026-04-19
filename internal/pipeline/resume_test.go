@@ -19,12 +19,12 @@ import (
 // --- fakes -----------------------------------------------------------------
 
 type fakeRunStore struct {
-	mu             sync.Mutex
-	run            *domain.Run
-	resetCalls     []resetCall
-	phaseACalls    []domain.PhaseAAdvanceResult
-	getErr         error
-	resetErr       error
+	mu          sync.Mutex
+	run         *domain.Run
+	resetCalls  []resetCall
+	phaseACalls []domain.PhaseAAdvanceResult
+	getErr      error
+	resetErr    error
 }
 
 type resetCall struct {
@@ -75,11 +75,13 @@ func (f *fakeRunStore) ApplyPhaseAResult(ctx context.Context, id string, res dom
 }
 
 type fakeSegmentStore struct {
-	mu          sync.Mutex
-	byRun       map[string][]*domain.Episode
-	deleteCalls []string
-	listErr     error
-	deleteErr   error
+	mu              sync.Mutex
+	byRun           map[string][]*domain.Episode
+	deleteCalls     []string
+	clearImageCalls []string
+	clearTTSCalls   []string
+	listErr         error
+	deleteErr       error
 }
 
 func newFakeSegmentStore() *fakeSegmentStore {
@@ -115,6 +117,41 @@ func (f *fakeSegmentStore) ClearClipPathsByRunID(ctx context.Context, runID stri
 	for _, seg := range segs {
 		if seg.ClipPath != nil {
 			seg.ClipPath = nil
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (f *fakeSegmentStore) ClearImageArtifactsByRunID(ctx context.Context, runID string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.clearImageCalls = append(f.clearImageCalls, runID)
+	var n int64
+	for _, seg := range f.byRun[runID] {
+		cleared := false
+		for i := range seg.Shots {
+			if seg.Shots[i].ImagePath != "" {
+				seg.Shots[i].ImagePath = ""
+				cleared = true
+			}
+		}
+		if cleared {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (f *fakeSegmentStore) ClearTTSArtifactsByRunID(ctx context.Context, runID string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.clearTTSCalls = append(f.clearTTSCalls, runID)
+	var n int64
+	for _, seg := range f.byRun[runID] {
+		if seg.TTSPath != nil || seg.TTSDurationMs != nil {
+			seg.TTSPath = nil
+			seg.TTSDurationMs = nil
 			n++
 		}
 	}
@@ -166,7 +203,7 @@ func TestResume_PhaseAFailure_NoCleanupNoSegmentDelete(t *testing.T) {
 	}
 }
 
-func TestResume_PhaseBFailure_DeletesSegmentsAndTTS(t *testing.T) {
+func TestResume_PhaseBMixedFailure_TTSStagePreservesImages(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	outDir := t.TempDir()
 	runID := "scp-049-run-1"
@@ -177,14 +214,16 @@ func TestResume_PhaseBFailure_DeletesSegmentsAndTTS(t *testing.T) {
 	}}
 	segs := newFakeSegmentStore()
 	segs.byRun[runID] = []*domain.Episode{
-		{RunID: runID, SceneIndex: 0},
-		{RunID: runID, SceneIndex: 1},
-		{RunID: runID, SceneIndex: 2},
+		{
+			RunID:         runID,
+			SceneIndex:    0,
+			TTSPath:       strPtr("tts/scene_01.wav"),
+			TTSDurationMs: intPtr(1000),
+			Shots:         []domain.Shot{{ImagePath: "images/scene_01/shot_01.png"}},
+		},
 	}
-	// Artifacts present on disk: both Phase B tracks.
 	runDir := filepath.Join(outDir, runID)
 	mustWrite(t, filepath.Join(runDir, "tts", "scene_01.wav"), "wav")
-	mustWrite(t, filepath.Join(runDir, "tts", "scene_02.wav"), "wav")
 	mustWrite(t, filepath.Join(runDir, "images", "scene_01", "shot_01.png"), "img")
 
 	eng := newEngine(t, runs, segs, outDir)
@@ -192,20 +231,107 @@ func TestResume_PhaseBFailure_DeletesSegmentsAndTTS(t *testing.T) {
 		t.Fatalf("Resume: %v", err)
 	}
 
-	// Phase B clean slate: all segments deleted.
-	if _, ok := segs.byRun[runID]; ok {
-		t.Errorf("segments not cleared; map entry remains")
+	if len(segs.deleteCalls) != 0 {
+		t.Errorf("mixed tts failure should preserve segments; delete calls = %+v", segs.deleteCalls)
 	}
-	if len(segs.deleteCalls) != 1 || segs.deleteCalls[0] != runID {
-		t.Errorf("DeleteByRunID calls = %+v, want [%s]", segs.deleteCalls, runID)
+	if len(segs.clearTTSCalls) != 1 || segs.clearTTSCalls[0] != runID {
+		t.Errorf("ClearTTSArtifactsByRunID calls = %+v, want [%s]", segs.clearTTSCalls, runID)
 	}
-	// Failure in tts also wipes images/ — the whole phase re-runs.
 	assertMissing(t, filepath.Join(runDir, "tts"))
-	assertMissing(t, filepath.Join(runDir, "images"))
-	// Status reset to running.
+	assertPresent(t, filepath.Join(runDir, "images", "scene_01", "shot_01.png"))
+	if segs.byRun[runID][0].TTSPath != nil || segs.byRun[runID][0].TTSDurationMs != nil {
+		t.Fatalf("tts fields not cleared: %+v", segs.byRun[runID][0])
+	}
+	if segs.byRun[runID][0].Shots[0].ImagePath == "" {
+		t.Fatal("image path unexpectedly cleared")
+	}
 	if runs.resetCalls[0].status != domain.StatusRunning {
 		t.Errorf("status = %q, want running", runs.resetCalls[0].status)
 	}
+}
+
+func TestResume_PhaseBMixedFailure_ImageStagePreservesTTS(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	outDir := t.TempDir()
+	runID := "scp-049-run-1"
+	runs := &fakeRunStore{run: &domain.Run{
+		ID: runID, SCPID: "049",
+		Stage:  domain.StageImage,
+		Status: domain.StatusFailed,
+	}}
+	ttsPath := "tts/scene_01.wav"
+	segs := newFakeSegmentStore()
+	segs.byRun[runID] = []*domain.Episode{{
+		RunID:         runID,
+		SceneIndex:    0,
+		TTSPath:       &ttsPath,
+		TTSDurationMs: intPtr(1000),
+		Shots:         []domain.Shot{{ImagePath: "images/scene_01/shot_01.png"}},
+	}}
+
+	runDir := filepath.Join(outDir, runID)
+	mustWrite(t, filepath.Join(runDir, "tts", "scene_01.wav"), "wav")
+	mustWrite(t, filepath.Join(runDir, "images", "scene_01", "shot_01.png"), "img")
+
+	eng := newEngine(t, runs, segs, outDir)
+	if _, err := eng.Resume(context.Background(), runID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	if len(segs.deleteCalls) != 0 {
+		t.Errorf("mixed image failure should preserve segments; delete calls = %+v", segs.deleteCalls)
+	}
+	if len(segs.clearImageCalls) != 1 || segs.clearImageCalls[0] != runID {
+		t.Errorf("ClearImageArtifactsByRunID calls = %+v, want [%s]", segs.clearImageCalls, runID)
+	}
+	assertMissing(t, filepath.Join(runDir, "images"))
+	assertPresent(t, filepath.Join(runDir, "tts", "scene_01.wav"))
+	if segs.byRun[runID][0].TTSPath == nil || *segs.byRun[runID][0].TTSPath != ttsPath {
+		t.Fatalf("tts path not preserved: %+v", segs.byRun[runID][0])
+	}
+	if segs.byRun[runID][0].Shots[0].ImagePath != "" {
+		t.Fatalf("image path still present: %+v", segs.byRun[runID][0].Shots[0])
+	}
+}
+
+// TestResume_PhaseBFailure_NoPartialSuccess_FallsBackToCleanSlate guards
+// AC-7 rule "this story should not regress the existing clean-slate behavior
+// for full-Phase-B reruns when both tracks are invalid or when no partial
+// success exists". When neither track has persisted artifacts, the engine
+// must DELETE segments and clean both image/ and tts/ directories.
+func TestResume_PhaseBFailure_NoPartialSuccess_FallsBackToCleanSlate(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	outDir := t.TempDir()
+	runID := "scp-049-run-1"
+	runs := &fakeRunStore{run: &domain.Run{
+		ID: runID, SCPID: "049",
+		Stage:  domain.StageImage,
+		Status: domain.StatusFailed,
+	}}
+	// Segment exists but neither image nor TTS artifacts were persisted.
+	segs := newFakeSegmentStore()
+	segs.byRun[runID] = []*domain.Episode{{
+		RunID:      runID,
+		SceneIndex: 0,
+		Shots:      []domain.Shot{{ImagePath: ""}},
+	}}
+	runDir := filepath.Join(outDir, runID)
+	mustMkdir(t, runDir)
+
+	eng := newEngine(t, runs, segs, outDir)
+	if _, err := eng.Resume(context.Background(), runID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	if len(segs.deleteCalls) != 1 {
+		t.Errorf("clean-slate path must DELETE segments; got %d calls", len(segs.deleteCalls))
+	}
+	if len(segs.clearImageCalls) != 0 || len(segs.clearTTSCalls) != 0 {
+		t.Errorf("clean-slate path must not use track-scoped clear helpers; image=%v tts=%v",
+			segs.clearImageCalls, segs.clearTTSCalls)
+	}
+	assertMissing(t, filepath.Join(runDir, "images"))
+	assertMissing(t, filepath.Join(runDir, "tts"))
 }
 
 func TestResume_AssembleFailure_RemovesClipsAndOutputMP4(t *testing.T) {
@@ -497,4 +623,8 @@ func slicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func intPtr(v int) *int {
+	return &v
 }

@@ -18,12 +18,70 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/config"
 	"github.com/sushistack/youtube.pipeline/internal/db"
+	"github.com/sushistack/youtube.pipeline/internal/domain"
+	"github.com/sushistack/youtube.pipeline/internal/llmclient"
+	"github.com/sushistack/youtube.pipeline/internal/llmclient/dashscope"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline"
 	"github.com/sushistack/youtube.pipeline/internal/service"
 	"github.com/sushistack/youtube.pipeline/internal/web"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 )
+
+// buildPhaseBRunner constructs a PhaseBRunner with a real TTS track backed by
+// the DashScope qwen3-tts-flash client. Returns an error if the API key is
+// missing or any construction step fails; the caller decides how to handle the
+// absence (warn + skip vs. fatal).
+func buildPhaseBRunner(
+	cfg domain.PipelineConfig,
+	segStore *db.SegmentStore,
+	logger *slog.Logger,
+) (*pipeline.PhaseBRunner, error) {
+	apiKey := os.Getenv("DASHSCOPE_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("DASHSCOPE_API_KEY not set")
+	}
+
+	ttsClient, err := dashscope.NewTTSClient(&http.Client{Timeout: 120 * time.Second}, dashscope.TTSClientConfig{
+		APIKey: apiKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build tts client: %w", err)
+	}
+
+	limiterFactory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
+		DashScope: llmclient.LimitConfig{RequestsPerMinute: 10, MaxConcurrent: 2, AcquireTimeout: 30 * time.Second},
+		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
+		Gemini:    llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
+	}, clock.RealClock{})
+	if err != nil {
+		return nil, fmt.Errorf("build limiter factory: %w", err)
+	}
+
+	ttsTrack, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
+		OutputDir:   cfg.OutputDir,
+		TTSModel:    cfg.TTSModel,
+		TTSVoice:    cfg.TTSVoice,
+		AudioFormat: cfg.TTSAudioFormat,
+		MaxRetries:  3,
+		TTS:         ttsClient,
+		Store:       segStore,
+		Limiter:     limiterFactory.DashScopeTTS(),
+		Clock:       clock.RealClock{},
+		Logger:      logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build tts track: %w", err)
+	}
+
+	// Image track requires further wiring (Story 5.4); use a no-op stub here
+	// so the runner can be instantiated without the image plumbing.
+	imageTrackStub := pipeline.ImageTrack(func(_ context.Context, req pipeline.PhaseBRequest) (pipeline.ImageTrackResult, error) {
+		return pipeline.ImageTrackResult{Observation: domain.NewStageObservation(domain.StageImage)}, nil
+	})
+
+	return pipeline.NewPhaseBRunner(imageTrackStub, ttsTrack, nil, clock.RealClock{}, logger, nil), nil
+}
 
 func newServeCmd() *cobra.Command {
 	var (
@@ -66,13 +124,26 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+	// Build Phase B TTS track. Requires DASHSCOPE_API_KEY in environment.
+	// The TTS track and image track share the same DashScope limiter budget
+	// via ProviderLimiterFactory.DashScopeTTS() == DashScopeImage().
+	phaseBRunner, err := buildPhaseBRunner(cfg, segStore, logger)
+	if err != nil {
+		logger.Warn("phase b runner unavailable (TTS disabled)", "error", err.Error())
+		phaseBRunner = nil
+	}
+	_ = phaseBRunner // wired into engine.SetPhaseAExecutor when Phase A lands
+
 	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
 	svc := service.NewRunService(store, engine)
 	hitlSvc := service.NewHITLService(store, decisionStore, logger)
+	characterCache := db.NewCharacterCacheStore(database)
+	characterClient := service.NewDuckDuckGoClient(nil)
+	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
 
 	mux := http.NewServeMux()
 
-	deps := api.NewDependencies(svc, hitlSvc, cfg.OutputDir, logger, web.FS)
+	deps := api.NewDependencies(svc, hitlSvc, characterSvc, cfg.OutputDir, logger, web.FS)
 	if devMode {
 		// In dev mode replace the SPA catch-all with a Vite reverse proxy.
 		deps.WebFS = nil

@@ -261,6 +261,60 @@ func TestRunStore_SetStatus_NotFound(t *testing.T) {
 	}
 }
 
+func TestRunStore_SetSelectedCharacterID_PersistsValue(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := store.Create(ctx, "049", outDir)
+	if err := store.SetCharacterQueryKey(ctx, run.ID, "scp-049"); err != nil {
+		t.Fatalf("SetCharacterQueryKey: %v", err)
+	}
+	if err := store.SetSelectedCharacterID(ctx, run.ID, "scp-049#2"); err != nil {
+		t.Fatalf("SetSelectedCharacterID: %v", err)
+	}
+
+	updated, err := store.Get(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if updated.SelectedCharacterID == nil || *updated.SelectedCharacterID != "scp-049#2" {
+		t.Fatalf("SelectedCharacterID = %v, want scp-049#2", updated.SelectedCharacterID)
+	}
+}
+
+func TestRunStore_Get_IncludesSelectedCharacterID(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := store.Create(ctx, "049", outDir)
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs
+		    SET character_query_key = 'scp-049',
+		        selected_character_id = 'scp-049#1'
+		  WHERE id = ?`,
+		run.ID,
+	); err != nil {
+		t.Fatalf("seed character fields: %v", err)
+	}
+
+	got, err := store.Get(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.CharacterQueryKey == nil || *got.CharacterQueryKey != "scp-049" {
+		t.Fatalf("CharacterQueryKey = %v, want scp-049", got.CharacterQueryKey)
+	}
+	if got.SelectedCharacterID == nil || *got.SelectedCharacterID != "scp-049#1" {
+		t.Fatalf("SelectedCharacterID = %v, want scp-049#1", got.SelectedCharacterID)
+	}
+}
+
 func TestRunStore_ApplyPhaseAResult_RoundTrip(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)
@@ -688,10 +742,10 @@ func TestAntiProgressFalsePositiveStats_RollingWindow(t *testing.T) {
 	ctx := context.Background()
 
 	cases := []struct {
-		window           int
-		wantTotal        int
-		wantOverridden   int
-		wantProvisional  bool
+		window          int
+		wantTotal       int
+		wantOverridden  int
+		wantProvisional bool
 	}{
 		{50, 50, 0, false},
 		{60, 60, 10, false},

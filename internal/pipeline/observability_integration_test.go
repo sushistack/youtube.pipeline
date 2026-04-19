@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -57,37 +58,33 @@ func TestIntegration_429Backoff_DoesNotAdvanceStage(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- llmclient.WithRetry(context.Background(), clk, 5, fn, onRetry)
+		done <- llmclient.WithRetryPolicy(context.Background(), clk, llmclient.BackoffPolicy{
+			MaxRetries: 5,
+			MaxDelay:   30 * time.Second,
+			Jitter:     func(int) time.Duration { return 0 },
+		}, fn, onRetry)
 	}()
 
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatalf("WithRetry: %v", err)
-			}
-			// NFR-P3: stage and status must be unchanged after the retry flow.
-			// If the retry path had advanced status to failed, these asserts
-			// would fail. Retry metadata must be recorded.
-			updated, err := store.Get(context.Background(), "scp-049-run-1")
-			if err != nil {
-				t.Fatalf("Get: %v", err)
-			}
-			testutil.AssertEqual(t, updated.Stage, domain.StageWrite)
-			testutil.AssertEqual(t, updated.Status, domain.StatusRunning)
-			testutil.AssertEqual(t, updated.RetryCount, 2)
-			if updated.RetryReason == nil || *updated.RetryReason != "rate_limit" {
-				t.Errorf("RetryReason: got %v want rate_limit", updated.RetryReason)
-			}
-			return
-		default:
-			if time.Now().After(deadline) {
-				t.Fatal("WithRetry did not finish within deadline")
-			}
-			clk.Advance(1 * time.Second)
-			time.Sleep(1 * time.Millisecond)
-		}
+	waitForPipelineCount(t, &mu, &fnCalls, 1, 50)
+	waitForPipelineSleeper(clk, 50)
+	clk.Advance(1 * time.Second)
+	waitForPipelineCount(t, &mu, &fnCalls, 2, 50)
+	waitForPipelineSleeper(clk, 50)
+	clk.Advance(2 * time.Second)
+	waitForPipelineCount(t, &mu, &fnCalls, 3, 50)
+	err := waitForPipelineDone(t, done, 50)
+	if err != nil {
+		t.Fatalf("WithRetry: %v", err)
+	}
+	updated, err := store.Get(context.Background(), "scp-049-run-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	testutil.AssertEqual(t, updated.Stage, domain.StageWrite)
+	testutil.AssertEqual(t, updated.Status, domain.StatusRunning)
+	testutil.AssertEqual(t, updated.RetryCount, 2)
+	if updated.RetryReason == nil || *updated.RetryReason != "rate_limit" {
+		t.Errorf("RetryReason: got %v want rate_limit", updated.RetryReason)
 	}
 }
 
@@ -119,4 +116,122 @@ func TestIntegration_NonRetryableError_Bypasses429Path(t *testing.T) {
 	if run.RetryReason != nil {
 		t.Errorf("RetryReason expected nil, got %v", *run.RetryReason)
 	}
+}
+
+func TestIntegration_429Backoff_ObservedThroughLimiter(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.LoadRunStateFixture(t, "running_at_write")
+
+	store := db.NewRunStore(database)
+	acc := pipeline.NewCostAccumulator(nil, 0)
+	logger, _ := testutil.CaptureLog(t)
+	rec := pipeline.NewRecorder(store, acc, clock.RealClock{}, logger)
+
+	clk := clock.NewFakeClock(time.Unix(0, 0))
+	limiter, err := llmclient.NewCallLimiter(llmclient.LimitConfig{
+		RequestsPerMinute: 600,
+		MaxConcurrent:     1,
+		AcquireTimeout:    30 * time.Second,
+	}, clk)
+	if err != nil {
+		t.Fatalf("NewCallLimiter: %v", err)
+	}
+
+	var mu sync.Mutex
+	fnCalls := 0
+	onRetry := func(_ int, reason string) {
+		if err := rec.RecordRetry(context.Background(), "scp-049-run-1", domain.StageWrite, reason); err != nil {
+			t.Errorf("RecordRetry: %v", err)
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- limiter.Do(context.Background(), func(callCtx context.Context) error {
+			return llmclient.WithRetryPolicy(callCtx, clk, llmclient.BackoffPolicy{
+				MaxRetries: 2,
+				MaxDelay:   30 * time.Second,
+				Jitter:     func(int) time.Duration { return 0 },
+			}, func() error {
+				mu.Lock()
+				fnCalls++
+				n := fnCalls
+				mu.Unlock()
+				if n < 3 {
+					return fmt.Errorf("dashscope 429: %w", domain.ErrRateLimited)
+				}
+				return nil
+			}, onRetry)
+		})
+	}()
+
+	waitForPipelineCount(t, &mu, &fnCalls, 1, 50)
+	waitForPipelineSleepers(t, clk, 2, 50)
+	clk.Advance(1 * time.Second)
+	waitForPipelineCount(t, &mu, &fnCalls, 2, 50)
+	waitForPipelineSleepers(t, clk, 2, 50)
+	clk.Advance(2 * time.Second)
+	waitForPipelineCount(t, &mu, &fnCalls, 3, 50)
+	err = waitForPipelineDone(t, done, 50)
+	if err != nil {
+		t.Fatalf("limiter wrapped retry: %v", err)
+	}
+	updated, getErr := store.Get(context.Background(), "scp-049-run-1")
+	if getErr != nil {
+		t.Fatalf("Get: %v", getErr)
+	}
+	testutil.AssertEqual(t, updated.Stage, domain.StageWrite)
+	testutil.AssertEqual(t, updated.Status, domain.StatusRunning)
+	testutil.AssertEqual(t, updated.RetryCount, 2)
+	if updated.RetryReason == nil || *updated.RetryReason != "rate_limit" {
+		t.Fatalf("RetryReason: got %v want rate_limit", updated.RetryReason)
+	}
+}
+
+func waitForPipelineSleeper(clk *clock.FakeClock, spins int) {
+	for i := 0; i < spins*1000; i++ {
+		if clk.PendingSleepers() > 0 {
+			return
+		}
+		runtime.Gosched()
+	}
+}
+
+func waitForPipelineSleepers(t *testing.T, clk *clock.FakeClock, want int, spins int) {
+	t.Helper()
+	for i := 0; i < spins*1000; i++ {
+		if clk.PendingSleepers() >= want {
+			return
+		}
+		runtime.Gosched()
+	}
+	t.Fatalf("expected at least %d pending sleepers", want)
+}
+
+func waitForPipelineCount(t *testing.T, mu *sync.Mutex, count *int, want int, spins int) {
+	t.Helper()
+	for i := 0; i < spins*1000; i++ {
+		runtime.Gosched()
+		mu.Lock()
+		got := *count
+		mu.Unlock()
+		if got >= want {
+			return
+		}
+	}
+	t.Fatalf("expected call count to reach %d", want)
+}
+
+func waitForPipelineDone(t *testing.T, done <-chan error, spins int) error {
+	t.Helper()
+	for i := 0; i < spins*1000; i++ {
+		runtime.Gosched()
+		select {
+		case err := <-done:
+			return err
+		default:
+		}
+	}
+	t.Fatal("expected operation to complete")
+	return nil
 }

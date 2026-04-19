@@ -17,19 +17,21 @@ type TextResponse struct {
 
 // ImageRequest contains parameters for image generation.
 type ImageRequest struct {
-	Prompt string `json:"prompt"`
-	Model  string `json:"model"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
+	Prompt     string `json:"prompt"`
+	Model      string `json:"model"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	OutputPath string `json:"output_path,omitempty"`
 }
 
 // ImageEditRequest contains parameters for image editing with a reference.
 type ImageEditRequest struct {
 	Prompt             string `json:"prompt"`
 	Model              string `json:"model"`
-	ReferenceImagePath string `json:"reference_image_path"`
+	ReferenceImageURL string `json:"reference_image_url"`
 	Width              int    `json:"width"`
 	Height             int    `json:"height"`
+	OutputPath         string `json:"output_path,omitempty"`
 }
 
 // ImageResponse contains the result of an image generation or edit.
@@ -42,10 +44,15 @@ type ImageResponse struct {
 }
 
 // TTSRequest contains parameters for text-to-speech synthesis.
+// OutputPath is the absolute file path the caller wants the audio written to;
+// the client writes the bytes there and the TTS track owns directory creation.
+// Format selects the audio codec (e.g. "wav", "mp3"); defaults to "wav" when empty.
 type TTSRequest struct {
-	Text  string `json:"text"`
-	Model string `json:"model"`
-	Voice string `json:"voice"`
+	Text       string `json:"text"`
+	Model      string `json:"model"`
+	Voice      string `json:"voice"`
+	OutputPath string `json:"output_path,omitempty"`
+	Format     string `json:"format,omitempty"`
 }
 
 // TTSResponse contains the result of TTS synthesis.

@@ -80,6 +80,192 @@ func (s *SegmentStore) DeleteByRunID(ctx context.Context, runID string) (int64, 
 	return n, nil
 }
 
+// ClearImageArtifactsByRunID clears only the image_path fields embedded inside
+// the shots JSON for the run's segments, preserving TTS data and all other
+// shot metadata. Returns the number of segment rows updated.
+//
+// The read + per-scene updates run inside a single transaction so partial
+// failure cannot leave some shots cleared while others retain their stale
+// image paths.
+func (s *SegmentStore) ClearImageArtifactsByRunID(ctx context.Context, runID string) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("clear image artifacts for %s: begin tx: %w", runID, err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT scene_index, shots FROM segments WHERE run_id = ? ORDER BY scene_index ASC`, runID)
+	if err != nil {
+		return 0, fmt.Errorf("clear image artifacts for %s: %w", runID, err)
+	}
+	defer rows.Close()
+
+	type update struct {
+		sceneIndex int
+		shotsJSON  string
+	}
+	updates := make([]update, 0)
+	for rows.Next() {
+		var (
+			sceneIndex int
+			shotsRaw   sql.NullString
+		)
+		if err := rows.Scan(&sceneIndex, &shotsRaw); err != nil {
+			return 0, fmt.Errorf("clear image artifacts for %s scan: %w", runID, err)
+		}
+		if !shotsRaw.Valid || shotsRaw.String == "" {
+			continue
+		}
+		var shots []domain.Shot
+		if err := json.Unmarshal([]byte(shotsRaw.String), &shots); err != nil {
+			return 0, fmt.Errorf("clear image artifacts for %s decode shots: %w", runID, err)
+		}
+		changed := false
+		for i := range shots {
+			if shots[i].ImagePath != "" {
+				shots[i].ImagePath = ""
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		encoded, err := json.Marshal(shots)
+		if err != nil {
+			return 0, fmt.Errorf("clear image artifacts for %s encode shots: %w", runID, err)
+		}
+		updates = append(updates, update{sceneIndex: sceneIndex, shotsJSON: string(encoded)})
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("clear image artifacts for %s iterate: %w", runID, err)
+	}
+
+	var total int64
+	for _, upd := range updates {
+		res, err := tx.ExecContext(ctx,
+			`UPDATE segments SET shots = ? WHERE run_id = ? AND scene_index = ?`,
+			upd.shotsJSON, runID, upd.sceneIndex,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("clear image artifacts for %s update scene %d: %w", runID, upd.sceneIndex, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, fmt.Errorf("clear image artifacts for %s rows affected: %w", runID, err)
+		}
+		total += n
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("clear image artifacts for %s: commit: %w", runID, err)
+	}
+	return total, nil
+}
+
+// ClearTTSArtifactsByRunID nulls only the TTS columns for the run's segments,
+// preserving image shot metadata and any successful image artifacts.
+func (s *SegmentStore) ClearTTSArtifactsByRunID(ctx context.Context, runID string) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE segments
+		    SET tts_path = NULL,
+		        tts_duration_ms = NULL
+		  WHERE run_id = ?
+		    AND (tts_path IS NOT NULL OR tts_duration_ms IS NOT NULL)`,
+		runID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("clear tts artifacts for %s: %w", runID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("clear tts artifacts for %s rows affected: %w", runID, err)
+	}
+	return n, nil
+}
+
+// UpsertImageShots inserts or replaces the segments row for (runID, sceneIndex)
+// with a refreshed `shots` JSON payload and `shot_count`. Used by Phase B's
+// image track to persist per-shot `image_path`, `duration_s`, `transition`,
+// and `visual_descriptor` after clean-slate regeneration. Preserves TTS and
+// clip fields when the row already exists; creates a fresh row otherwise.
+//
+// Phase B resume semantics are clean-slate: callers are expected to have
+// already deleted stale segments (or cleared image fields) before invoking
+// this method. The upsert shape guards against partial-run orphans by
+// letting a second call produce identical state.
+func (s *SegmentStore) UpsertImageShots(
+	ctx context.Context,
+	runID string,
+	sceneIndex int,
+	shots []domain.Shot,
+) error {
+	if runID == "" {
+		return fmt.Errorf("upsert image shots: %w: run_id is empty", domain.ErrValidation)
+	}
+	if sceneIndex < 0 {
+		return fmt.Errorf("upsert image shots %s[%d]: %w: scene_index is negative", runID, sceneIndex, domain.ErrValidation)
+	}
+	if shots == nil {
+		shots = []domain.Shot{}
+	}
+	raw, err := json.Marshal(shots)
+	if err != nil {
+		return fmt.Errorf("upsert image shots %s[%d]: encode shots: %w", runID, sceneIndex, err)
+	}
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO segments (run_id, scene_index, shot_count, shots, status)
+		 VALUES (?, ?, ?, ?, 'pending')
+		 ON CONFLICT(run_id, scene_index) DO UPDATE SET
+		     shot_count = excluded.shot_count,
+		     shots      = excluded.shots`,
+		runID, sceneIndex, len(shots), string(raw),
+	)
+	if err != nil {
+		return fmt.Errorf("upsert image shots %s[%d]: %w", runID, sceneIndex, err)
+	}
+	return nil
+}
+
+// UpsertTTSArtifact inserts or updates the TTS columns for a segment row.
+// On insert (when no row exists for run_id+scene_index), a minimal row is
+// created with status='pending' and the TTS fields populated.
+// On conflict, only tts_path and tts_duration_ms are updated; image shots,
+// narration, clip_path, critic, review_status, and safeguard_flags are
+// preserved unchanged. This asymmetry is intentional — mixing TTS + image
+// updates in a single method would invite regressions across the two tracks.
+func (s *SegmentStore) UpsertTTSArtifact(
+	ctx context.Context,
+	runID string,
+	sceneIndex int,
+	ttsPath string,
+	ttsDurationMs int64,
+) error {
+	if runID == "" {
+		return fmt.Errorf("upsert tts artifact: %w: run_id is empty", domain.ErrValidation)
+	}
+	if sceneIndex < 0 {
+		return fmt.Errorf("upsert tts artifact %s[%d]: %w: scene_index is negative", runID, sceneIndex, domain.ErrValidation)
+	}
+	if ttsPath == "" {
+		return fmt.Errorf("upsert tts artifact %s[%d]: %w: tts_path is empty", runID, sceneIndex, domain.ErrValidation)
+	}
+	if ttsDurationMs < 0 {
+		return fmt.Errorf("upsert tts artifact %s[%d]: %w: tts_duration_ms is negative", runID, sceneIndex, domain.ErrValidation)
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO segments (run_id, scene_index, tts_path, tts_duration_ms, status)
+		 VALUES (?, ?, ?, ?, 'pending')
+		 ON CONFLICT(run_id, scene_index) DO UPDATE SET
+		     tts_path        = excluded.tts_path,
+		     tts_duration_ms = excluded.tts_duration_ms`,
+		runID, sceneIndex, ttsPath, ttsDurationMs,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert tts artifact %s[%d]: %w", runID, sceneIndex, err)
+	}
+	return nil
+}
+
 func (s *SegmentStore) GetByRunIDAndSceneIndex(ctx context.Context, runID string, sceneIndex int) (*domain.Episode, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, run_id, scene_index, narration, shot_count, shots,

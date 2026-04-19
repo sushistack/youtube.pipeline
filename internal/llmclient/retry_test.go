@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -72,6 +73,7 @@ func TestWithRetry_RetriesOn429(t *testing.T) {
 
 	var mu sync.Mutex
 	var retryLog []string
+	retrySignals := make(chan struct{}, 2)
 	fnCalls := 0
 	fn := func() error {
 		mu.Lock()
@@ -87,41 +89,33 @@ func TestWithRetry_RetriesOn429(t *testing.T) {
 		mu.Lock()
 		retryLog = append(retryLog, reason)
 		mu.Unlock()
+		retrySignals <- struct{}{}
 	}
 
 	done := make(chan error, 1)
 	go func() {
-		done <- llmclient.WithRetry(context.Background(), clk, 5, fn, onRetry)
+		done <- llmclient.WithRetryPolicy(context.Background(), clk, llmclient.BackoffPolicy{
+			MaxRetries: 5,
+			MaxDelay:   30 * time.Second,
+			Jitter:     func(int) time.Duration { return 0 },
+		}, fn, onRetry)
 	}()
 
-	// Drive the FakeClock until WithRetry finishes. Each Sleep will be
-	// satisfied by advancing clock past its deadline.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatalf("WithRetry returned error: %v", err)
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			testutil.AssertEqual(t, fnCalls, 3)
-			testutil.AssertEqual(t, len(retryLog), 2)
-			testutil.AssertEqual(t, retryLog[0], "rate_limit")
-			testutil.AssertEqual(t, retryLog[1], "rate_limit")
-			// FakeClock advanced ≥ first two backoffs (1s + 2s before jitter).
-			if clk.Now().Sub(start) < 3*time.Second {
-				t.Errorf("FakeClock elapsed %v, expected ≥3s", clk.Now().Sub(start))
-			}
-			return
-		default:
-			if time.Now().After(deadline) {
-				t.Fatal("WithRetry did not finish within deadline")
-			}
-			clk.Advance(1 * time.Second)
-			time.Sleep(1 * time.Millisecond)
-		}
+	waitForSignal(t, retrySignals, 50)
+	clk.Advance(1 * time.Second)
+	waitForSignal(t, retrySignals, 50)
+	clk.Advance(2 * time.Second)
+	err := waitForRetryDone(t, done, 50)
+	if err != nil {
+		t.Fatalf("WithRetry returned error: %v", err)
 	}
+	mu.Lock()
+	defer mu.Unlock()
+	testutil.AssertEqual(t, fnCalls, 3)
+	testutil.AssertEqual(t, len(retryLog), 2)
+	testutil.AssertEqual(t, retryLog[0], "rate_limit")
+	testutil.AssertEqual(t, retryLog[1], "rate_limit")
+	testutil.AssertEqual(t, clk.Now().Sub(start), 3*time.Second)
 }
 
 func TestWithRetry_NonRetryableSurfacesImmediately(t *testing.T) {
@@ -159,13 +153,18 @@ func TestWithRetry_ContextCanceledDuringSleep(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- llmclient.WithRetry(ctx, clk, 3, func() error {
+		done <- llmclient.WithRetryPolicy(ctx, clk, llmclient.BackoffPolicy{
+			MaxRetries: 3,
+			MaxDelay:   30 * time.Second,
+			Jitter:     func(int) time.Duration { return 0 },
+		}, func() error {
 			return domain.ErrRateLimited
 		}, nil)
 	}()
 
-	// Let the first fn call complete and enter Sleep, then cancel.
-	time.Sleep(20 * time.Millisecond)
+	// Wait for the retry loop to register a Sleep waiter on the FakeClock,
+	// then cancel. Deterministic — no real wall-clock sleep.
+	waitForRetrySleeper(clk, 50)
 	cancel()
 
 	select {
@@ -181,34 +180,125 @@ func TestWithRetry_ContextCanceledDuringSleep(t *testing.T) {
 func TestWithRetry_MaxRetriesExceeded(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	clk := clock.NewFakeClock(time.Now())
+	retrySignals := make(chan struct{}, 2)
 
 	done := make(chan error, 1)
 	go func() {
-		done <- llmclient.WithRetry(context.Background(), clk, 2, func() error {
+		done <- llmclient.WithRetryPolicy(context.Background(), clk, llmclient.BackoffPolicy{
+			MaxRetries: 2,
+			MaxDelay:   30 * time.Second,
+			Jitter:     func(int) time.Duration { return 0 },
+		}, func() error {
 			return domain.ErrRateLimited
-		}, nil)
+		}, func(int, string) { retrySignals <- struct{}{} })
 	}()
 
-	// Drive the clock until done.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		select {
-		case err := <-done:
-			if !errors.Is(err, domain.ErrRateLimited) {
-				t.Fatalf("expected errors.Is ErrRateLimited, got %v", err)
-			}
-			if err == nil || !contains(err.Error(), "max retries (2) exceeded") {
-				t.Fatalf("expected max-retries message, got %v", err)
-			}
-			return
-		default:
-			if time.Now().After(deadline) {
-				t.Fatal("WithRetry did not finish within deadline")
-			}
-			clk.Advance(1 * time.Second)
-			time.Sleep(1 * time.Millisecond)
-		}
+	waitForSignal(t, retrySignals, 50)
+	clk.Advance(1 * time.Second)
+	waitForSignal(t, retrySignals, 50)
+	clk.Advance(2 * time.Second)
+	err := waitForRetryDone(t, done, 50)
+	if !errors.Is(err, domain.ErrRateLimited) {
+		t.Fatalf("expected errors.Is ErrRateLimited, got %v", err)
 	}
+	if err == nil || !contains(err.Error(), "max retries (2) exceeded") {
+		t.Fatalf("expected max-retries message, got %v", err)
+	}
+}
+
+func TestWithRetry_BackoffSequence_DeterministicFakeClock(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	clk := clock.NewFakeClock(time.Unix(0, 0))
+	start := clk.Now()
+	retrySignals := make(chan struct{}, 3)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- llmclient.WithRetryPolicy(context.Background(), clk, llmclient.BackoffPolicy{
+			MaxRetries: 3,
+			MaxDelay:   30 * time.Second,
+			Jitter:     func(int) time.Duration { return 0 },
+		}, func() error {
+			return domain.ErrRateLimited
+		}, func(int, string) { retrySignals <- struct{}{} })
+	}()
+
+	waitForSignal(t, retrySignals, 50)
+	clk.Advance(1 * time.Second)
+	waitForSignal(t, retrySignals, 50)
+	clk.Advance(2 * time.Second)
+	waitForSignal(t, retrySignals, 50)
+	clk.Advance(4 * time.Second)
+	err := waitForRetryDone(t, done, 50)
+	if !errors.Is(err, domain.ErrRateLimited) {
+		t.Fatalf("expected ErrRateLimited, got %v", err)
+	}
+	testutil.AssertEqual(t, clk.Now().Sub(start), 7*time.Second)
+}
+
+func TestWithRetry_JitterInjection_Deterministic(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	clk := clock.NewFakeClock(time.Unix(0, 0))
+	start := clk.Now()
+	retrySignals := make(chan struct{}, 2)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- llmclient.WithRetryPolicy(context.Background(), clk, llmclient.BackoffPolicy{
+			MaxRetries: 2,
+			MaxDelay:   30 * time.Second,
+			Jitter: func(attempt int) time.Duration {
+				return time.Duration(attempt+1) * 100 * time.Millisecond
+			},
+		}, func() error {
+			return domain.ErrRateLimited
+		}, func(int, string) { retrySignals <- struct{}{} })
+	}()
+
+	waitForSignal(t, retrySignals, 50)
+	clk.Advance(1100 * time.Millisecond)
+	waitForSignal(t, retrySignals, 50)
+	clk.Advance(2200 * time.Millisecond)
+	err := waitForRetryDone(t, done, 50)
+	if !errors.Is(err, domain.ErrRateLimited) {
+		t.Fatalf("expected ErrRateLimited, got %v", err)
+	}
+	testutil.AssertEqual(t, clk.Now().Sub(start), 3300*time.Millisecond)
+}
+
+func TestWithRetry_MaxDelayCappedAt30Seconds(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	clk := clock.NewFakeClock(time.Unix(0, 0))
+	start := clk.Now()
+	retrySignals := make(chan struct{}, 6)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- llmclient.WithRetryPolicy(context.Background(), clk, llmclient.BackoffPolicy{
+			MaxRetries: 6,
+			MaxDelay:   30 * time.Second,
+			Jitter:     func(int) time.Duration { return 2 * time.Second },
+		}, func() error {
+			return domain.ErrRateLimited
+		}, func(int, string) { retrySignals <- struct{}{} })
+	}()
+
+	for _, delay := range []time.Duration{
+		3 * time.Second,
+		4 * time.Second,
+		6 * time.Second,
+		10 * time.Second,
+		18 * time.Second,
+		30 * time.Second,
+	} {
+		waitForSignal(t, retrySignals, 50)
+		clk.Advance(delay)
+	}
+	err := waitForRetryDone(t, done, 50)
+	if !errors.Is(err, domain.ErrRateLimited) {
+		t.Fatalf("expected ErrRateLimited, got %v", err)
+	}
+	testutil.AssertEqual(t, clk.Now().Sub(start), 71*time.Second)
 }
 
 func contains(s, sub string) bool {
@@ -218,4 +308,39 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// retryTestTimeout bounds busy-spin helpers so CI failures surface as a clear
+// t.Fatal instead of a hung goroutine. 2s is generous for local + race CI.
+const retryTestTimeout = 2 * time.Second
+
+func waitForRetrySleeper(clk *clock.FakeClock, spins int) {
+	deadline := time.Now().Add(retryTestTimeout)
+	for time.Now().Before(deadline) {
+		if clk.PendingSleepers() > 0 {
+			return
+		}
+		runtime.Gosched()
+	}
+}
+
+func waitForSignal(t *testing.T, ch <-chan struct{}, spins int) {
+	t.Helper()
+	select {
+	case <-ch:
+		return
+	case <-time.After(retryTestTimeout):
+		t.Fatal("expected signal was not observed")
+	}
+}
+
+func waitForRetryDone(t *testing.T, done <-chan error, spins int) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(retryTestTimeout):
+		t.Fatal("retry operation did not complete")
+		return nil
+	}
 }

@@ -14,6 +14,16 @@ type PipelineConfig struct {
 	TTSModel    string `yaml:"tts_model"    mapstructure:"tts_model"`
 	ImageModel  string `yaml:"image_model"  mapstructure:"image_model"`
 
+	// TTSVoice is the DashScope qwen3-tts voice identifier. The voice preset
+	// must be a Korean-capable voice; it is left as a config field so FR47
+	// (blocked-voice-ID enforcement) can layer on as a pre-call guard later
+	// without requiring a client refactor.
+	TTSVoice string `yaml:"tts_voice" mapstructure:"tts_voice"`
+
+	// TTSAudioFormat is the output codec for TTS audio ("wav" or "mp3").
+	// Defaults to "wav" to match existing test fixtures.
+	TTSAudioFormat string `yaml:"tts_audio_format" mapstructure:"tts_audio_format"`
+
 	// Provider names (for Writer ≠ Critic enforcement)
 	WriterProvider string `yaml:"writer_provider" mapstructure:"writer_provider"`
 	CriticProvider string `yaml:"critic_provider" mapstructure:"critic_provider"`
@@ -70,6 +80,8 @@ func DefaultConfig() PipelineConfig {
 		WriterModel:           "deepseek-chat",
 		CriticModel:           "gemini-2.0-flash",
 		TTSModel:              "qwen3-tts-flash-2025-09-18",
+		TTSVoice:              "longhua",
+		TTSAudioFormat:        "wav",
 		ImageModel:            "qwen-max-vl",
 		WriterProvider:        "deepseek",
 		CriticProvider:        "gemini",

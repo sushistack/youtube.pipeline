@@ -24,8 +24,9 @@ func newResumeCmd() *cobra.Command {
 		Long: `Resume re-enters the failed (or HITL-waiting) stage of a run after
 verifying filesystem/DB consistency and cleaning stage-scoped partial artifacts.
 
-Phase B resume (image/tts) deletes all segments for the run and starts
-clean-slate. Other stages preserve segments.
+Phase B resume (image/tts) preserves successful sibling-track artifacts on
+mixed failure when safe, otherwise falls back to a clean-slate rerun.
+Other stages preserve segments.
 
 Use --force to proceed even when filesystem/DB mismatches are detected.`,
 		Args: cobra.ExactArgs(1),

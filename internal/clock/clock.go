@@ -51,6 +51,14 @@ func (c *FakeClock) Now() time.Time {
 	return c.now
 }
 
+// PendingSleepers returns the number of active Sleep waiters. Tests use this
+// to drive fake time without outrunning goroutines before they register.
+func (c *FakeClock) PendingSleepers() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.waiters)
+}
+
 // Advance moves the clock forward by d and wakes any Sleep calls
 // whose deadline has been reached.
 func (c *FakeClock) Advance(d time.Duration) {
