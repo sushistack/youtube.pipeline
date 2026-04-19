@@ -1,5 +1,5 @@
 # generated: 2026-04-16
-# last_updated: 2026-04-18 # Story 4-4 marked done after code review
+# last_updated: 2026-04-19 # Epic 6 web shell + testing infrastructure complete
 # project: youtube.pipeline
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-16
-last_updated: 2026-04-18 # Story 4-4 marked done after code review
+last_updated: 2026-04-19 # Epic 6 web shell + testing infrastructure complete
 project: youtube.pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -91,12 +91,12 @@ development_status:
   epic-5-retrospective: optional
 
   # ── Epic 6: Web UI — Design System & Application Shell ───────────────────
-  epic-6: backlog
-  6-1-theme-engine-global-styling: backlog
-  6-2-spa-architecture-navigation-shell: backlog
-  6-3-keyboard-shortcut-engine: backlog
-  6-4-go-embed-static-file-serving: backlog
-  6-5-playwright-smoke-test-ux-testing-infrastructure: backlog
+  epic-6: in-progress
+  6-1-theme-engine-global-styling: done
+  6-2-spa-architecture-navigation-shell: done
+  6-3-keyboard-shortcut-engine: done
+  6-4-go-embed-static-file-serving: done
+  6-5-playwright-smoke-test-ux-testing-infrastructure: done
   epic-6-retrospective: optional
 
   # ── Epic 7: Production Tab — Scenario Review & Character Selection ────────

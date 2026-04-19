@@ -1,6 +1,42 @@
 // External fetch blocking — rejects any non-localhost fetch in Vitest tests.
 const originalFetch = globalThis.fetch;
 
+function createStorageShim(): Storage {
+  const store = new Map<string, string>();
+
+  return {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key: string) {
+      return store.has(key) ? store.get(key)! : null;
+    },
+    key(index: number) {
+      return Array.from(store.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+  };
+}
+
+if (
+  !("localStorage" in globalThis) ||
+  typeof globalThis.localStorage?.clear !== "function"
+) {
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: createStorageShim(),
+    writable: true,
+  });
+}
+
 globalThis.fetch = async (
   input: RequestInfo | URL,
   init?: RequestInit,

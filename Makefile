@@ -1,6 +1,6 @@
 .PHONY: build web-build go-build test test-go test-web test-e2e dev clean lint-layers check-fr-coverage ci
 
-build: web-build go-build
+build: go-build
 
 web-build:
 	cd web && npm ci && npm run build

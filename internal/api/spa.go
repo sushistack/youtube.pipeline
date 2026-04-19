@@ -39,6 +39,13 @@ func spaHandler(fsys fs.FS) http.Handler {
 			return
 		}
 
+		// Missing asset-like paths should stay 404s instead of being rewritten
+		// into HTML, while extensionless routes fall through to the SPA shell.
+		if path.Ext(lookup) != "" {
+			http.NotFound(w, r)
+			return
+		}
+
 		// Fallback to index.html for client-side routing.
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = "/"

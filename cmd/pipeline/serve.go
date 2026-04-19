@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -27,6 +28,8 @@ import (
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 )
+
+const viteDevServerURL = "http://localhost:5173"
 
 // buildPhaseBRunner constructs a PhaseBRunner with a real TTS track backed by
 // the DashScope qwen3-tts-flash client. Returns an error if the API key is
@@ -141,20 +144,10 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	characterClient := service.NewDuckDuckGoClient(nil)
 	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
 
-	mux := http.NewServeMux()
-
 	deps := api.NewDependencies(svc, hitlSvc, characterSvc, cfg.OutputDir, logger, web.FS)
-	if devMode {
-		// In dev mode replace the SPA catch-all with a Vite reverse proxy.
-		deps.WebFS = nil
-		api.RegisterRoutes(mux, deps)
-
-		viteURL, _ := url.Parse("http://localhost:5173")
-		proxy := httputil.NewSingleHostReverseProxy(viteURL)
-		mux.Handle("/", proxy)
-		fmt.Fprintf(cmd.OutOrStdout(), "Dev mode: proxying frontend to http://localhost:5173\n")
-	} else {
-		api.RegisterRoutes(mux, deps)
+	mux := http.NewServeMux()
+	if err := configureServeMux(mux, deps, devMode, mustParseURL(viteDevServerURL), cmd.OutOrStdout()); err != nil {
+		return err
 	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
@@ -195,4 +188,44 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 		defer cancel()
 		return srv.Shutdown(shutCtx)
 	}
+}
+
+func configureServeMux(
+	mux *http.ServeMux,
+	deps *api.Dependencies,
+	devMode bool,
+	devProxyURL *url.URL,
+	out io.Writer,
+) error {
+	if mux == nil {
+		return fmt.Errorf("configure serve mux: nil mux")
+	}
+	if deps == nil {
+		return fmt.Errorf("configure serve mux: nil dependencies")
+	}
+
+	if devMode {
+		deps.WebFS = nil
+		api.RegisterRoutes(mux, deps)
+		mux.Handle("/", newDevFrontendProxy(devProxyURL))
+		if out != nil {
+			fmt.Fprintf(out, "Dev mode: Go serves /api/*, proxying frontend to %s\n", devProxyURL.String())
+		}
+		return nil
+	}
+
+	api.RegisterRoutes(mux, deps)
+	return nil
+}
+
+func newDevFrontendProxy(target *url.URL) *httputil.ReverseProxy {
+	return httputil.NewSingleHostReverseProxy(target)
+}
+
+func mustParseURL(raw string) *url.URL {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
 }

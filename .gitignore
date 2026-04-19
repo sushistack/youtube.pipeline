@@ -2,6 +2,7 @@
 bin/
 internal/web/dist/*
 !internal/web/dist/.gitkeep
+web/dist/
 /pipeline
 tmp/
 
