@@ -1,5 +1,75 @@
 # Deferred Work
 
+## Deferred from: code review of 8-6-decisions-history-timeline-view (2026-04-19)
+
+- `RetryExhausted` `>` vs `>=` inconsistency across `RecordSceneDecision`/`ListReviewItems`/`DispatchSceneRegeneration` — pre-existing from Story 8.4; three sites must be unified on `>=` with a single shared constant ([internal/service/scene_service.go](../../internal/service/scene_service.go)).
+- `BatchApprove` undo uses `aggregate_command_id` from caller-supplied `context_snapshot` without server-side normalization — cross-run undo blast-radius risk; fix by assembling all snapshot fields server-side in `RecordSceneDecision` ([internal/db/decision_store.go](../../internal/db/decision_store.go)).
+- `CountRegenAttempts` counts all reject rows including superseded ones — cap is permanent once reached even after approve→reject cycle; document intentional ceiling or scope to active rejects ([internal/db/decision_store.go](../../internal/db/decision_store.go)).
+
+## Deferred from: code review of 8-5-batch-approve-all-remaining (2026-04-19)
+
+- `RetryExhausted` threshold mismatch between `ListReviewItems` (`>=`) and `RecordSceneDecision` (`>`) belongs to Story 8.4's surface; BatchReview already patches the value client-side to keep cache consistent with `/review-items`. Server-side reconciliation deferred to an 8.4 follow-up ([internal/service/scene_service.go](../../internal/service/scene_service.go)).
+- `CountRegenAttempts` SQL counts superseded rejects while `ReviewItem.RegenAttempts` doc says "non-superseded" — pre-existing from 8.4 ([internal/db/decision_store.go](../../internal/db/decision_store.go)).
+- N+1 sub-queries in `ListReviewItems` (`CountRegenAttempts` + `PriorRejectionForScene` per segment) — performance optimization beyond 8.5 scope ([internal/service/scene_service.go](../../internal/service/scene_service.go)).
+- `approved_scene_indices` snapshot duplicated on every decision row — O(N²) storage; proper fix requires a `batch_commands` table and migration ([internal/db/decision_store.go](../../internal/db/decision_store.go)).
+- Chunk loop inserts decision rows one-by-one (chunking only groups the `UPDATE segments` call). Batch `INSERT` could reduce lock window further but chunk size already bounds it ([internal/db/decision_store.go](../../internal/db/decision_store.go)).
+- No in-tx re-check of `runs.stage` inside `ApproveAllRemaining`. SQLite single-writer contract makes the service-level check sufficient for V1; revisit if operator multiplexing lands ([internal/service/scene_service.go](../../internal/service/scene_service.go)).
+- `ctrl+z` undo binding only — macOS operators pressing Cmd+Z get no response; keyboard engine (Story 6.3) does not map Cmd to Ctrl ([web/src/lib/keyboardShortcuts.ts](../../web/src/lib/keyboardShortcuts.ts)).
+- `useUIStore.undo_stacks` never garbage-collected across runs; stacks grow with session lifetime ([web/src/stores/useUIStore.ts](../../web/src/stores/useUIStore.ts)).
+- `@media (max-width: 860px)` drops the 60px push-up via `translateY(0)` — acceptable for narrow layout but offset not scaled; no layout test confirms acceptability ([web/src/index.css](../../web/src/index.css)).
+- Undo stack is in-memory only; reloading loses pending undo entries while the server-side aggregate decision is still undoable. Hydrating from `/status` on mount is a UX polish ([web/src/stores/useUIStore.ts](../../web/src/stores/useUIStore.ts)).
+
+## Deferred from: code review of 8-4-rejection-regeneration-flow (2026-04-19)
+
+- Retry-exhausted "Manual edit" CTA has no real target — batch-review stage has no inline narration editor and scenario-review is already past, so the current disabled button with "Manual narration edits happen in Scenario Review." tooltip stays as a placeholder until a dedicated in-batch edit surface is designed ([web/src/components/production/BatchReview.tsx](../../web/src/components/production/BatchReview.tsx)).
+- `buildDiffParts` uses a token set, so reordered prose is misreported as unchanged — proper LCS-based diff is a larger refactor beyond 8.4 scope ([web/src/components/shared/DetailPanel.tsx](../../web/src/components/shared/DetailPanel.tsx)).
+- `sortReviewItems` client comparator can disagree with server ordering for some status combinations — approximately consistent in practice; Story 8.1 concern ([web/src/components/production/BatchReview.tsx](../../web/src/components/production/BatchReview.tsx)).
+- `/regen` has no idempotency key against double-dispatch — NoOp stub harmless today; revisit when Phase B real regeneration lands ([internal/service/scene_service.go](../../internal/service/scene_service.go)).
+- Handler only validates `scene_index < 0`, no upper bound / float / overflow — DB layer catches non-existent segments as NotFound ([internal/api/handler_scene.go](../../internal/api/handler_scene.go)).
+- `SceneCard` thumbnail keys use array index (`${scene_index}-${index}`) — shots rarely reorder during a single scene's lifecycle ([web/src/components/shared/SceneCard.tsx](../../web/src/components/shared/SceneCard.tsx)).
+- `buildDecisionSnapshot` swallows `json.Marshal` error — unreachable for current payload shape ([internal/service/scene_service.go](../../internal/service/scene_service.go)).
+- `context_snapshot` guard rejects only literal `null`, not `"null"` string or whitespace — brittle but low-impact on internal API ([internal/api/handler_scene.go](../../internal/api/handler_scene.go)).
+- `command_kind` invariant breaks when caller supplies `context_snapshot` without it — no current consumer depends on the invariant ([internal/service/scene_service.go](../../internal/service/scene_service.go)).
+- FR53 can cite reject from cancelled/failed source run — no stage filter on joined runs ([internal/db/decision_store.go](../../internal/db/decision_store.go)).
+- `PriorRejectionForScene` uses exact-string `scp_id` match, no normalization — normalization should happen at run-creation layer ([internal/db/decision_store.go](../../internal/db/decision_store.go)).
+- `UpsertSessionFromState` failure after decision commit returns 500 and leaves undo stack disabled — hydrate from server on mount or treat session upsert as best-effort ([internal/service/scene_service.go](../../internal/service/scene_service.go)).
+- `skip_and_remember` undo has no server-side handler in `ApplyUndo` — works by accident (nothing to restore); add test coverage later ([internal/db/decision_store.go](../../internal/db/decision_store.go)).
+- No migration CHECK constraint enforcing non-empty `note` on reject — service layer validates ([migrations/](../../migrations/)).
+- Stage-transition race: run can move out of `batch_review` between stage check and regenerator call — unlikely in single-operator V1 ([internal/service/scene_service.go](../../internal/service/scene_service.go)).
+- `strings.TrimSpace` does not reject zero-width space U+200B notes — edge-case adversarial; add printable-rune check later ([internal/api/handler_scene.go](../../internal/api/handler_scene.go)).
+
+## Deferred from: code review of 8-3-decision-undo-command-pattern (2026-04-19)
+
+- `approve_all_remaining` command type is defined in the UndoCommand interface but has no RecordDecision handler or service path. Story 8.5 (batch-approve-all) is the owning story for this. [AC-2]
+- Undo stack (`undo_stacks` in useUIStore) is never pruned when a run completes or when the user switches runs. `clear_undo_stack` exists but has no call site for stage advancement or navigation. Stale commands from old runs accumulate indefinitely.
+- `Escape` key is bound to the `reject` action in BatchReview. Escape is the universal "dismiss" key; this is a high accidental-trigger risk. AC does not specify key bindings, so this is a UX tradeoff decision for a later polish pass.
+- Missing component test: Ctrl+Z focus restoration after navigating away from the scene that was acted on (AC-5 test requirement). Current BatchReview tests do not cover this scenario.
+- Missing integration test: verifying that superseded `skip_and_remember` decisions are excluded from counts/summaries (AC-3 test requirement). Current tests cover approve/reject supersession but not skip.
+
+## Deferred from: code review of 8-2-scene-review-actions-audioplayer (2026-04-19)
+
+- `ListReviewItems` re-reads `scenario.json` from disk on every `GET /review-items`; no cache, no size bound. 8.1 read-surface concern. Revisit when polling cadence or file-size grows ([internal/service/scene_service.go:869-877](../../internal/service/scene_service.go)).
+- `computeHighLeverage` returns a zero-value classification for scene indices not present in the loaded scenario — silently masks scenario↔segment drift. 8.1 read-surface concern. Add a warn-or-fail path when scenario/segment indices diverge ([internal/service/scene_service.go:1049-1064](../../internal/service/scene_service.go)).
+- `DetailPanel.buildDiffParts` is a set-membership check, not a real text diff — reorderings and punctuation-attached tokens are misclassified. 8.1 UX polish. Upgrade to a proper sequence diff when reviewer feedback demands accuracy ([web/src/components/shared/DetailPanel.tsx:14-22](../../web/src/components/shared/DetailPanel.tsx#L14-L22)).
+
+## Deferred from: code review of 8-1-master-detail-review-layout (2026-04-19)
+
+- `characters_present` entity match is unreachable for realistic Korean character names — `normalizeEntityLabel` produces `"049"` that never matches non-SCP role labels; `entity_visible` fallback covers the realistic path ([scene_service.go:360-377](../../internal/service/scene_service.go#L360-L377)).
+- `isHookAct` uses `strings.Contains("hook"/"opening")` — future act_id names like `act_hook_callback` or `reopening_act_4` would misclassify; tighten to exact-match when act_id vocabulary stabilizes.
+- Duplicate `SceneNum` in scenario.json silently overwrites the classifications map entry — upstream scenario generator should enforce uniqueness; revisit when scenario schema is validated.
+- UX-DR60 AppShell sidebar collapse coordination at 1024-1279px (220→48px) is not wired through BatchReview. Internal 30:70 split IS preserved in that viewport range; sidebar collapse is AppShell responsibility (Epic 6 scope).
+- `batch-review__list max-height: 44rem` forces internal scroll on tall queues; empty list renders full `min-height: 38rem` whitespace. Address when queue count rules are formalized.
+- J/K navigation with invalidated `selected_scene_index` (e.g. after refetch removed it) collapses both directions to index 0 — low-probability edge case.
+- High-leverage scenes with `auto_approved` status sort to bucket 3 (below approved/rejected), out of the actionable queue despite editorial importance. Discuss in Story 8.2 ordering decisions.
+- Listbox/option a11y incomplete — no `aria-activedescendant` and J/K does not move browser focus; screen-reader users cannot hear selection changes.
+- `selected_item === null` flash when refetch removes selection; the effect resets on next tick but the transition renders the empty state briefly.
+- `normalizeOptionalScore` 0/1 vs 0/100 heuristic is ambiguous at exact 1.0 boundary — consolidate when upstream writers agree on a single scale.
+- `review_items_query` has no `refetchInterval`; list becomes stale after external review updates — Story 8.2 scope.
+- `os.ReadFile(*run.ScenarioPath)` has no size cap or path sandbox — internal-trust path today; revisit if scenario paths become user-settable.
+- `buildDiffParts` is a bag-of-words comparator — reordered sentences show no change. Spec permits "lightweight textual comparison"; upgrade to real sequence diff if reviewer feedback requires.
+- `ProductionShortcutPanel` also registers `J/K` at default global scope — lifecycle-based enablement (only one mounted at a time) holds in practice; explicit scope separation would be safer.
+- Frontend `reviewItemSchema.review_status` enum is strict — any new server-side status value will fail zod parsing for the whole payload; consider accepting unknown values as a permissive tail.
+
 ## Deferred from: code review of 1-1-go-react-spa-project-scaffolding-build-chain (2026-04-16)
 
 - `-race` flag requires CGO but Makefile uses `CGO_ENABLED=0` — architecture doc internally inconsistent. Resolve when adding CI pipeline (Story 1.7): either split `test-race` target or enable CGO for test target only.
@@ -209,6 +279,13 @@
 - **No rollback/down migration for 006.** Project convention is forward-only. Revisit if schema reversibility becomes a requirement.
 - **No `EXPLAIN QUERY PLAN` assertion that `idx_critic_calibration_snapshots_window_computed_at` is used.** Pattern exists in `decision_store_test.go` but was not applied to the new trend query. Add when rolling-window performance becomes measurable.
 
+## Deferred from: code review of 5-1-common-rate-limiting-exponential-backoff (2026-04-18)
+
+- **fn goroutine may outlive `Do` on timeout when callee ignores ctx.** `internal/llmclient/limiter.go:60,65-68` releases the semaphore permit via `defer` when the timeout branch returns, but the spawned `go func() { resultCh <- fn(callCtx) }()` continues running if `fn` does not cooperate with ctx cancellation. This can silently exceed `MaxConcurrent`. Resolution is architectural and tied to Story 5.2 wiring — the story's own Open Design Constraint forbids phase-wide cancellation, so the fix must be local (e.g., wait for `resultCh` before releasing, OR contract that every provider `fn` MUST honor ctx). Decide together with Story 5.2's errgroup design.
+- **Rate reservation consumed when subsequent `acquire` times out.** `internal/llmclient/limiter.go:53-58` — `waitTurn` consumes a token before `acquire` runs. If `acquire` then times out, the token is already spent and the call never executes. Low frequency today (MaxConcurrent=40 on DashScope), revisit once Story 5.2 load patterns are measured.
+- **Replace `acquire` poll loop with `semaphore.Acquire(ctx, 1)`.** `internal/llmclient/limiter.go:103-127` hand-rolls a 10 ms poll loop over `TryAcquire`. `semaphore.Weighted.Acquire` is ctx-aware and allocation-free but uses real timers; switching it in requires a `context.WithDeadline` derived from `clk.Now()` and breaks FakeClock under some tests. Refactor candidate after Story 5.2 real usage.
+- **Pre-existing `time.Sleep(10ms)` calls in `internal/clock/clock_test.go:45,71`.** Not introduced by Story 5.1. Migrate to the new `PendingSleepers()` primitive when touching clock tests next.
+
 ## Deferred from: code review of 6-1-theme-engine-global-styling (2026-04-19)
 
 - **CI build-order race embeds empty `dist/`.** `internal/web/dist/*` is gitignored with only a `.gitkeep` negation; `internal/web/embed.go` uses `//go:embed all:dist`. A fresh clone that runs `go build` before `npm run build` embeds zero font files and the served SPA 404s Geist woff2 with only `font-display: swap` concealing the breakage. Same class of issue as the 1-1 AC-GITIGNORE entry; fix belongs with the CI pipeline story that enforces `make web-build` → `go build` ordering.
@@ -244,3 +321,43 @@
 - **Contract tests validate only fixture JSON, not real handler output.** Both Go (`TestContract_RunResumeResponse`) and Zod tests parse the same hand-authored fixture. Real-handler drift (like the `warnings` nesting bug above) is invisible. Add a round-trip test that serves the handler → round-trips through fixture-shape decoder → asserts equality.
 - **Port 4173 availability is not preflight-checked in `web/scripts/serve-playwright.mjs`.** If another process owns the port, `reuseExistingServer=true` (local) makes Playwright talk to whatever is listening; in CI the server spawn fails bind and Playwright hits a 120 s webServer timeout with no clear cause. Add a port probe before `spawn` when CI flakes appear.
 - **zustand `useUIStore` is a module singleton not reset by `renderWithProviders`.** `web/src/test/renderWithProviders.tsx` gives a fresh `QueryClient` per render but leaves zustand state shared across tests. No observed failure yet; add a reset hook when a second test starts relying on store state.
+
+## Deferred from: code review of 7-1-pipeline-dashboard-run-status (2026-04-19)
+
+- `buildStageNodes` paints all 6 nodes `completed` whenever `status === 'completed'` regardless of `stage`. If backend ever emits an incoherent state like `{stage: pending, status: completed}` the UI masks it. Fix by enforcing stage/status coherence as a DB or service invariant rather than UI defensiveness [web/src/lib/formatters.ts:242-268].
+- Sidebar run inventory only renders when `!collapsed`; spec's responsive-state test says inventory should "remain usable in collapsed and expanded desktop shell states". Needs a design call on collapsed-state inventory (icon-only rail vs. hidden) before patching [web/src/components/shared/Sidebar.tsx:32].
+- Sidebar `set_search_params` (push) racing ProductionShell's initial auto-select (`replace: true`) can produce a transient history entry the user can navigate back to. Low impact; revisit if the back-stack cleanliness matters for Epic 7+ surfaces [web/src/components/shared/Sidebar.tsx:143-149 + web/src/components/shells/ProductionShell.tsx:35-45].
+- `stage: 'complete', status: 'cancelled'` paints the complete node amber (`failed` state). Spec doesn't specify cancelled semantics. Decide whether cancelled should map to its own node state or reuse `completed` as a terminal-but-incomplete signal [web/src/lib/formatters.ts:254].
+- `useRunStatus.test` uses real 5.2s `setTimeout` waits per poll. Works deterministically but 10-15s wall-clock. Converting to `vi.useFakeTimers()` needs care with React Query v5's scheduler — defer until test time becomes a CI bottleneck [web/src/hooks/useRunStatus.test.tsx:77-92].
+- `renderWithProviders.test` flipped the fresh-cache assertion from `toHaveLength(0)` to `toBeGreaterThan(0)` once the test body started mounting `ProductionShell` (which fires queries). The invariant the test was guarding is now gone; restore by rendering a query-free harness for the empty-cache check [web/src/test/renderWithProviders.test.tsx:40].
+- StageStepper `upcoming` state has no distinct CSS selector — looks identical to a default/cold node. Design decision on whether the stepper needs a visible "not yet reached" vocabulary [web/src/index.css `.stage-stepper__node` block].
+- `useRunStatus.test` asserts `queryByRole('progressbar')` is absent on a harness that only renders two `<span>`s — the assertion is always true regardless of hook behavior. Make it meaningful by rendering a shell that would expose a spinner, or remove [web/src/hooks/useRunStatus.test.tsx:91].
+
+## Deferred from: code review of 7-2-scenario-inspector-inline-editor (2026-04-19)
+
+- **TOCTOU in `SceneService.EditNarration`** — `s.runs.Get` check and `s.segments.UpdateNarration` write are non-atomic. A concurrent pipeline-resume advancing run.Status between the two calls lets a narration write land after the stage has already moved on. Very low probability in a single-operator tool; deferred until SQLite transaction wrapping is added [internal/service/scene_service.go:62].
+- **Backend Edit endpoint echoes request payload not DB value** — `handler_scene.go` returns `req.Narration` in the response instead of reading back the persisted value. Currently harmless because `EditNarration` stores verbatim; will silently diverge if any future DB-layer normalization is added. Fix by re-reading the segment row after update [internal/api/handler_scene.go:81].
+- **`useState` baseline never re-synced from scene prop** — `draft` and `revert_to` are initialized once from `scene.narration`; if the parent query refetches and updates the prop while the editor is active, Ctrl+Z reverts to a stale baseline and the no-op equality check may be wrong. Only manifests under concurrent multi-tab usage; deferred [web/src/components/production/InlineNarrationEditor.tsx:26-28].
+
+## Deferred from: code review of 7-3-character-selection-interface (2026-04-19)
+
+- **`LatestFrozenDescriptorBySCPID` `id DESC` tiebreaker is unstable for random-UUID IDs** — Trigger-auto-bumped `updated_at` (Migration 002) breaks ties in practice; only pure clock-tick collisions are arbitrary. Switch to ULID or add `created_at DESC` as second tiebreaker when run ID schema changes [internal/db/run_store.go:387-393].
+- **`ApplyCharacterPick` `COALESCE(?, frozen_descriptor)` with a non-nil empty string pointer wipes the column** — Not reachable via current `CharacterService.Pick` trim-empty→nil path; doc comment diverges from behavior. Tighten via `COALESCE(NULLIF(?, ''), frozen_descriptor)` alongside an explicit "clear" use case [internal/db/run_store.go:336].
+- **`SetFrozenDescriptor` is dead code** — Exported but uncalled. Remove or keep with tests when a non-pick descriptor write path is needed [internal/db/run_store.go:363-379].
+- **`GetDescriptorPrefill` reads `os.ReadFile(*run.ScenarioPath)` without path-traversal guard** — Internal trust model (scenario_path is set by pipeline, not user input). Add `filepath.Rel(outputDir, scenarioPath)` check if admin endpoints ever populate the column [internal/service/character_service.go:170].
+- **Schema null/optional convention: `runSummary.frozen_descriptor` is `nullable().optional()` while `descriptorPrefill.prior` is `nullable()` only** — Both accept null today; converge on one convention in a frontend-contract consolidation pass [web/src/contracts/runContracts.ts].
+- **`image_track.go` override only swaps the prefix — individual shot `VisualDescriptor` strings composed by Phase A may still embed the pre-edit descriptor text** — Phase A output is read-only; fix would require re-running Phase A composition or string-level scrubbing. Out of Story 7.3 scope; addresses Phase A/B integration invariant [internal/pipeline/image_track.go:145-154].
+- **`handle_blur` sends trimmed draft to parent while textarea retains untrimmed value** — Minor UX inconsistency; same pattern as `InlineNarrationEditor` (7.2 finding #4 precedent). Normalize both editors in a later polish pass [web/src/components/production/VisionDescriptorEditor.tsx:65-68].
+- **`pickCharacterRequest.FrozenDescriptor` is `string` not `*string`** — Client that omits the field is indistinguishable from one that clears it. Fine with "optional" semantics in AC #3 and current service trim-empty behavior. Revisit if explicit-clear becomes a requirement [internal/api/handler_character.go:19-22].
+- **No length cap on `frozen_descriptor` at the handler layer** — `maxRequestBodyBytes` bounds the overall request; a pathological 900KB descriptor would still fit. Add per-field cap when moderation/ops concerns arise [internal/api/handler_character.go:54-70].
+- **`Descriptor` handler does not verify run stage** — A client calling `/characters/descriptor` for a run past `character_pick` still receives the auto/prior payload. Low-risk info leak; add stage gate if the endpoint becomes operator-accessible across stages [internal/api/handler_character.go:76-90].
+- **`CharacterPick` hint text says "Press 1–9 or 0" regardless of candidate count** — If cache returns <10 candidates the hint is misleading. Minor UX [web/src/components/production/CharacterPick.tsx:273].
+- **Ctrl+Z `revert_to` is captured on prefill change, not on edit-mode activation** — Spec AC #5 text says "reverts the draft to the pre-fill value" — current behavior is spec-correct, but the code comment and user-reported mental model claim "revert to session start". Update comment or tighten behavior to match operator expectations [web/src/components/production/VisionDescriptorEditor.tsx:16-32].
+- **ProductionShell `runs` is re-sorted on every render and `run_status_query` identity-gating causes a one-render flicker on run switch** — Out of Story 7.3 scope (Story 7.1 dashboard work that leaked into uncommitted diff). Memoize `runs` via `useMemo(compare)` and key `useQuery` by `selected_run_id` [web/src/components/shells/ProductionShell.tsx].
+- **Migration 009 lacks `IF NOT EXISTS` / explicit `user_version` PRAGMA** — Consistent with existing 001–008 migration conventions; the migration runner bumps `user_version` externally. Flag if a partial-manual-state dev DB is ever encountered [migrations/009_frozen_descriptor.sql].
+- **Story 7.3 diff carries uncommitted changes from Stories 7.1/7.2 (ProductionShell rewrite, `scene_service.go` / `handler_scene.go` / scene fixtures, `runSummarySchema` telemetry-field additions)** — Handled at commit time per Jay's commit-scope rule: mixed files remain uncommitted; Story 7.3 commit only picks the relevant hunks. Not a code-layer defect.
+
+## Deferred from: code review of 7-5-onboarding-continuity-experience (2026-04-19)
+
+- **`production_last_seen` grows unbounded and lacks rehydrate schema validation** — Every visited run adds an entry; there is no pruning or TTL. `persist` stores the map as-is, so a `RunStage` enum change (future Epic stage addition) will keep old enum strings in localStorage and `snapshotsMatch` will produce spurious banners after deploy. Add eviction policy + `migrate` function when the stage enum next changes [web/src/stores/useUIStore.ts].
+- **`.status-bar[data-visible="false"]` remains tab-focusable** — `height: 0; overflow: clip` hides content visually, but children are still in the DOM without `visibility: hidden` / `inert`, so keyboard users can tab into invisible controls. Pre-existing from Story 7.1; not touched by Story 7.5 [web/src/index.css].

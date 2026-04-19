@@ -1,5 +1,5 @@
 # generated: 2026-04-16
-# last_updated: 2026-04-19 # Epic 6 web shell + testing infrastructure complete
+# last_updated: 2026-04-19 # Story 8-7 new-run-creation-from-ui code review complete — status=done
 # project: youtube.pipeline
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-16
-last_updated: 2026-04-19 # Epic 6 web shell + testing infrastructure complete
+last_updated: 2026-04-19 # Story 8-7 code review complete — status=done
 project: youtube.pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -74,7 +74,7 @@ development_status:
   epic-3-retrospective: optional
 
   # ── Epic 4: Advanced Quality Infrastructure ──────────────────────────────
-  epic-4: in-progress
+  epic-4: done
   4-1-golden-eval-set-governance-validation: done
   4-2-shadow-eval-runner: done
   4-3-cohens-kappa-calibration-tracking: done
@@ -82,16 +82,16 @@ development_status:
   epic-4-retrospective: optional
 
   # ── Epic 5: Media Generation (Phase B — Image & TTS) ─────────────────────
-  epic-5: in-progress
-  5-1-common-rate-limiting-exponential-backoff: ready-for-dev
-  5-2-parallel-media-generation-runner: ready-for-dev
-  5-3-character-reference-selection-search-result-cache: ready-for-dev
-  5-4-frozen-descriptor-propagation-per-shot-image-generation: backlog
-  5-5-korean-tts-regex-transliteration: backlog
+  epic-5: done
+  5-1-common-rate-limiting-exponential-backoff: done
+  5-2-parallel-media-generation-runner: done
+  5-3-character-reference-selection-search-result-cache: done
+  5-4-frozen-descriptor-propagation-per-shot-image-generation: done
+  5-5-korean-tts-regex-transliteration: done
   epic-5-retrospective: optional
 
   # ── Epic 6: Web UI — Design System & Application Shell ───────────────────
-  epic-6: in-progress
+  epic-6: done
   6-1-theme-engine-global-styling: done
   6-2-spa-architecture-navigation-shell: done
   6-3-keyboard-shortcut-engine: done
@@ -100,22 +100,23 @@ development_status:
   epic-6-retrospective: optional
 
   # ── Epic 7: Production Tab — Scenario Review & Character Selection ────────
-  epic-7: backlog
-  7-1-pipeline-dashboard-run-status: backlog
-  7-2-scenario-inspector-inline-editor: backlog
-  7-3-character-selection-interface: backlog
-  7-4-progressive-failure-handling: backlog
-  7-5-onboarding-continuity-experience: backlog
+  epic-7: done
+  7-1-pipeline-dashboard-run-status: done
+  7-2-scenario-inspector-inline-editor: done
+  7-3-character-selection-interface: done
+  7-4-progressive-failure-handling: done
+  7-5-onboarding-continuity-experience: done
   epic-7-retrospective: optional
 
   # ── Epic 8: Batch Review & Decision Management ───────────────────────────
-  epic-8: backlog
-  8-1-master-detail-review-layout: backlog
-  8-2-scene-review-actions-audioplayer: backlog
-  8-3-decision-undo-command-pattern: backlog
-  8-4-rejection-regeneration-flow: backlog
-  8-5-batch-approve-all-remaining: backlog
-  8-6-decisions-history-timeline-view: backlog
+  epic-8: in-progress
+  8-1-master-detail-review-layout: done
+  8-2-scene-review-actions-audioplayer: done
+  8-3-decision-undo-command-pattern: done
+  8-4-rejection-regeneration-flow: done
+  8-5-batch-approve-all-remaining: done
+  8-6-decisions-history-timeline-view: done
+  8-7-new-run-creation-from-ui: done
   epic-8-retrospective: optional
 
   # ── Epic 9: Video Assembly & Compliance (Phase C) ────────────────────────

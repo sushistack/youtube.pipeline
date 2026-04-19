@@ -1861,6 +1861,35 @@ So that I can Audit my own workflow and understand the run's evolution.
 
 ---
 
+#### Story 8.7: New Run Creation from UI
+
+As an operator,
+I want to create a new pipeline run directly from the web UI,
+So that I can exercise the Production and Batch Review surfaces end-to-end without dropping into the terminal.
+
+**Acceptance Criteria:**
+
+**Given** the Production tab is open
+**When** I click the `New Run` button in the sidebar header or press `⌘N` / `Ctrl+N`
+**Then** an inline `role="alertdialog"` panel opens with a focused SCP-ID input
+**And** the input is validated against the backend regex `^[A-Za-z0-9_-]+$` with a clear inline error for invalid characters
+
+**Given** a valid SCP ID is entered
+**When** I submit (click Create or press Enter)
+**Then** the UI calls `POST /api/runs` with `{"scp_id": "..."}`, refreshes the sidebar inventory, auto-selects the newly created run via `?run=<id>`, and closes the panel
+**And** on any failure (400 validation, network, 5xx) the panel surfaces a Fail-Loud-with-Fix inline error and remains open so the operator can correct and retry without reloading
+
+**Given** the new run has been created
+**When** `ProductionShell` renders for it
+**Then** the view shows a pending empty-state card (stage=pending, status=pending) with guidance copy and a "Copy command" button that copies `pipeline resume <run-id>` to the clipboard
+**And** the run is NOT auto-resumed — starting Phase A remains an explicit, cost-controlled terminal action (create-only scope)
+
+**Scope boundary:** Create-only. This story picks up UX-DR68 (originally parked in Epic 7) and skips its V1 clipboard-copy intermediate because `POST /api/runs` already exists. Starting the run (`POST /api/runs/{id}/resume`) and any "Start now" UI affordance are deliberately out of scope; a future story may add a UI-triggered start once cost telemetry is judged sufficient.
+
+**Tests:** Component — `NewRunPanel` alertdialog + focus trap + validation + submit + error branches. Unit — `keyboardShortcuts.ts` platform-aware `mod+n` normalization. Contract — new `createRunRequestSchema` / `createRunResponseSchema` parse the authoritative backend response. Integration — Sidebar click → panel → POST → inventory refetch → URL update → panel close. E2E — Playwright smoke `web/e2e/new-run-creation.spec.ts` covers the full flow end-to-end.
+
+---
+
 ### Epic 9: Video Assembly & Compliance (Phase C)
 
 #### Story 9.1: FFmpeg Two-Stage Assembly Engine
