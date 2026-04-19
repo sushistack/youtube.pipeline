@@ -24,3 +24,8 @@ e2e/node_modules/
 .agents
 .gemini
 _bmad
+
+#
+.tmp
+node_modules
+web/test-results
