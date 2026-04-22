@@ -28,6 +28,11 @@ type PipelineConfig struct {
 	WriterProvider string `yaml:"writer_provider" mapstructure:"writer_provider"`
 	CriticProvider string `yaml:"critic_provider" mapstructure:"critic_provider"`
 
+	// ImageProvider is the provider for image generation ("dashscope" default).
+	ImageProvider string `yaml:"image_provider" mapstructure:"image_provider"`
+	// TTSProvider is the provider for TTS synthesis ("dashscope" default).
+	TTSProvider string `yaml:"tts_provider" mapstructure:"tts_provider"`
+
 	// DashScope
 	DashScopeRegion string `yaml:"dashscope_region" mapstructure:"dashscope_region"`
 
@@ -85,6 +90,8 @@ func DefaultConfig() PipelineConfig {
 		ImageModel:            "qwen-max-vl",
 		WriterProvider:        "deepseek",
 		CriticProvider:        "gemini",
+		ImageProvider:         "dashscope",
+		TTSProvider:           "dashscope",
 		DashScopeRegion:       "cn-beijing",
 		DataDir:               "/mnt/data/raw",
 		OutputDir:             filepath.Join(base, "output"),

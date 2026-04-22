@@ -165,10 +165,57 @@ func validFactsJSON(scpID string) string {
 }`
 }
 
+func TestFilesystemCorpus_Read_SCPMetaAttribution(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	root := t.TempDir()
+	writeCorpusTree(t, root, "SCP-173")
+
+	doc, err := NewFilesystemCorpus(root).Read(context.Background(), "SCP-173")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+
+	if doc.Meta.AuthorName != "Test Author" {
+		t.Errorf("AuthorName = %q, want %q", doc.Meta.AuthorName, "Test Author")
+	}
+	if doc.Meta.SourceURL != "https://scp-wiki.wikidot.com/SCP-173" {
+		t.Errorf("SourceURL = %q, want %q", doc.Meta.SourceURL, "https://scp-wiki.wikidot.com/SCP-173")
+	}
+}
+
+func TestFilesystemCorpus_Read_SCPMetaAttributionOmitted(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	root := t.TempDir()
+	// Write meta.json WITHOUT author_name/source_url.
+	writeCorpusJSON(t, filepath.Join(root, "SCP-404", "facts.json"), validFactsJSON("SCP-404"))
+	writeCorpusJSON(t, filepath.Join(root, "SCP-404", "meta.json"), `{
+  "scp_id": "SCP-404",
+  "tags": ["scp"],
+  "related_docs": []
+}`)
+	writeFile(t, filepath.Join(root, "SCP-404", "main.txt"), []byte("Main text."))
+
+	doc, err := NewFilesystemCorpus(root).Read(context.Background(), "SCP-404")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+
+	if doc.Meta.AuthorName != "" {
+		t.Errorf("AuthorName = %q, want empty string", doc.Meta.AuthorName)
+	}
+	if doc.Meta.SourceURL != "" {
+		t.Errorf("SourceURL = %q, want empty string", doc.Meta.SourceURL)
+	}
+}
+
 func validMetaJSON(scpID string) string {
 	return `{
   "scp_id": "` + scpID + `",
   "tags": ["scp"],
-  "related_docs": []
+  "related_docs": [],
+  "author_name": "Test Author",
+  "source_url": "https://scp-wiki.wikidot.com/` + scpID + `"
 }`
 }

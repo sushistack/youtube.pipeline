@@ -33,6 +33,12 @@ func TestDefaultConfig_AllFieldsPopulated(t *testing.T) {
 	if cfg.CriticProvider == "" {
 		t.Error("CriticProvider is empty")
 	}
+	if cfg.ImageProvider == "" {
+		t.Error("ImageProvider is empty")
+	}
+	if cfg.TTSProvider == "" {
+		t.Error("TTSProvider is empty")
+	}
 	if cfg.DashScopeRegion == "" {
 		t.Error("DashScopeRegion is empty")
 	}

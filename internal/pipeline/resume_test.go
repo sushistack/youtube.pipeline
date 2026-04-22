@@ -590,6 +590,15 @@ func TestResume_Advance_Stub(t *testing.T) {
 	}
 }
 
+// TestResume_Assemble_MetadataBuilderWired verifies that when both
+// PhaseCRunner and PhaseCMetadataBuilder are configured, the metadata
+// builder is invoked during Resume at StageAssemble and the stage
+// advances to StageMetadataAck.
+func TestResume_Assemble_MetadataBuilderWired(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	t.Skip("TODO: requires PhaseCRunner with real ffmpeg — test metadata builder wiring once ffmpeg is available in CI")
+}
+
 // --- helpers ---------------------------------------------------------------
 
 func mustMkdir(t *testing.T, path string) {

@@ -55,14 +55,15 @@ type ResumeOptions struct {
 // Resume only; Advance remains a stub (automated stage execution lands in
 // Epic 3). The Engine satisfies pipeline.Runner.
 type Engine struct {
-	runs      RunStore
-	segments  SegmentStore
-	sessions  HITLSessionCleaner
-	phaseA    PhaseAExecutor
-	phaseC    *PhaseCRunner
-	clock     clock.Clock
-	outputDir string
-	logger    *slog.Logger
+	runs           RunStore
+	segments       SegmentStore
+	sessions       HITLSessionCleaner
+	phaseA         PhaseAExecutor
+	phaseC         *PhaseCRunner
+	phaseCMetadata MetadataBuilder
+	clock          clock.Clock
+	outputDir      string
+	logger         *slog.Logger
 }
 
 // NewEngine constructs an Engine. outputDir is the base output path
@@ -89,6 +90,13 @@ func (e *Engine) SetPhaseAExecutor(exec PhaseAExecutor) {
 
 func (e *Engine) SetPhaseCRunner(runner *PhaseCRunner) {
 	e.phaseC = runner
+}
+
+// SetPhaseCMetadataBuilder sets the metadata builder used during the
+// StageAssemble → StageMetadataAck transition. May be nil (no metadata
+// written), which skips the metadata entry call.
+func (e *Engine) SetPhaseCMetadataBuilder(builder MetadataBuilder) {
+	e.phaseCMetadata = builder
 }
 
 // Advance executes or re-executes the full Phase A chain for any run whose
@@ -279,6 +287,14 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 		if _, err := e.phaseC.Run(ctx, req); err != nil {
 			return report, fmt.Errorf("resume %s: phase c assembly: %w", runID, err)
 		}
+
+		// Build and write metadata bundles before advancing to StageMetadataAck.
+		if e.phaseCMetadata != nil {
+			if err := PhaseCMetadataEntry(ctx, e.phaseCMetadata, runID); err != nil {
+				return report, fmt.Errorf("resume %s: phase c metadata entry: %w", runID, err)
+			}
+		}
+
 		// Assembly succeeded; advance stage to StageMetadataAck.
 		nextStage, err := NextStage(run.Stage, domain.EventComplete)
 		if err != nil {

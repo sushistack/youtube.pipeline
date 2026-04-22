@@ -122,7 +122,7 @@ development_status:
   # ── Epic 9: Video Assembly & Compliance (Phase C) ────────────────────────
   epic-9: in-progress
   9-1-ffmpeg-two-stage-assembly-engine: review
-  9-2-metadata-attribution-bundle: ready-for-dev
+  9-2-metadata-attribution-bundle: review
   9-3-compliance-audit-logging: ready-for-dev
   9-4-pre-upload-compliance-gate: ready-for-dev
   epic-9-retrospective: optional

@@ -19,6 +19,24 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
 
+// PhaseCMetadataEntry builds and writes metadata bundles for a run.
+// It is called after Phase C assembly completes and before the engine
+// advances to StageMetadataAck. Returns domain.ErrValidation if the
+// builder is nil or if Build/Write fail.
+func PhaseCMetadataEntry(ctx context.Context, builder MetadataBuilder, runID string) error {
+	if builder == nil {
+		return fmt.Errorf("phase c metadata entry: %w: builder is nil", domain.ErrValidation)
+	}
+	bundle, manifest, err := builder.Build(ctx, runID)
+	if err != nil {
+		return fmt.Errorf("phase c metadata entry: build: %w", err)
+	}
+	if err := builder.Write(ctx, runID, bundle, manifest); err != nil {
+		return fmt.Errorf("phase c metadata entry: write: %w", err)
+	}
+	return nil
+}
+
 var _ = ffmpeg.Input // ensure ffmpeg-go is used
 
 // PhaseCRequest carries the input parameters for the assembly stage.

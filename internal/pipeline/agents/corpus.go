@@ -51,6 +51,8 @@ type SCPMeta struct {
 	SCPID       string   `json:"scp_id"`
 	Tags        []string `json:"tags"`
 	RelatedDocs []string `json:"related_docs"`
+	AuthorName  string   `json:"author_name"`
+	SourceURL   string   `json:"source_url"`
 }
 
 var ErrCorpusNotFound = fmt.Errorf("corpus not found: %w", domain.ErrNotFound)
