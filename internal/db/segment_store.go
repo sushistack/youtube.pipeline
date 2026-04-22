@@ -65,6 +65,32 @@ func (s *SegmentStore) ClearClipPathsByRunID(ctx context.Context, runID string) 
 	return n, nil
 }
 
+// UpdateClipPath writes the clip_path column for a specific scene.
+// Returns ErrNotFound when no segment row matches (runID, sceneIndex).
+func (s *SegmentStore) UpdateClipPath(ctx context.Context, runID string, sceneIndex int, clipPath string) error {
+	if runID == "" {
+		return fmt.Errorf("update clip path: %w: run_id is empty", domain.ErrValidation)
+	}
+	if sceneIndex < 0 {
+		return fmt.Errorf("update clip path %s[%d]: %w: scene_index is negative", runID, sceneIndex, domain.ErrValidation)
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE segments SET clip_path = ? WHERE run_id = ? AND scene_index = ?`,
+		clipPath, runID, sceneIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("update clip path %s[%d]: %w", runID, sceneIndex, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update clip path %s[%d] rows affected: %w", runID, sceneIndex, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("update clip path %s[%d]: %w", runID, sceneIndex, domain.ErrNotFound)
+	}
+	return nil
+}
+
 // DeleteByRunID removes every segment row whose run_id equals runID.
 // Scope is strictly limited to the target run — other runs' segments are untouched.
 // Returns the number of rows removed; 0 on an empty run is not an error.

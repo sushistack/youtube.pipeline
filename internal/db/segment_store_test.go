@@ -666,3 +666,78 @@ func TestSegmentStore_UpdateNarration_ReturnsValidationErrorForEmptyRunID(t *tes
 		t.Fatalf("want ErrValidation, got %v", err)
 	}
 }
+
+func TestSegmentStore_UpdateClipPath_UpdatesExistingSegment(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+	ctx := context.Background()
+
+	// seed a run and a segment
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO runs (id, scp_id) VALUES (?, ?)`, "run-clip", "049"); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO segments (run_id, scene_index, narration, status) VALUES (?, ?, ?, ?)`,
+		"run-clip", 0, "narration", "pending"); err != nil {
+		t.Fatalf("seed segment: %v", err)
+	}
+
+	clipPath := "clips/scene_00.mp4"
+	err := store.UpdateClipPath(ctx, "run-clip", 0, clipPath)
+	if err != nil {
+		t.Fatalf("UpdateClipPath: %v", err)
+	}
+
+	// verify via raw query
+	var stored string
+	err = database.QueryRowContext(ctx,
+		`SELECT clip_path FROM segments WHERE run_id = ? AND scene_index = ?`,
+		"run-clip", 0).Scan(&stored)
+	if err != nil {
+		t.Fatalf("query clip_path: %v", err)
+	}
+	if stored != clipPath {
+		t.Errorf("clip_path = %q, want %q", stored, clipPath)
+	}
+}
+
+func TestSegmentStore_UpdateClipPath_ReturnsNotFoundForMissingScene(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+	ctx := context.Background()
+
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO runs (id, scp_id) VALUES (?, ?)`, "run-clip", "049"); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	err := store.UpdateClipPath(ctx, "run-clip", 99, "clips/scene_99.mp4")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestSegmentStore_UpdateClipPath_ReturnsValidationErrorForEmptyRunID(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+
+	err := store.UpdateClipPath(context.Background(), "", 0, "clips/scene_00.mp4")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("want ErrValidation, got %v", err)
+	}
+}
+
+func TestSegmentStore_UpdateClipPath_ReturnsValidationErrorForNegativeSceneIndex(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+
+	err := store.UpdateClipPath(context.Background(), "run-clip", -1, "clips/scene_00.mp4")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("want ErrValidation, got %v", err)
+	}
+}

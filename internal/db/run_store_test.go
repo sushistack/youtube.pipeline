@@ -1020,3 +1020,57 @@ func TestRunStore_LatestFrozenDescriptorBySCPID_ExcludesNonCompletedRuns(t *test
 		t.Fatalf("expected nil (no completed prior), got %q", *got)
 	}
 }
+
+func TestRunStore_UpdateOutputPath_UpdatesExistingRun(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	outputPath := filepath.Join(outDir, run.ID, "output.mp4")
+	err = store.UpdateOutputPath(ctx, run.ID, outputPath)
+	if err != nil {
+		t.Fatalf("UpdateOutputPath: %v", err)
+	}
+
+	// verify via raw query
+	var stored string
+	err = database.QueryRowContext(ctx,
+		`SELECT output_path FROM runs WHERE id = ?`,
+		run.ID).Scan(&stored)
+	if err != nil {
+		t.Fatalf("query output_path: %v", err)
+	}
+	if stored != outputPath {
+		t.Errorf("output_path = %q, want %q", stored, outputPath)
+	}
+}
+
+func TestRunStore_UpdateOutputPath_ReturnsNotFoundForMissingRun(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	ctx := context.Background()
+
+	err := store.UpdateOutputPath(ctx, "non-existent-run", "output.mp4")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestRunStore_UpdateOutputPath_ReturnsValidationErrorForEmptyRunID(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	err := store.UpdateOutputPath(context.Background(), "", "output.mp4")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("want ErrValidation, got %v", err)
+	}
+}

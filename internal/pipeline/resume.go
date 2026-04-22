@@ -59,6 +59,7 @@ type Engine struct {
 	segments  SegmentStore
 	sessions  HITLSessionCleaner
 	phaseA    PhaseAExecutor
+	phaseC    *PhaseCRunner
 	clock     clock.Clock
 	outputDir string
 	logger    *slog.Logger
@@ -84,6 +85,10 @@ func NewEngine(runs RunStore, segments SegmentStore, sessions HITLSessionCleaner
 
 func (e *Engine) SetPhaseAExecutor(exec PhaseAExecutor) {
 	e.phaseA = exec
+}
+
+func (e *Engine) SetPhaseCRunner(runner *PhaseCRunner) {
+	e.phaseC = runner
 }
 
 // Advance executes or re-executes the full Phase A chain for any run whose
@@ -262,6 +267,30 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 	newStatus := StatusForStage(run.Stage)
 	if err := e.runs.ResetForResume(ctx, runID, newStatus); err != nil {
 		return report, fmt.Errorf("resume %s: reset: %w", runID, err)
+	}
+
+	// Execute StageAssemble if Phase C runner is configured.
+	if run.Stage == domain.StageAssemble && e.phaseC != nil {
+		req := PhaseCRequest{
+			RunID:    runID,
+			RunDir:   runDir,
+			Segments: segments,
+		}
+		if _, err := e.phaseC.Run(ctx, req); err != nil {
+			return report, fmt.Errorf("resume %s: phase c assembly: %w", runID, err)
+		}
+		// Assembly succeeded; advance stage to StageMetadataAck.
+		nextStage, err := NextStage(run.Stage, domain.EventComplete)
+		if err != nil {
+			return report, fmt.Errorf("resume %s: compute next stage: %w", runID, err)
+		}
+		res := domain.PhaseAAdvanceResult{
+			Stage:  nextStage,
+			Status: StatusForStage(nextStage),
+		}
+		if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
+			return report, fmt.Errorf("resume %s: apply stage advance: %w", runID, err)
+		}
 	}
 
 	// Story 2.6 cleanup: drop the hitl_sessions row when the run exits HITL

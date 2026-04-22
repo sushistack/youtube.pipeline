@@ -378,6 +378,29 @@ func (s *RunStore) SetFrozenDescriptor(ctx context.Context, id, descriptor strin
 	return nil
 }
 
+// UpdateOutputPath writes the output_path column for a run.
+// Returns ErrNotFound when the run does not exist.
+func (s *RunStore) UpdateOutputPath(ctx context.Context, runID string, outputPath string) error {
+	if runID == "" {
+		return fmt.Errorf("update output path: %w: run_id is empty", domain.ErrValidation)
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET output_path = ? WHERE id = ?`,
+		outputPath, runID,
+	)
+	if err != nil {
+		return fmt.Errorf("update output path %s: %w", runID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update output path %s rows affected: %w", runID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("update output path %s: %w", runID, domain.ErrNotFound)
+	}
+	return nil
+}
+
 // LatestFrozenDescriptorBySCPID returns the most-recently-updated non-null
 // frozen_descriptor for *completed* runs sharing scpID, excluding excludeRunID
 // (typically the current run). Returns (nil, nil) when no prior run has a

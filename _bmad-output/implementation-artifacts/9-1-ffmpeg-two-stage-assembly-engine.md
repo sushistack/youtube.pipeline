@@ -25,50 +25,50 @@ So that each scene has visual rhythm and the final output is upload-ready.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Define `PhaseCRunner` struct and constructor in `internal/pipeline/phase_c.go` (AC: 1, 2, 3, 4, 7)
-  - [ ] 1.1 Define `PhaseCRequest` struct (`RunID`, `RunDir`, `Segments []*domain.Episode`)
-  - [ ] 1.2 Define `PhaseCResult` struct (`WallClockMs int64`, `ClipPaths []string`, `OutputPath string`)
-  - [ ] 1.3 Define `SegmentClipUpdater` interface (`UpdateClipPath(ctx, runID, sceneIndex, clipPath)`) — satisfied by `*db.SegmentStore` structurally
-  - [ ] 1.4 Define `RunOutputUpdater` interface (`UpdateOutputPath(ctx, runID, outputPath)`) — satisfied by `*db.RunStore` structurally
-  - [ ] 1.5 Implement `NewPhaseCRunner(segStore, runStore, recorder, clk, logger)` constructor with nil-safe defaults
+- [x] Task 1: Define `PhaseCRunner` struct and constructor in `internal/pipeline/phase_c.go` (AC: 1, 2, 3, 4, 7)
+  - [x] 1.1 Define `PhaseCRequest` struct (`RunID`, `RunDir`, `Segments []*domain.Episode`)
+  - [x] 1.2 Define `PhaseCResult` struct (`WallClockMs int64`, `ClipPaths []string`, `OutputPath string`)
+  - [x] 1.3 Define `SegmentClipUpdater` interface (`UpdateClipPath(ctx, runID, sceneIndex, clipPath)`) — satisfied by `*db.SegmentStore` structurally
+  - [x] 1.4 Define `RunOutputUpdater` interface (`UpdateOutputPath(ctx, runID, outputPath)`) — satisfied by `*db.RunStore` structurally
+  - [x] 1.5 Implement `NewPhaseCRunner(segStore, runStore, recorder, clk, logger)` constructor with nil-safe defaults
 
-- [ ] Task 2: Implement per-scene clip builder (AC: 1, 2, 3)
-  - [ ] 2.1 Implement `buildSceneClip(ctx, runDir, ep *domain.Episode) (clipPath string, err error)`
-  - [ ] 2.2 For 1-shot scene: construct `zoompan` filter for full `TTSDurationMs` duration, overlay TTS audio
-  - [ ] 2.3 For multi-shot scenes: build `filter_complex` string combining per-shot `zoompan`/`xfade`/concat, then overlay TTS audio
-  - [ ] 2.4 Decide and document FFmpeg binding: **use `u2takey/ffmpeg-go`** (architecture requires `filter_complex` composability — thin `exec.Command` wrapper is insufficient per arch §Gap Analysis)
-  - [ ] 2.5 Add sync padding: compute video duration from shot durations; if TTS longer, extend last frame with `tpad`; if TTS shorter, add `apad` silence
-  - [ ] 2.6 Output to `{runDir}/clips/scene_{sceneIndex:02d}.mp4`; create `clips/` dir if absent
+- [x] Task 2: Implement per-scene clip builder (AC: 1, 2, 3)
+  - [x] 2.1 Implement `buildSceneClip(ctx, runDir, ep *domain.Episode) (clipPath string, err error)`
+  - [x] 2.2 For 1-shot scene: construct `zoompan` filter for full `TTSDurationMs` duration, overlay TTS audio
+  - [x] 2.3 For multi-shot scenes: build `filter_complex` string combining per-shot `zoompan`/`xfade`/concat, then overlay TTS audio
+  - [x] 2.4 Decide and document FFmpeg binding: **use `u2takey/ffmpeg-go`** (architecture requires `filter_complex` composability — thin `exec.Command` wrapper is insufficient per arch §Gap Analysis)
+  - [x] 2.5 Add sync padding: compute video duration from shot durations; if TTS longer, extend last frame with `tpad`; if TTS shorter, add `apad` silence
+  - [x] 2.6 Output to `{runDir}/clips/scene_{sceneIndex:02d}.mp4`; create `clips/` dir if absent
 
-- [ ] Task 3: Implement final concat stage (AC: 4)
-  - [ ] 3.1 After all scene clips assembled, write FFmpeg concat list file to temp path
-  - [ ] 3.2 Run `ffmpeg -f concat -safe 0 -i {listFile} -c copy {runDir}/output.mp4`
-  - [ ] 3.3 Verify output duration ≈ sum of clip durations (tolerance ≤ 0.1s)
+- [x] Task 3: Implement final concat stage (AC: 4)
+  - [x] 3.1 After all scene clips assembled, write FFmpeg concat list file to temp path
+  - [x] 3.2 Run `ffmpeg -f concat -safe 0 -i {listFile} -c copy {runDir}/output.mp4`
+  - [x] 3.3 Verify output duration ≈ sum of clip durations (tolerance ≤ 0.1s)
 
-- [ ] Task 4: DB persistence after each successful clip (AC: 5)
-  - [ ] 4.1 After each `buildSceneClip` succeeds, call `SegmentClipUpdater.UpdateClipPath(ctx, runID, sceneIndex, clipPath)`
-  - [ ] 4.2 After `output.mp4` is written, call `RunOutputUpdater.UpdateOutputPath(ctx, runID, outputPath)`
+- [x] Task 4: DB persistence after each successful clip (AC: 5)
+  - [x] 4.1 After each `buildSceneClip` succeeds, call `SegmentClipUpdater.UpdateClipPath(ctx, runID, sceneIndex, clipPath)`
+  - [x] 4.2 After `output.mp4` is written, call `RunOutputUpdater.UpdateOutputPath(ctx, runID, outputPath)`
 
-- [ ] Task 5: Add `UpdateClipPath` to `db.SegmentStore` and `UpdateOutputPath` to `db.RunStore` (AC: 5)
-  - [ ] 5.1 `SegmentStore.UpdateClipPath(ctx, runID, sceneIndex, clipPath string) error` — UPDATE segments SET clip_path=? WHERE run_id=? AND scene_index=?; return ErrNotFound if 0 rows
-  - [ ] 5.2 `RunStore.UpdateOutputPath(ctx, runID, outputPath string) error` — UPDATE runs SET output_path=? WHERE id=?; return ErrNotFound if 0 rows
-  - [ ] 5.3 Write unit tests for both new store methods using `testutil.NewTestDB`
+- [x] Task 5: Add `UpdateClipPath` to `db.SegmentStore` and `UpdateOutputPath` to `db.RunStore` (AC: 5)
+  - [x] 5.1 `SegmentStore.UpdateClipPath(ctx, runID, sceneIndex, clipPath string) error` — UPDATE segments SET clip_path=? WHERE run_id=? AND scene_index=?; return ErrNotFound if 0 rows
+  - [x] 5.2 `RunStore.UpdateOutputPath(ctx, runID, outputPath string) error` — UPDATE runs SET output_path=? WHERE id=?; return ErrNotFound if 0 rows
+  - [x] 5.3 Write unit tests for both new store methods using `testutil.NewTestDB`
 
-- [ ] Task 6: Wire resume safety into existing `resume.go` (AC: 6)
-  - [ ] 6.1 The `StageAssemble` resume branch in `resume.go:251` already calls `ClearClipPathsByRunID` and `CleanStageArtifacts` — verify this covers `clips/` dir AND `output.mp4` (both done by `artifact.go:CleanStageArtifacts(runDir, StageAssemble)`)
-  - [ ] 6.2 Confirm `clips/` dir is re-created by `PhaseCRunner` at assembly time (idempotent mkdir)
+- [x] Task 6: Wire resume safety into existing `resume.go` (AC: 6)
+  - [x] 6.1 The `StageAssemble` resume branch in `resume.go:251` already calls `ClearClipPathsByRunID` and `CleanStageArtifacts` — verify this covers `clips/` dir AND `output.mp4` (both done by `artifact.go:CleanStageArtifacts(runDir, StageAssemble)`)
+  - [x] 6.2 Confirm `clips/` dir is re-created by `PhaseCRunner` at assembly time (idempotent mkdir)
 
-- [ ] Task 7: Wire `PhaseCRunner` into pipeline engine / service (AC: 7)
-  - [ ] 7.1 In `service/run_service.go` (or wherever phases are dispatched), add `StageAssemble` case that instantiates and calls `PhaseCRunner.Run`
-  - [ ] 7.2 After `PhaseCRunner.Run` succeeds, engine advances stage via `EventComplete` → `StageMetadataAck`
+- [x] Task 7: Wire `PhaseCRunner` into pipeline engine / service (AC: 7)
+  - [x] 7.1 In `service/run_service.go` (or wherever phases are dispatched), add `StageAssemble` case that instantiates and calls `PhaseCRunner.Run`
+  - [x] 7.2 After `PhaseCRunner.Run` succeeds, engine advances stage via `EventComplete` → `StageMetadataAck`
 
-- [ ] Task 8: Integration tests in `internal/pipeline/phase_c_test.go` (AC: 8)
-  - [ ] 8.1 Test: 1-shot Ken Burns clip — verify output file exists, probe duration ≈ TTS duration
-  - [ ] 8.2 Test: 3-shot scene with cross_dissolve — verify xfade filters applied (via FFmpeg probe)
-  - [ ] 8.3 Test: hard_cut transition — direct concat, no xfade filter
-  - [ ] 8.4 Test: final concat — output.mp4 duration ≈ sum of scene clip durations
-  - [ ] 8.5 Test: resume re-entry — clips/ cleaned, DB clip_paths cleared, re-assembly produces valid output
-  - [ ] 8.6 Guard all tests with `testutil.BlockExternalHTTP(t)`; tests call real `ffmpeg` binary (not mocked)
+- [x] Task 8: Integration tests in `internal/pipeline/phase_c_test.go` (AC: 8)
+  - [x] 8.1 Test: 1-shot Ken Burns clip — verify output file exists, probe duration ≈ TTS duration
+  - [x] 8.2 Test: 3-shot scene with cross_dissolve — verify xfade filters applied (via FFmpeg probe)
+  - [x] 8.3 Test: hard_cut transition — direct concat, no xfade filter
+  - [x] 8.4 Test: final concat — output.mp4 duration ≈ sum of scene clip durations
+  - [x] 8.5 Test: resume re-entry — clips/ cleaned, DB clip_paths cleared, re-assembly produces valid output
+  - [x] 8.6 Guard all tests with `testutil.BlockExternalHTTP(t)`; tests call real `ffmpeg` binary (not mocked)
 
 ## Dev Notes
 
