@@ -53,6 +53,10 @@ type ImageTrackConfig struct {
 	Limiter           Limiter
 	Clock             clock.Clock
 	Logger            *slog.Logger
+	// AuditLogger is the optional audit logger. When non-nil, image_generation
+	// audit entries are written after each successful Generate/Edit call.
+	// Nil is allowed (no-op guard).
+	AuditLogger domain.AuditLogger
 }
 
 // NewImageTrack constructs the Phase B image track from cfg. The returned
@@ -248,6 +252,22 @@ func runImageTrack(
 			}
 			result.Observation.CostUSD += resp.CostUSD
 			result.Artifacts = append(result.Artifacts, absPath)
+
+			// Non-fatal audit write after each successful image generation.
+			if cfg.AuditLogger != nil {
+				if logErr := cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+					Timestamp: clk.Now(),
+					EventType: domain.AuditEventImageGeneration,
+					RunID:     req.RunID,
+					Stage:     string(domain.StageImage),
+					Provider:  resp.Provider,
+					Model:     resp.Model,
+					Prompt:    truncatePrompt(prompt, 2048),
+					CostUSD:   resp.CostUSD,
+				}); logErr != nil {
+					logger.Warn("audit log write failed", "run_id", req.RunID, "error", logErr)
+				}
+			}
 
 			persisted = append(persisted, domain.Shot{
 				ImagePath:        relPath,

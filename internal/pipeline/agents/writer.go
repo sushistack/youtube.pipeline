@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
@@ -15,6 +17,11 @@ type TextAgentConfig struct {
 	Provider    string
 	MaxTokens   int
 	Temperature float64
+	// AuditLogger is the optional audit logger. When non-nil, text_generation
+	// audit entries are written after each successful Generate call. Nil is
+	// allowed (no-op guard) — all existing tests continue to pass without
+	// modification because they construct TextAgentConfig without this field.
+	AuditLogger domain.AuditLogger
 }
 
 func NewWriter(
@@ -60,6 +67,20 @@ func NewWriter(
 		})
 		if err != nil {
 			return err
+		}
+
+		// Non-fatal audit write after successful text generation.
+		if cfg.AuditLogger != nil {
+			_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+				Timestamp: time.Now(),
+				EventType: domain.AuditEventTextGeneration,
+				RunID:     state.RunID,
+				Stage:     "writer",
+				Provider:  resp.Provider,
+				Model:     resp.Model,
+				Prompt:    truncatePrompt(prompt, 2048),
+				CostUSD:   resp.CostUSD,
+			})
 		}
 
 		var script domain.NarrationScript
@@ -114,6 +135,21 @@ func renderForbiddenTermsSection(patterns []string) string {
 		lines = append(lines, "- "+pattern)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// truncatePrompt rune-aware truncates s to at most n runes.
+func truncatePrompt(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	var idx int
+	for i := range s {
+		if utf8.RuneCountInString(s[:i]) >= n {
+			break
+		}
+		idx = i
+	}
+	return s[:idx]
 }
 
 func fillNarrationMetadata(script *domain.NarrationScript, resp domain.TextResponse, cfg TextAgentConfig, terms *ForbiddenTerms) {

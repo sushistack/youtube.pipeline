@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
@@ -53,6 +54,20 @@ func NewReviewer(
 		})
 		if err != nil {
 			return err
+		}
+
+		// Non-fatal audit write after successful review generation.
+		if cfg.AuditLogger != nil {
+			_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+				Timestamp: time.Now(),
+				EventType: domain.AuditEventTextGeneration,
+				RunID:     state.RunID,
+				Stage:     "reviewer",
+				Provider:  resp.Provider,
+				Model:     resp.Model,
+				Prompt:    truncatePrompt(prompt, 2048),
+				CostUSD:   resp.CostUSD,
+			})
 		}
 
 		var report domain.ReviewReport

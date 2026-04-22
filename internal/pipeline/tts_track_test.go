@@ -2,6 +2,7 @@ package pipeline_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -699,5 +700,217 @@ func TestResume_PhaseBRegenerationRebuildsTTSAfterFailure(t *testing.T) {
 		if seg.TTSPath == nil || *seg.TTSPath == "" {
 			t.Errorf("scene index %d: tts_path not rebuilt in DB", seg.SceneIndex)
 		}
+	}
+}
+
+// ── Audit logging ──────────────────────────────────────────────────────────────
+
+func TestTTSTrack_WritesAuditLogOnSuccess(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outputDir := t.TempDir()
+	runID := "scp-049-audit"
+	narrations := []string{"Scene one narration.", "Scene two narration."}
+
+	fakeTTS := newFakeTTS()
+	store := newFakeTTSStore()
+	limiter := &fakeRetryLimiter{}
+	clk := clock.NewFakeClock(time.Date(2026, 4, 18, 15, 0, 0, 0, time.UTC))
+	logger, _ := testutil.CaptureLog(t)
+	auditLogger := pipeline.NewFileAuditLogger(outputDir)
+
+	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
+		OutputDir:   outputDir,
+		TTSModel:    "fake-tts",
+		TTSVoice:    "longhua",
+		AudioFormat: "wav",
+		MaxRetries:  3,
+		AuditLogger: auditLogger,
+		TTS:         fakeTTS,
+		Store:       store,
+		Limiter:     limiter,
+		Clock:       clk,
+		Logger:      logger,
+	})
+	if err != nil {
+		t.Fatalf("NewTTSTrack: %v", err)
+	}
+
+	scenario := ttsTrackScenario(runID, narrations)
+	req := pipeline.PhaseBRequest{
+		RunID:    runID,
+		Stage:    domain.StageTTS,
+		Scenario: scenario,
+	}
+
+	_, err = track(context.Background(), req)
+	if err != nil {
+		t.Fatalf("track: %v", err)
+	}
+
+	auditPath := filepath.Join(outputDir, runID, "audit.log")
+	raw, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit.log: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 audit lines for 2 scenes, got %d", len(lines))
+	}
+	for i, line := range lines {
+		var entry domain.AuditEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("line %d: invalid JSON: %v", i, err)
+		}
+		if entry.EventType != domain.AuditEventTTSSynthesis {
+			t.Errorf("line %d: event_type=%q, want %q", i, entry.EventType, domain.AuditEventTTSSynthesis)
+		}
+		if entry.RunID != runID {
+			t.Errorf("line %d: run_id=%q, want %q", i, entry.RunID, runID)
+		}
+		if entry.Stage != string(domain.StageTTS) {
+			t.Errorf("line %d: stage=%q, want %q", i, entry.Stage, domain.StageTTS)
+		}
+	}
+}
+
+func TestTTSTrack_BlockedVoiceRejectedWithAuditLog(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outputDir := t.TempDir()
+	runID := "scp-049-blocked"
+	auditLogger := pipeline.NewFileAuditLogger(outputDir)
+	fakeTTS := newFakeTTS()
+	store := newFakeTTSStore()
+	limiter := &fakeRetryLimiter{}
+	clk := clock.NewFakeClock(time.Date(2026, 4, 18, 15, 0, 0, 0, time.UTC))
+	logger, _ := testutil.CaptureLog(t)
+
+	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
+		OutputDir:       outputDir,
+		TTSModel:        "fake-tts",
+		TTSVoice:        "blocked-voice",
+		AudioFormat:     "wav",
+		MaxRetries:      3,
+		BlockedVoiceIDs: []string{"blocked-voice", "other-blocked"},
+		AuditLogger:     auditLogger,
+		TTS:             fakeTTS,
+		Store:           store,
+		Limiter:         limiter,
+		Clock:           clk,
+		Logger:          logger,
+	})
+	if err != nil {
+		t.Fatalf("NewTTSTrack: %v", err)
+	}
+
+	scenario := ttsTrackScenario(runID, []string{"Narration"})
+	req := pipeline.PhaseBRequest{
+		RunID:    runID,
+		Stage:    domain.StageTTS,
+		Scenario: scenario,
+	}
+
+	_, err = track(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error for blocked voice, got nil")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("error does not wrap ErrValidation: %v", err)
+	}
+
+	if fakeTTS.callCount > 0 {
+		t.Errorf("fake TTS called %d times, expected 0", fakeTTS.callCount)
+	}
+
+	auditPath := filepath.Join(outputDir, runID, "audit.log")
+	raw, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit.log: %v", err)
+	}
+	var entry domain.AuditEntry
+	if err := json.Unmarshal(raw, &entry); err != nil {
+		t.Fatalf("unmarshal audit entry: %v", err)
+	}
+	if entry.EventType != domain.AuditEventVoiceBlocked {
+		t.Errorf("event_type=%q, want %q", entry.EventType, domain.AuditEventVoiceBlocked)
+	}
+	if entry.BlockedID != "blocked-voice" {
+		t.Errorf("blocked_id=%q, want %q", entry.BlockedID, "blocked-voice")
+	}
+}
+
+func TestTTSTrack_BlockedVoiceAllowsOtherVoices(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outputDir := t.TempDir()
+	runID := "scp-049-allowed"
+	auditLogger := pipeline.NewFileAuditLogger(outputDir)
+	fakeTTS := newFakeTTS()
+	store := newFakeTTSStore()
+	limiter := &fakeRetryLimiter{}
+	clk := clock.NewFakeClock(time.Date(2026, 4, 18, 15, 0, 0, 0, time.UTC))
+	logger, _ := testutil.CaptureLog(t)
+
+	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
+		OutputDir:       outputDir,
+		TTSModel:        "fake-tts",
+		TTSVoice:        "allowed-voice",
+		AudioFormat:     "wav",
+		MaxRetries:      3,
+		BlockedVoiceIDs: []string{"blocked-voice-1", "blocked-voice-2"},
+		AuditLogger:     auditLogger,
+		TTS:             fakeTTS,
+		Store:           store,
+		Limiter:         limiter,
+		Clock:           clk,
+		Logger:          logger,
+	})
+	if err != nil {
+		t.Fatalf("NewTTSTrack: %v", err)
+	}
+
+	scenario := ttsTrackScenario(runID, []string{"Narration"})
+	req := pipeline.PhaseBRequest{
+		RunID:    runID,
+		Stage:    domain.StageTTS,
+		Scenario: scenario,
+	}
+
+	_, err = track(context.Background(), req)
+	if err != nil {
+		t.Fatalf("track: %v", err)
+	}
+
+	if fakeTTS.callCount == 0 {
+		t.Fatal("fake TTS was never called (voice incorrectly blocked)")
+	}
+
+	auditPath := filepath.Join(outputDir, runID, "audit.log")
+	raw, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit.log: %v", err)
+	}
+	var entry domain.AuditEntry
+	if err := json.Unmarshal(raw, &entry); err != nil {
+		t.Fatalf("unmarshal audit entry: %v", err)
+	}
+	if entry.EventType == domain.AuditEventVoiceBlocked {
+		t.Fatal("voice was incorrectly blocked")
+	}
+	if entry.EventType != domain.AuditEventTTSSynthesis {
+		t.Errorf("event_type=%q, want %q", entry.EventType, domain.AuditEventTTSSynthesis)
+	}
+}
+
+func TestTTSTrack_NilAuditLoggerDoesNotPanic(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	fx := newTTSFixture(t, []string{"Hello world"})
+	fx.req.Stage = domain.StageTTS
+
+	_, err := fx.track(context.Background(), fx.req)
+	if err != nil {
+		t.Fatalf("track: %v", err)
 	}
 }

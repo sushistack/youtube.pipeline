@@ -62,17 +62,22 @@ func buildPhaseBRunner(
 		return nil, fmt.Errorf("build limiter factory: %w", err)
 	}
 
+	// Compliance audit logging — creates {outputDir}/{runID}/audit.log.
+	auditLogger := pipeline.NewFileAuditLogger(cfg.OutputDir)
+
 	ttsTrack, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
-		OutputDir:   cfg.OutputDir,
-		TTSModel:    cfg.TTSModel,
-		TTSVoice:    cfg.TTSVoice,
-		AudioFormat: cfg.TTSAudioFormat,
-		MaxRetries:  3,
-		TTS:         ttsClient,
-		Store:       segStore,
-		Limiter:     limiterFactory.DashScopeTTS(),
-		Clock:       clock.RealClock{},
-		Logger:      logger,
+		OutputDir:       cfg.OutputDir,
+		TTSModel:        cfg.TTSModel,
+		TTSVoice:        cfg.TTSVoice,
+		AudioFormat:     cfg.TTSAudioFormat,
+		MaxRetries:      3,
+		BlockedVoiceIDs: cfg.BlockedVoiceIDs,
+		AuditLogger:     auditLogger,
+		TTS:             ttsClient,
+		Store:           segStore,
+		Limiter:         limiterFactory.DashScopeTTS(),
+		Clock:           clock.RealClock{},
+		Logger:          logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build tts track: %w", err)

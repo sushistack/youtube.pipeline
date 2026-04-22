@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
@@ -95,6 +96,20 @@ func NewVisualBreakdowner(
 			})
 			if err != nil {
 				return err
+			}
+
+			// Non-fatal audit write after each successful visual breakdown generation.
+			if cfg.AuditLogger != nil {
+				_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+					Timestamp: time.Now(),
+					EventType: domain.AuditEventTextGeneration,
+					RunID:     state.RunID,
+					Stage:     "visual_breakdowner",
+					Provider:  resp.Provider,
+					Model:     resp.Model,
+					Prompt:    truncatePrompt(prompt, 2048),
+					CostUSD:   resp.CostUSD,
+				})
 			}
 
 			var decoded visualBreakdownResponse

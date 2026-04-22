@@ -35,6 +35,14 @@ type TTSTrackConfig struct {
 	AudioFormat string
 	// MaxRetries is the maximum number of retry attempts for retryable provider errors.
 	MaxRetries int
+	// BlockedVoiceIDs lists voice identifiers rejected before any API call.
+	// When cfg.TTSVoice matches an entry, the track fails with a compliance error
+	// and writes a voice_blocked audit entry.
+	BlockedVoiceIDs []string
+	// AuditLogger is the optional audit logger. When non-nil, audit entries are
+	// written for blocked-voice rejections and successful TTS calls. Nil is
+	// allowed (no-op guard).
+	AuditLogger domain.AuditLogger
 
 	TTS      domain.TTSSynthesizer
 	Store    TTSArtifactStore
@@ -114,6 +122,27 @@ func runTTSTrack(
 		return TTSTrackResult{}, fmt.Errorf("tts track: prepare tts dir: %w", err)
 	}
 
+	// FR47: voice blocklist check — reject before any API call.
+	for _, blockedID := range cfg.BlockedVoiceIDs {
+		if cfg.TTSVoice == blockedID {
+			if cfg.AuditLogger != nil {
+				_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+					Timestamp: clk.Now(),
+					EventType: domain.AuditEventVoiceBlocked,
+					RunID:     req.RunID,
+					Stage:     string(domain.StageTTS),
+					Provider:  "dashscope",
+					Model:     cfg.TTSModel,
+					BlockedID: blockedID,
+				})
+			}
+			return TTSTrackResult{}, fmt.Errorf(
+				"Voice profile '%s' is blocked by compliance policy: %w",
+				blockedID, domain.ErrValidation,
+			)
+		}
+	}
+
 	result := TTSTrackResult{
 		Observation: domain.NewStageObservation(domain.StageTTS),
 	}
@@ -151,6 +180,22 @@ func runTTSTrack(
 		sceneIndex := scene.SceneNum - 1
 		if err := cfg.Store.UpsertTTSArtifact(ctx, req.RunID, sceneIndex, relPath, resp.DurationMs); err != nil {
 			return result, fmt.Errorf("tts track: persist scene %d: %w", scene.SceneNum, err)
+		}
+
+		// Non-fatal audit write after successful TTS synthesis.
+		if cfg.AuditLogger != nil {
+			if logErr := cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+				Timestamp: clk.Now(),
+				EventType: domain.AuditEventTTSSynthesis,
+				RunID:     req.RunID,
+				Stage:     string(domain.StageTTS),
+				Provider:  resp.Provider,
+				Model:     resp.Model,
+				Prompt:    truncatePrompt(transliterated, 2048),
+				CostUSD:   resp.CostUSD,
+			}); logErr != nil {
+				logger.Warn("audit log write failed", "run_id", req.RunID, "error", logErr)
+			}
 		}
 
 		logger.Info("tts track scene",

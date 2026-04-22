@@ -73,6 +73,12 @@ type PipelineConfig struct {
 	// AutoApprovalThreshold is the strict scene-level critic_score cutoff
 	// above which a scene can be system-auto-approved when no safeguards fire.
 	AutoApprovalThreshold float64 `yaml:"auto_approval_threshold" mapstructure:"auto_approval_threshold"`
+
+	// BlockedVoiceIDs lists TTS voice identifiers that the operator has
+	// prohibited from use. When a run's TTSVoice matches an entry, the TTS
+	// track rejects the request before any external API call and appends a
+	// voice_blocked audit entry. Default is nil (no voices blocked).
+	BlockedVoiceIDs []string `yaml:"blocked_voice_ids" mapstructure:"blocked_voice_ids"`
 }
 
 // DefaultConfig returns a PipelineConfig with sensible defaults.

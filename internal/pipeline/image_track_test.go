@@ -946,3 +946,94 @@ func TestImageTrack_EmptyFrozenDescriptorOverrideFallsThroughToArtifact(t *testi
 		t.Fatalf("blank override must fall through to artifact: %q", f.images.generateCalls[0].Prompt)
 	}
 }
+
+// ── Audit logging ──────────────────────────────────────────────────────────────
+
+func TestImageTrack_WritesAuditLogOnSuccess(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outputDir := t.TempDir()
+	runID := "scp-049-img-audit"
+	frozen := "Appearance: slender humanoid; Environment: concrete chamber"
+	scenes := []sceneFixture{
+		{sceneNum: 1, narration: "Scene one.", shots: []string{"wide shot of containment cell"}},
+		{sceneNum: 2, narration: "Scene two.", shots: []string{"close-up of SCP-049 hands"}},
+	}
+	state := scenarioStateForTest(runID, scenes, frozen)
+	scenarioPath := writeScenario(t, outputDir, runID, state)
+
+	images := newFakeImageGen()
+	resolver := &fakeCharacterResolver{}
+	shots := newFakeShotStore()
+	limiter := &passthroughLimiter{}
+	auditLogger := pipeline.NewFileAuditLogger(outputDir)
+
+	track, err := pipeline.NewImageTrack(pipeline.ImageTrackConfig{
+		OutputDir:         outputDir,
+		Provider:          "dashscope",
+		GenerateModel:     "qwen-image",
+		EditModel:         "qwen-image-edit",
+		Width:             1024,
+		Height:            1024,
+		Images:            images,
+		CharacterResolver: resolver,
+		Shots:             shots,
+		Limiter:           limiter,
+		Clock:             clock.RealClock{},
+		Logger:            nil,
+		AuditLogger:       auditLogger,
+	})
+	if err != nil {
+		t.Fatalf("NewImageTrack: %v", err)
+	}
+
+	req := pipeline.PhaseBRequest{
+		RunID:        runID,
+		Stage:        domain.StageImage,
+		ScenarioPath: scenarioPath,
+	}
+
+	_, err = track(context.Background(), req)
+	if err != nil {
+		t.Fatalf("track: %v", err)
+	}
+
+	auditPath := filepath.Join(outputDir, runID, "audit.log")
+	raw, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit.log: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 audit lines for 2 shots, got %d", len(lines))
+	}
+	for i, line := range lines {
+		var entry domain.AuditEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("line %d: invalid JSON: %v", i, err)
+		}
+		if entry.EventType != domain.AuditEventImageGeneration {
+			t.Errorf("line %d: event_type=%q, want %q", i, entry.EventType, domain.AuditEventImageGeneration)
+		}
+		if entry.RunID != runID {
+			t.Errorf("line %d: run_id=%q, want %q", i, entry.RunID, runID)
+		}
+		if entry.Stage != string(domain.StageImage) {
+			t.Errorf("line %d: stage=%q, want %q", i, entry.Stage, domain.StageImage)
+		}
+	}
+}
+
+func TestImageTrack_NilAuditLoggerDoesNotPanic(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// newImageTrackFixture does not set AuditLogger, so it's nil by default.
+	fx := newImageTrackFixture(t, []sceneFixture{
+		{sceneNum: 1, narration: "Scene one.", shots: []string{"wide shot"}},
+	})
+
+	_, err := fx.track(context.Background(), fx.req)
+	if err != nil {
+		t.Fatalf("track: %v", err)
+	}
+}

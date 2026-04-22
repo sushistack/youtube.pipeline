@@ -7,6 +7,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
@@ -79,6 +80,20 @@ func NewPostWriterCritic(
 		})
 		if err != nil {
 			return err
+		}
+
+		// Non-fatal audit write after successful post-writer critic generation.
+		if cfg.AuditLogger != nil {
+			_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+				Timestamp: time.Now(),
+				EventType: domain.AuditEventTextGeneration,
+				RunID:     state.RunID,
+				Stage:     "post_writer_critic",
+				Provider:  resp.Provider,
+				Model:     resp.Model,
+				Prompt:    truncatePrompt(prompt, 2048),
+				CostUSD:   resp.CostUSD,
+			})
 		}
 
 		var report domain.CriticCheckpointReport
@@ -190,6 +205,20 @@ func NewPostReviewerCritic(
 		})
 		if err != nil {
 			return err
+		}
+
+		// Non-fatal audit write after successful post-reviewer critic generation.
+		if cfg.AuditLogger != nil {
+			_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+				Timestamp: time.Now(),
+				EventType: domain.AuditEventTextGeneration,
+				RunID:     state.RunID,
+				Stage:     "critic",
+				Provider:  resp.Provider,
+				Model:     resp.Model,
+				Prompt:    truncatePrompt(prompt, 2048),
+				CostUSD:   resp.CostUSD,
+			})
 		}
 
 		var report domain.CriticCheckpointReport
