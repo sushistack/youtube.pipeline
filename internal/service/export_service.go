@@ -410,9 +410,33 @@ func writeCSVFile(path string, records [][]string) (err error) {
 		}
 	}()
 
+	safe := make([][]string, len(records))
+	for i, row := range records {
+		cells := make([]string, len(row))
+		for j, cell := range row {
+			cells[j] = csvCellSafe(cell)
+		}
+		safe[i] = cells
+	}
+
 	w := csv.NewWriter(file)
-	if werr := w.WriteAll(records); werr != nil {
+	if werr := w.WriteAll(safe); werr != nil {
 		return fmt.Errorf("write export csv %s: %w", path, werr)
 	}
 	return nil
+}
+
+// csvCellSafe neutralizes CSV formula injection (OWASP) by prefixing cells
+// that start with a spreadsheet-evaluated leading character. Exported CSVs
+// are routinely opened in Excel / Sheets / LibreOffice, where cells like
+// `=HYPERLINK(...)` or `+cmd|...` would otherwise execute as formulas.
+func csvCellSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }

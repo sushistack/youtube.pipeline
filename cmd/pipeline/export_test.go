@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sushistack/youtube.pipeline/internal/db"
+	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -150,8 +152,15 @@ func TestExportCmd_RejectsNonexistentRunID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-existent run")
 	}
-	if !strings.Contains(buf.String(), "ghost-run") && !strings.Contains(err.Error(), "ghost-run") {
-		t.Fatalf("expected error mentioning run id; got buf=%q err=%v", buf.String(), err)
+	// The surfaced error must preserve domain.ErrNotFound semantics through
+	// the silentErr wrapper. A permissive string-match on the run id would
+	// also pass if we accidentally wrapped with ErrValidation or a bare
+	// fmt.Errorf — this check forces the semantic contract to hold.
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected domain.ErrNotFound, got %v (buf=%q)", err, buf.String())
+	}
+	if !strings.Contains(err.Error(), "ghost-run") {
+		t.Fatalf("expected error to name the run id; got %v", err)
 	}
 }
 
@@ -351,6 +360,26 @@ func TestExportCmd_CSV_WritesStableFilesForBothTypes(t *testing.T) {
 		for i, want := range tc.header {
 			if rows[0][i] != want {
 				t.Fatalf("%s header[%d] = %q, want %q", tc.filename, i, rows[0][i], want)
+			}
+		}
+
+		if tc.exportType == "decisions" {
+			// Two decisions are seeded: #41 (reject, superseded_by=42) and #42
+			// (approve, superseded_by=NULL). Export must preserve both rows to
+			// keep the audit trail intact, and must render nil superseded_by
+			// as an empty CSV cell (mirroring the JSON null contract).
+			if len(rows) != 3 {
+				t.Fatalf("decisions csv rows = %d, want 3 (header + 2 decisions)", len(rows))
+			}
+			got := map[string]string{}
+			for _, row := range rows[1:] {
+				got[row[0]] = row[7]
+			}
+			if got["41"] != "42" {
+				t.Fatalf("decision 41 superseded_by = %q, want %q", got["41"], "42")
+			}
+			if got["42"] != "" {
+				t.Fatalf("decision 42 superseded_by = %q, want empty string (nil -> empty per spec)", got["42"])
 			}
 		}
 	}

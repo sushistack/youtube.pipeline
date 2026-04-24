@@ -223,6 +223,7 @@ GPT-5 Codex
 
 - 2026-04-24: Implemented Story 10.5 `pipeline export` command, export service/storage seams, and JSON/CSV coverage; story moved to review.
 - 2026-04-24: Code review fixes applied per `bmad-code-review` (Blind Hunter / Edge Case Hunter / Acceptance Auditor); story moved to done.
+- 2026-04-24: Second code review pass — CSV formula-injection guard (OWASP), NotFound test sharpness, CSV row/superseded_by pinning, empty-envelope version/data shape pinning, CSV injection regression test. All four user-specified focus points (JSON version=1, run-relative paths, CSV/JSON header parity, superseded_by null/empty) confirmed PASS.
 
 ## Review Findings
 
@@ -254,3 +255,15 @@ Three adversarial reviewers (Blind Hunter on diff only, Edge Case Hunter on diff
 - **CSV-vs-JSON presence asymmetry for artifact `scene_index` / `shot_index`** (Acceptance Auditor #6, severity Low). `omitempty` is retained on `ExportArtifact` because run-level artifacts (scenario, output, metadata) genuinely have no scene. CSV emits empty strings for those columns. Spec allows this.
 - **Blind Hunter findings #1–#4, #8 (`os.MkdirAll` / `writeDecisionExport` / `writeArtifactExport` / `writeJSONFile` / `writeCSVFile.WriteAll` errors ignored; `filepath.Rel` error unchecked)** were verified against the diff and rejected as false positives — all listed errors are in fact checked and returned at `export_service.go:117`, `:128-130`, `:138-140`, `:363-369`, `:381-386`, `:264-266`, `:285-287`.
 - **`ExportEnvelope.Data` typed as `any`, `CreatedAt` raw string** (Blind Hunter #10, #11, severity Low). Design-by-choice, not bugs. No change.
+
+### Second review pass (2026-04-24)
+
+Re-run of `bmad-code-review` with explicit focus on: JSON `version` must be integer 1, artifact paths must be run-relative, CSV headers must match JSON field names, `superseded_by` must be null in JSON and empty in CSV. Acceptance Auditor confirmed all 4 focus points PASS with direct evidence. Four additional actionable findings patched in this commit:
+
+1. **CSV formula injection guard in `writeCSVFile`** — Severity: Medium (Blind Hunter). Cells starting with `=`, `+`, `-`, `@`, tab, or CR are now prefixed with `'` so that Excel / Sheets / LibreOffice render them as text rather than evaluating them as formulas. Applied uniformly to all cells in both decisions and artifacts CSV outputs via `csvCellSafe`; numeric-formatted columns (`decision_id`, `scene_index`, `shot_index`) never trigger the prefix since they start with digits.
+2. **`TestExportCmd_RejectsNonexistentRunID` now asserts `errors.Is(err, domain.ErrNotFound)`** — Severity: Medium (Blind Hunter). Previous `strings.Contains OR`-and-negation passed even for a generic wrapped error that happened to mention the run id. The tightened check holds the semantic contract: `GetExportRecord` → `domain.ErrNotFound` → preserved through `silentErr.Unwrap()`.
+3. **Decisions CSV test pins row count and `superseded_by` cell values** — Severity: Medium (Blind Hunter; also directly supports user focus point #4). `TestExportCmd_CSV_WritesStableFilesForBothTypes` now verifies exactly 3 rows (header + 2 decisions), that decision 41 has `superseded_by="42"`, and that decision 42 has `superseded_by=""` (empty string for nil, mirroring the JSON null contract).
+4. **Empty-decisions JSON envelope regression** — Severity: Low (supports user focus point #1). New `TestExportService_DecisionsJSON_EmptyRunEmitsVersion1AndEmptyArray` asserts raw-byte presence of `"version": 1` (not `"1"`, not `1.0`) and `"data": []` (not `null`) for a run with zero decisions. Pins the envelope shape against accidental `var rows []ExportDecision` style regressions that would flip `data` to `null`.
+5. **CSV formula-injection regression test** — New `TestExportService_DecisionsCSV_EscapesFormulaInjection` seeds decisions whose notes start with `=HYPERLINK`, `+cmd|`, `@SUM` and asserts each exported note is prefixed with `'`.
+
+Non-blocking findings from this pass (concurrent export race, mixed-format `created_at` lexicographic ordering, unicode runID normalization on macOS, fault-injection coverage for CSV Close-error) are logged in [deferred-work.md](deferred-work.md#second-code-review-pass-2026-04-24--blind-hunter--edge-case-hunter--acceptance-auditor).

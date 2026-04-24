@@ -303,6 +303,119 @@ func TestExportService_RejectsDangerousRunIDs(t *testing.T) {
 	}
 }
 
+// TestExportService_DecisionsJSON_EmptyRunEmitsVersion1AndEmptyArray pins two
+// envelope-shape invariants that are easy to regress:
+//   - `version` is the JSON integer 1 (not "1", not 1.0)
+//   - `data` serializes as `[]` (not `null`) for a run with zero decisions
+//
+// A `var rows []ExportDecision` + `json.Marshal` would flip `data` to `null`
+// without touching any test that unmarshals into a slice, so we scan bytes.
+func TestExportService_DecisionsJSON_EmptyRunEmitsVersion1AndEmptyArray(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	outputDir := t.TempDir()
+	database := testutil.NewTestDB(t)
+	runStore := db.NewRunStore(database)
+	decisionStore := db.NewDecisionStore(database)
+	segmentStore := db.NewSegmentStore(database)
+	runID := "scp-049-run-empty"
+
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id) VALUES (?, '049')`, runID); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	svc := service.NewExportService(runStore, decisionStore, segmentStore, outputDir)
+	result, err := svc.Export(context.Background(), service.ExportRequest{
+		RunID:  runID,
+		Type:   service.ExportTypeDecisions,
+		Format: service.ExportFormatJSON,
+	})
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if result.Records != 0 {
+		t.Fatalf("records = %d, want 0", result.Records)
+	}
+
+	raw, err := os.ReadFile(result.Path)
+	if err != nil {
+		t.Fatalf("read export: %v", err)
+	}
+	rawStr := string(raw)
+	if !strings.Contains(rawStr, `"version": 1`) {
+		t.Fatalf("expected version as integer 1, got:\n%s", rawStr)
+	}
+	if strings.Contains(rawStr, `"version": "1"`) || strings.Contains(rawStr, `"version": 1.0`) {
+		t.Fatalf("version must serialize as integer 1, got:\n%s", rawStr)
+	}
+	if !strings.Contains(rawStr, `"data": []`) {
+		t.Fatalf("expected empty data array `[]` (not null), got:\n%s", rawStr)
+	}
+}
+
+// TestExportService_DecisionsCSV_EscapesFormulaInjection pins the OWASP CSV
+// formula-injection guard: a decision note that begins with `=`, `+`, `-`,
+// `@`, tab, or CR must be prefixed with a single quote so that spreadsheet
+// apps (Excel, Sheets, LibreOffice) treat it as text instead of evaluating
+// it as a formula.
+func TestExportService_DecisionsCSV_EscapesFormulaInjection(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	outputDir := t.TempDir()
+	database := testutil.NewTestDB(t)
+	runStore := db.NewRunStore(database)
+	decisionStore := db.NewDecisionStore(database)
+	segmentStore := db.NewSegmentStore(database)
+	runID := "scp-049-run-csv-inject"
+
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id) VALUES (?, '049')`, runID); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := database.Exec(`
+		INSERT INTO decisions (id, run_id, scene_id, decision_type, note, created_at) VALUES
+		  (201, ?, '0', 'reject', '=HYPERLINK("http://evil","click")', '2026-04-24T14:00:00Z'),
+		  (202, ?, '0', 'reject', '+cmd|calc',                         '2026-04-24T14:01:00Z'),
+		  (203, ?, '0', 'reject', '@SUM(A1)',                          '2026-04-24T14:02:00Z')`,
+		runID, runID, runID,
+	); err != nil {
+		t.Fatalf("seed decisions: %v", err)
+	}
+
+	svc := service.NewExportService(runStore, decisionStore, segmentStore, outputDir)
+	result, err := svc.Export(context.Background(), service.ExportRequest{
+		RunID:  runID,
+		Type:   service.ExportTypeDecisions,
+		Format: service.ExportFormatCSV,
+	})
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	f, err := os.Open(result.Path)
+	if err != nil {
+		t.Fatalf("open export: %v", err)
+	}
+	defer f.Close()
+	rows, err := csv.NewReader(f).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("rows = %d, want 4 (header + 3 decisions)", len(rows))
+	}
+	notes := map[string]string{}
+	for _, row := range rows[1:] {
+		notes[row[0]] = row[6]
+	}
+	for id, want := range map[string]string{
+		"201": `'=HYPERLINK("http://evil","click")`,
+		"202": `'+cmd|calc`,
+		"203": `'@SUM(A1)`,
+	} {
+		if notes[id] != want {
+			t.Fatalf("decision %s note = %q, want %q (formula injection guard)", id, notes[id], want)
+		}
+	}
+}
+
 func TestExportService_ArtifactsJSON_ToleratesMissingOptionalFiles(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	outputDir := t.TempDir()
