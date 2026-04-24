@@ -18,5 +18,7 @@ export const queryKeys = {
     scenes: (run_id: string) => ['runs', 'scenes', run_id] as const,
     status: (run_id: string) => ['runs', 'status', run_id] as const,
     statusNone: ['runs', 'status', '__none__'] as const,
+    metadata: (run_id: string) => ['runs', 'metadata', run_id] as const,
+    manifest: (run_id: string) => ['runs', 'manifest', run_id] as const,
   },
 }

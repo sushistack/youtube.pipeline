@@ -11,6 +11,7 @@ import (
 // Dependencies holds all handler dependencies injected at startup.
 type Dependencies struct {
 	Run       *RunHandler
+	Artifacts *ArtifactsHandler // NEW
 	Character *CharacterHandler
 	Scene     *SceneHandler
 	HITL      *service.HITLService
@@ -44,6 +45,12 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/edit", deps.Scene.Edit)
 	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/regen", deps.Scene.Regenerate)
 
+	// Compliance gate + artifact serving (Story 9.4).
+	api.HandleFunc("POST /api/runs/{id}/metadata/ack", deps.Run.AcknowledgeMetadata)
+	api.HandleFunc("GET /api/runs/{id}/video", deps.Artifacts.Video)
+	api.HandleFunc("GET /api/runs/{id}/metadata", deps.Artifacts.Metadata)
+	api.HandleFunc("GET /api/runs/{id}/manifest", deps.Artifacts.Manifest)
+
 	apiChain := Chain(api,
 		WithRequestID,
 		WithRecover,
@@ -71,6 +78,7 @@ func NewDependencies(
 ) *Dependencies {
 	return &Dependencies{
 		Run:       NewRunHandler(svc, hitl, outputDir, logger),
+		Artifacts: NewArtifactsHandler(svc, outputDir),
 		Character: NewCharacterHandler(characters),
 		Scene:     NewSceneHandler(scenes),
 		Logger:    logger,

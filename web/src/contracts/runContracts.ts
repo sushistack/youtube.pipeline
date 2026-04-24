@@ -352,3 +352,49 @@ export type SceneRegenResponse = z.infer<
 export type TimelineListResponse = z.infer<
   typeof timelineListResponseSchema
 >["data"];
+
+// --- Story 9.4: Compliance gate schemas ---
+
+export const aiGeneratedFlagsSchema = z.object({
+  narration: z.boolean(),
+  imagery: z.boolean(),
+  tts: z.boolean(),
+});
+
+export const modelRecordSchema = z.object({
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  voice: z.string().optional(),
+});
+
+export const metadataBundleSchema = z.object({
+  version: z.number().int().nonnegative(),
+  generated_at: z.string().min(1),
+  run_id: z.string().min(1),
+  scp_id: z.string().min(1),
+  title: z.string().min(1),
+  ai_generated: aiGeneratedFlagsSchema,
+  models_used: z.record(z.string(), modelRecordSchema),
+});
+
+export const licenseEntrySchema = z.object({
+  component: z.string().min(1),
+  source_url: z.string().min(1),
+  author_name: z.string().min(1),
+  license: z.string().min(1),
+});
+
+export const sourceManifestSchema = z.object({
+  version: z.number().int().nonnegative(),
+  generated_at: z.string().min(1),
+  run_id: z.string().min(1),
+  scp_id: z.string().min(1),
+  source_url: z.string().min(1),
+  author_name: z.string().min(1),
+  license: z.string().min(1),
+  license_url: z.string().min(1),
+  license_chain: z.array(licenseEntrySchema),
+});
+
+export type MetadataBundle = z.infer<typeof metadataBundleSchema>;
+export type SourceManifest = z.infer<typeof sourceManifestSchema>;

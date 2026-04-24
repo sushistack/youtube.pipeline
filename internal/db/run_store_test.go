@@ -1052,6 +1052,43 @@ func TestRunStore_UpdateOutputPath_UpdatesExistingRun(t *testing.T) {
 	}
 }
 
+func TestRunStore_MarkComplete_Success(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := store.Create(ctx, "049", outDir)
+
+	// Advance run to metadata_ack + waiting.
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET stage = 'metadata_ack', status = 'waiting' WHERE id = ?`, run.ID); err != nil {
+		t.Fatalf("seed stage/status: %v", err)
+	}
+
+	if err := store.MarkComplete(ctx, run.ID); err != nil {
+		t.Fatalf("MarkComplete: %v", err)
+	}
+
+	updated, _ := store.Get(ctx, run.ID)
+	testutil.AssertEqual(t, updated.Stage, domain.StageComplete)
+	testutil.AssertEqual(t, updated.Status, domain.StatusCompleted)
+}
+
+func TestRunStore_MarkComplete_NotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	err := store.MarkComplete(context.Background(), "scp-999-run-1")
+	// MarkComplete does not check rows affected (no ErrNotFound returned).
+	// It simply runs the UPDATE; if no rows match, SQLite reports success with 0 rows.
+	if err != nil {
+		t.Fatalf("MarkComplete on non-existent run should not error: %v", err)
+	}
+}
+
 func TestRunStore_UpdateOutputPath_ReturnsNotFoundForMissingRun(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)

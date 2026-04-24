@@ -355,3 +355,87 @@ func TestContract_RunListResponse(t *testing.T) {
 		t.Errorf("items[0].id = %q, want scp-049-run-1", env.Data.Items[0].ID)
 	}
 }
+
+func TestRunHandler_AcknowledgeMetadata_Success(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	logger, _ := testutil.CaptureLog(t)
+	outDir := t.TempDir()
+	decisionStore := db.NewDecisionStore(database)
+	hitl := service.NewHITLService(store, decisionStore, logger)
+	h := api.NewRunHandler(svc, hitl, outDir, logger)
+
+	// Create run and advance to metadata_ack/waiting.
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "049", outDir); err != nil {
+		t.Fatalf("seed create run: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET stage = 'metadata_ack', status = 'waiting' WHERE scp_id = '049'`,
+	); err != nil {
+		t.Fatalf("seed stage/status: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/scp-049-run-1/metadata/ack", nil)
+	req.SetPathValue("id", "scp-049-run-1")
+	rec := httptest.NewRecorder()
+	h.AcknowledgeMetadata(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusOK)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	if env.Data == nil {
+		t.Fatal("data is nil")
+	}
+	testutil.AssertEqual(t, env.Data.Stage, "complete")
+	testutil.AssertEqual(t, env.Data.Status, "completed")
+}
+
+func TestRunHandler_AcknowledgeMetadata_NotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	logger, _ := testutil.CaptureLog(t)
+	outDir := t.TempDir()
+	decisionStore := db.NewDecisionStore(database)
+	hitl := service.NewHITLService(store, decisionStore, logger)
+	h := api.NewRunHandler(svc, hitl, outDir, logger)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/scp-999-run-1/metadata/ack", nil)
+	req.SetPathValue("id", "scp-999-run-1")
+	rec := httptest.NewRecorder()
+	h.AcknowledgeMetadata(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusNotFound)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	testutil.AssertEqual(t, env.Error.Code, "NOT_FOUND")
+}
+
+func TestRunHandler_AcknowledgeMetadata_WrongStage(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	logger, _ := testutil.CaptureLog(t)
+	outDir := t.TempDir()
+	decisionStore := db.NewDecisionStore(database)
+	hitl := service.NewHITLService(store, decisionStore, logger)
+	h := api.NewRunHandler(svc, hitl, outDir, logger)
+
+	// Create a run at pending/pending (default).
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "049", outDir); err != nil {
+		t.Fatalf("seed create run: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/scp-049-run-1/metadata/ack", nil)
+	req.SetPathValue("id", "scp-049-run-1")
+	rec := httptest.NewRecorder()
+	h.AcknowledgeMetadata(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusConflict)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	testutil.AssertEqual(t, env.Error.Code, "CONFLICT")
+}

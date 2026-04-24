@@ -4,6 +4,7 @@ import {
   batchApproveAllRemainingResponseSchema,
   createRunResponseSchema,
   descriptorPrefillResponseSchema,
+  metadataBundleSchema,
   reviewItemListResponseSchema,
   runDetailResponseSchema,
   runListResponseSchema,
@@ -13,6 +14,7 @@ import {
   runStatusResponseSchema,
   sceneEditResponseSchema,
   sceneListResponseSchema,
+  sourceManifestSchema,
   timelineListResponseSchema,
   undoResponseSchema,
 } from "../contracts/runContracts";
@@ -258,4 +260,51 @@ export function pickCharacterWithDescriptor(
       headers: { "Content-Type": "application/json" },
     },
   );
+}
+
+// --- Story 9.4: Compliance gate ---
+
+/** POST /api/runs/{id}/metadata/ack — NFR-L1 gate. Transitions metadata_ack → complete. */
+export function acknowledgeMetadata(run_id: string) {
+  return apiRequest(
+    `/runs/${encodeURIComponent(run_id)}/metadata/ack`,
+    runDetailResponseSchema,
+    { method: "POST" },
+  );
+}
+
+/**
+ * GET /api/runs/{id}/metadata — serves the raw metadata.json file.
+ * Not wrapped in the version envelope; parse the JSON body directly.
+ */
+export async function fetchRunMetadata(run_id: string) {
+  const response = await fetch(
+    `${API_ROOT}/runs/${encodeURIComponent(run_id)}/metadata`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) {
+    throw new ApiClientError(
+      `Metadata fetch failed (${response.status})`,
+      response.status,
+    );
+  }
+  return metadataBundleSchema.parse(await response.json());
+}
+
+/**
+ * GET /api/runs/{id}/manifest — serves the raw manifest.json file.
+ * Not wrapped in the version envelope; parse the JSON body directly.
+ */
+export async function fetchRunManifest(run_id: string) {
+  const response = await fetch(
+    `${API_ROOT}/runs/${encodeURIComponent(run_id)}/manifest`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) {
+    throw new ApiClientError(
+      `Manifest fetch failed (${response.status})`,
+      response.status,
+    );
+  }
+  return sourceManifestSchema.parse(await response.json());
 }

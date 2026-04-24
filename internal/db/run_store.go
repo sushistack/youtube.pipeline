@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
@@ -290,6 +291,16 @@ func (s *RunStore) SetCharacterQueryKey(ctx context.Context, id, queryKey string
 		return fmt.Errorf("set character query key for %s: %w", id, domain.ErrNotFound)
 	}
 	return nil
+}
+
+// MarkComplete sets the run's stage to 'complete' and status to 'completed'.
+// This is the NFR-L1 gate: ready-for-upload is ONLY reachable via this path.
+func (s *RunStore) MarkComplete(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET stage = 'complete', status = 'completed', updated_at = ? WHERE id = ?`,
+		time.Now().UTC().Format(time.RFC3339Nano), id,
+	)
+	return err
 }
 
 // SetSelectedCharacterID persists the operator's selected character candidate ID.

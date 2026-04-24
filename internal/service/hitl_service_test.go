@@ -33,6 +33,7 @@ func (f *fakeRunStore) List(_ context.Context) ([]*domain.Run, error) {
 	return nil, errors.New("unused")
 }
 func (f *fakeRunStore) Cancel(_ context.Context, _ string) error { return errors.New("unused") }
+func (f *fakeRunStore) MarkComplete(_ context.Context, _ string) error { return errors.New("unused") }
 
 type fakeDecisionReader struct {
 	decisions []*domain.Decision

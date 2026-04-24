@@ -152,6 +152,61 @@ func TestRunService_Resume_ForwardsForceFlag(t *testing.T) {
 	}
 }
 
+// --- AcknowledgeMetadata ---------------------------------------------------
+
+func TestRunService_AcknowledgeMetadata_HappyPath(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := svc.Create(ctx, "049", outDir)
+
+	// Advance run to metadata_ack + waiting.
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET stage = 'metadata_ack', status = 'waiting' WHERE id = ?`, run.ID); err != nil {
+		t.Fatalf("seed stage/status: %v", err)
+	}
+
+	updated, err := svc.AcknowledgeMetadata(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("AcknowledgeMetadata: %v", err)
+	}
+	testutil.AssertEqual(t, updated.Stage, domain.StageComplete)
+	testutil.AssertEqual(t, updated.Status, domain.StatusCompleted)
+}
+
+func TestRunService_AcknowledgeMetadata_WrongStage(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := svc.Create(ctx, "049", outDir)
+	// Run is at pending+pending — wrong stage.
+
+	_, err := svc.AcknowledgeMetadata(ctx, run.ID)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestRunService_AcknowledgeMetadata_NotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+
+	_, err := svc.AcknowledgeMetadata(context.Background(), "scp-999-run-1")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
 func TestRunService_Resume_PropagatesResumerError(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)

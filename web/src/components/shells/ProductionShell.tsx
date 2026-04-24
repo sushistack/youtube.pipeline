@@ -18,6 +18,8 @@ import { useUIStore, type ProductionLastSeenSnapshot } from '../../stores/useUIS
 import { useRunStatus } from '../../hooks/useRunStatus'
 import { BatchReview } from '../production/BatchReview'
 import { CharacterPick } from '../production/CharacterPick'
+import { ComplianceGate } from '../production/ComplianceGate'
+import { CompletionReward } from '../production/CompletionReward'
 import { useNewRunCoordinator } from '../production/useNewRunCoordinator'
 import { ScenarioInspector } from '../production/ScenarioInspector'
 import { ContinuityBanner } from '../shared/ContinuityBanner'
@@ -353,6 +355,10 @@ export function ProductionShell() {
             // across runs would leak phase='descriptor' and a selected
             // candidate from a previously-viewed run into the new one.
             <CharacterPick key={current_run.id} run={current_run} />
+          ) : current_run.stage === 'metadata_ack' && current_run.status === 'waiting' ? (
+            <ComplianceGate key={current_run.id} run={current_run} />
+          ) : current_run.stage === 'complete' && current_run.status === 'completed' ? (
+            <CompletionReward key={current_run.id} run={current_run} />
           ) : (
             <ProductionShortcutPanel />
           )}

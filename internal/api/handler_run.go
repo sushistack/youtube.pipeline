@@ -159,6 +159,18 @@ func (h *RunHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toRunResponse(run))
 }
 
+// AcknowledgeMetadata handles POST /api/runs/{id}/metadata/ack.
+// No request body. Transitions metadata_ack → complete (NFR-L1 gate).
+func (h *RunHandler) AcknowledgeMetadata(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	run, err := h.svc.AcknowledgeMetadata(r.Context(), runID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toRunResponse(run))
+}
+
 // resumeRequest is the optional request body for POST /api/runs/{id}/resume.
 // confirm_inconsistent mirrors the CLI --force flag: when true, the server
 // proceeds with the resume even if a filesystem/DB mismatch is detected.
