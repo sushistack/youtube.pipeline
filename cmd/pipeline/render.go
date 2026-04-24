@@ -168,6 +168,14 @@ type CleanArchivedRun struct {
 	DBRefsCleared int    `json:"db_refs_cleared"`
 }
 
+type ExportOutput struct {
+	RunID   string `json:"run_id"`
+	Type    string `json:"type"`
+	Format  string `json:"format"`
+	Path    string `json:"path"`
+	Records int    `json:"records"`
+}
+
 // ResumeOutput is the structured output for the resume command.
 // Warnings carries filesystem/DB inconsistency descriptions that were
 // bypassed via --force (empty when no mismatches were present).
@@ -217,6 +225,8 @@ func (r *HumanRenderer) RenderSuccess(data any) {
 		r.renderGoldenList(v)
 	case *CleanOutput:
 		r.renderClean(v)
+	case *ExportOutput:
+		r.renderExport(v)
 	default:
 		fmt.Fprintf(r.w, "%v\n", data)
 	}
@@ -388,6 +398,15 @@ func (r *HumanRenderer) renderClean(o *CleanOutput) {
 	default:
 		fmt.Fprintf(r.w, "  VACUUM:        %s\n", o.Vacuum)
 	}
+}
+
+func (r *HumanRenderer) renderExport(o *ExportOutput) {
+	fmt.Fprintf(r.w, "%sExport complete%s\n", colorGreen, colorReset)
+	fmt.Fprintf(r.w, "  Run ID:     %s\n", o.RunID)
+	fmt.Fprintf(r.w, "  Type:       %s\n", o.Type)
+	fmt.Fprintf(r.w, "  Format:     %s\n", o.Format)
+	fmt.Fprintf(r.w, "  Records:    %d\n", o.Records)
+	fmt.Fprintf(r.w, "  File:       %s\n", o.Path)
 }
 
 func (r *HumanRenderer) renderMetrics(m *domain.MetricsReport) {

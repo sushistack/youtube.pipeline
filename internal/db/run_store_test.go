@@ -1152,6 +1152,42 @@ func TestRunStore_UpdateOutputPath_ReturnsValidationErrorForEmptyRunID(t *testin
 	}
 }
 
+func TestRunStore_GetExportRecord_ReturnsScenarioAndOutputPaths(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	ctx := context.Background()
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO runs (id, scp_id, scenario_path, output_path)
+		 VALUES ('scp-049-run-1', '049', 'scenario.json', '/tmp/scp-049-run-1/output.mp4')`); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	got, err := store.GetExportRecord(ctx, "scp-049-run-1")
+	if err != nil {
+		t.Fatalf("GetExportRecord: %v", err)
+	}
+	if got.ScenarioPath == nil || *got.ScenarioPath != "scenario.json" {
+		t.Fatalf("scenario_path = %v, want scenario.json", got.ScenarioPath)
+	}
+	if got.OutputPath == nil || *got.OutputPath != "/tmp/scp-049-run-1/output.mp4" {
+		t.Fatalf("output_path = %v, want absolute output.mp4 path", got.OutputPath)
+	}
+}
+
+func TestRunStore_GetExportRecord_NotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	ctx := context.Background()
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	_, err := store.GetExportRecord(ctx, "missing")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
 func TestRunStore_Create_LeavesPromptVersionNullByDefault(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)

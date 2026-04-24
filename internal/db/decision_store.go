@@ -57,6 +57,16 @@ type TimelineDecision struct {
 	CreatedAt       string
 }
 
+type ExportDecisionRow struct {
+	ID           int64
+	RunID        string
+	SceneID      *string
+	DecisionType string
+	Note         *string
+	SupersededBy *int64
+	CreatedAt    string
+}
+
 type AutoApprovalInput struct {
 	SceneIndex   int
 	CriticScore  float64
@@ -119,6 +129,56 @@ func (s *DecisionStore) ListByRunID(ctx context.Context, runID string) ([]*domai
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate decisions for %s: %w", runID, err)
+	}
+	return out, nil
+}
+
+// ListByRunIDForExport returns all decisions for a run ordered by created_at
+// ascending, including superseded rows. This preserves the audit trail for
+// archival export without changing ListByRunID's live-state semantics.
+func (s *DecisionStore) ListByRunIDForExport(ctx context.Context, runID string) ([]*ExportDecisionRow, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, run_id, scene_id, decision_type, note, superseded_by, created_at
+		   FROM decisions
+		  WHERE run_id = ?
+		  ORDER BY created_at ASC, id ASC`, runID)
+	if err != nil {
+		return nil, fmt.Errorf("list export decisions for %s: %w", runID, err)
+	}
+	defer rows.Close()
+
+	var out []*ExportDecisionRow
+	for rows.Next() {
+		var (
+			row          ExportDecisionRow
+			sceneID      sql.NullString
+			note         sql.NullString
+			supersededBy sql.NullInt64
+		)
+		if err := rows.Scan(
+			&row.ID,
+			&row.RunID,
+			&sceneID,
+			&row.DecisionType,
+			&note,
+			&supersededBy,
+			&row.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan export decision for %s: %w", runID, err)
+		}
+		if sceneID.Valid {
+			row.SceneID = &sceneID.String
+		}
+		if note.Valid {
+			row.Note = &note.String
+		}
+		if supersededBy.Valid {
+			row.SupersededBy = &supersededBy.Int64
+		}
+		out = append(out, &row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate export decisions for %s: %w", runID, err)
 	}
 	return out, nil
 }

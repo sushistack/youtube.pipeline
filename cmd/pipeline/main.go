@@ -45,6 +45,7 @@ func main() {
 	rootCmd.AddCommand(newCancelCmd())
 	rootCmd.AddCommand(newResumeCmd())
 	rootCmd.AddCommand(newStatusCmd())
+	rootCmd.AddCommand(newExportCmd())
 	rootCmd.AddCommand(newMetricsCmd())
 	rootCmd.AddCommand(newServeCmd())
 	rootCmd.AddCommand(newGoldenCmd())

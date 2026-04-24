@@ -265,6 +265,38 @@ func TestDecisionStore_ListByRunID_ExcludesSuperseded(t *testing.T) {
 	}
 }
 
+func TestDecisionStore_ListByRunIDForExport_IncludesSuperseded(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	ctx := context.Background()
+	database := testutil.NewTestDB(t)
+	if _, err := database.Exec(`INSERT INTO runs (id, scp_id) VALUES ('r1', 'scp')`); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if _, err := database.Exec(`
+		INSERT INTO decisions (id, run_id, scene_id, decision_type, note, created_at, superseded_by) VALUES
+		  (10, 'r1', '0', 'reject', 'needs rewrite', '2026-01-01T00:00:00Z', 11),
+		  (11, 'r1', '0', 'approve', NULL, '2026-01-01T00:01:00Z', NULL),
+		  (12, 'r1', NULL, 'metadata_ack', 'bundle approved', '2026-01-01T00:02:00Z', NULL)`); err != nil {
+		t.Fatalf("seed decisions: %v", err)
+	}
+
+	got, err := db.NewDecisionStore(database).ListByRunIDForExport(ctx, "r1")
+	if err != nil {
+		t.Fatalf("ListByRunIDForExport: %v", err)
+	}
+	testutil.AssertEqual(t, len(got), 3)
+	testutil.AssertEqual(t, got[0].ID, int64(10))
+	if got[0].SupersededBy == nil || *got[0].SupersededBy != 11 {
+		t.Fatalf("expected superseded_by=11, got %+v", got[0])
+	}
+	if got[2].SceneID != nil {
+		t.Fatalf("expected run-level decision to keep nil scene_id, got %+v", got[2])
+	}
+	if got[2].Note == nil || *got[2].Note != "bundle approved" {
+		t.Fatalf("expected note to round-trip, got %+v", got[2])
+	}
+}
+
 func TestDecisionStore_ListByRunID_EmptyRun(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)

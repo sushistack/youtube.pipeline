@@ -1,5 +1,12 @@
 # Deferred Work
 
+## Deferred from: code review of 10-5-data-export-to-json (2026-04-24)
+
+- **Empty-string `scene_id` producing `TargetItem = "scene:"`** — `decisions.scene_id` schema allows `TEXT NULL` with no empty-string CHECK; no current writer emits `''`, but a future bug could. Prefer a DB-level `CHECK (scene_id IS NULL OR length(scene_id) > 0)` over a read-path guard in `buildDecisionRows` ([internal/service/export_service.go:154-157](../../internal/service/export_service.go), [migrations/001_init.sql](../../migrations/001_init.sql)).
+- **`shot.ImagePath = ""` silently skipped with no operator warning** — `normalizeRunRelativePath` early-returns `ok=false` on empty. Adding a logger would require threading one into `ExportService`; defer until export observability is a pattern across services ([internal/service/export_service.go:231-236](../../internal/service/export_service.go)).
+- **No idempotent re-run regression test** — `os.WriteFile` / `os.Create` overwrite semantics are correct by inspection; the guarantee is not pinned by a test. Low priority ([internal/service/export_service.go:367-388](../../internal/service/export_service.go)).
+- **CSV-vs-JSON presence asymmetry on `scene_index` / `shot_index` artifacts** — JSON omits nil index fields (`omitempty` retained, deliberate for run-level artifacts); CSV always emits the columns as empty strings. Spec allows both formats to represent the same logical dataset with format-native nil handling. Revisit only if a downstream consumer requires explicit `null` columns in JSON ([internal/service/export_service.go:66-71, 340-350](../../internal/service/export_service.go)).
+
 ## Deferred from: code review of 10-4-golden-shadow-ci-quality-gates (2026-04-24)
 
 - **`RunGolden` mutates `testdata/golden/eval/manifest.json` on every invocation** — on developer machines `go run ./cmd/quality-gate/` creates spurious dirty-tree diffs; in CI the workspace is ephemeral so writes are discarded. Pre-existing behavior in `internal/critic/eval`; a `--dry-run` flag for the gate command would address the developer-machine case ([internal/critic/eval/runner.go:73-75](../../internal/critic/eval/runner.go)).

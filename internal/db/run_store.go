@@ -29,6 +29,12 @@ type RunMetricsRow struct {
 	CreatedAt     string
 }
 
+type ExportRunRecord struct {
+	ID           string
+	ScenarioPath *string
+	OutputPath   *string
+}
+
 // NewRunStore creates a RunStore backed by the provided *sql.DB.
 func NewRunStore(db *sql.DB) *RunStore {
 	return &RunStore{db: db}
@@ -164,6 +170,32 @@ func (s *RunStore) Get(ctx context.Context, id string) (*domain.Run, error) {
 		return nil, fmt.Errorf("get run %s: %w", id, err)
 	}
 	return run, nil
+}
+
+// GetExportRecord returns the minimal run artifact fields needed by the
+// export service. Missing runs return domain.ErrNotFound.
+func (s *RunStore) GetExportRecord(ctx context.Context, id string) (*ExportRunRecord, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, scenario_path, output_path
+		   FROM runs WHERE id = ?`, id)
+
+	var rec ExportRunRecord
+	var scenarioPath sql.NullString
+	var outputPath sql.NullString
+	err := row.Scan(&rec.ID, &scenarioPath, &outputPath)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("get export run %s: %w", id, domain.ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get export run %s: %w", id, err)
+	}
+	if scenarioPath.Valid {
+		rec.ScenarioPath = &scenarioPath.String
+	}
+	if outputPath.Valid {
+		rec.OutputPath = &outputPath.String
+	}
+	return &rec, nil
 }
 
 // List returns all runs ordered by created_at ascending.
