@@ -81,8 +81,8 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 11 {
-		t.Errorf("user_version = %d, want %d", version, 11)
+	if version != 12 {
+		t.Errorf("user_version = %d, want %d", version, 12)
 	}
 
 	db.Close()
@@ -100,8 +100,8 @@ func TestMigrate_UserVersion(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 11 {
-		t.Errorf("user_version = %d, want %d", version, 11)
+	if version != 12 {
+		t.Errorf("user_version = %d, want %d", version, 12)
 	}
 }
 
@@ -113,7 +113,17 @@ func TestSchema_TablesExist(t *testing.T) {
 	}
 	defer db.Close()
 
-	tables := []string{"runs", "decisions", "segments", "hitl_sessions", "critic_calibration_snapshots", "character_search_cache"}
+	tables := []string{
+		"runs",
+		"decisions",
+		"segments",
+		"hitl_sessions",
+		"critic_calibration_snapshots",
+		"character_search_cache",
+		"settings_versions",
+		"settings_state",
+		"run_settings_assignments",
+	}
 	for _, table := range tables {
 		var name string
 		err := db.QueryRow(
@@ -123,6 +133,56 @@ func TestSchema_TablesExist(t *testing.T) {
 			t.Errorf("table %q not found: %v", table, err)
 		}
 	}
+}
+
+func TestSchema_SettingsStateSentinelRowExists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	var (
+		id        int
+		effective sql.NullInt64
+		pending   sql.NullInt64
+	)
+	err = db.QueryRow(`
+SELECT id, effective_version, pending_version
+  FROM settings_state
+ WHERE id = 1`).Scan(&id, &effective, &pending)
+	if err != nil {
+		t.Fatalf("sentinel settings_state row missing: %v", err)
+	}
+	if id != 1 {
+		t.Errorf("sentinel id = %d, want 1", id)
+	}
+	if effective.Valid {
+		t.Errorf("effective_version should start NULL; got %d", effective.Int64)
+	}
+	if pending.Valid {
+		t.Errorf("pending_version should start NULL; got %d", pending.Int64)
+	}
+}
+
+func TestSchema_SettingsVersionsHasFingerprintNotEnvJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	// settings_versions must store env_fingerprint (audit-safe hash) and
+	// must NOT store env_json (which would persist raw secrets into the DB).
+	expected := map[string]string{
+		"version":         "INTEGER",
+		"config_json":     "TEXT",
+		"env_fingerprint": "TEXT",
+		"created_at":      "TEXT",
+	}
+	assertTableColumns(t, db, "settings_versions", expected)
 }
 
 func TestSchema_CriticCalibrationSnapshotsIndexExists(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 // Dependencies holds all handler dependencies injected at startup.
 type Dependencies struct {
 	Run       *RunHandler
+	Settings  *SettingsHandler
 	Artifacts *ArtifactsHandler // NEW
 	Character *CharacterHandler
 	Scene     *SceneHandler
@@ -50,6 +51,9 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("GET /api/runs/{id}/video", deps.Artifacts.Video)
 	api.HandleFunc("GET /api/runs/{id}/metadata", deps.Artifacts.Metadata)
 	api.HandleFunc("GET /api/runs/{id}/manifest", deps.Artifacts.Manifest)
+	api.HandleFunc("GET /api/settings", deps.Settings.Get)
+	api.HandleFunc("PUT /api/settings", deps.Settings.Put)
+	api.HandleFunc("POST /api/settings/reset", deps.Settings.ResetToDefaults)
 
 	apiChain := Chain(api,
 		WithRequestID,
@@ -69,6 +73,7 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 // outputDir is the server-configured run output base (never client-controlled).
 func NewDependencies(
 	svc *service.RunService,
+	settings *service.SettingsService,
 	hitl *service.HITLService,
 	characters *service.CharacterService,
 	scenes *service.SceneService,
@@ -78,6 +83,7 @@ func NewDependencies(
 ) *Dependencies {
 	return &Dependencies{
 		Run:       NewRunHandler(svc, hitl, outputDir, logger),
+		Settings:  NewSettingsHandler(settings),
 		Artifacts: NewArtifactsHandler(svc, outputDir),
 		Character: NewCharacterHandler(characters),
 		Scene:     NewSceneHandler(scenes),

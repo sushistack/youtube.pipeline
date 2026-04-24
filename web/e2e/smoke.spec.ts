@@ -33,3 +33,18 @@ test('loads the Go-served SPA shell and honors Enter/Escape keyboard actions', a
   expect(pageErrors).toEqual([])
   expect(consoleErrors).toEqual([])
 })
+
+test('loads the settings workspace alongside the timeline', async ({ page }) => {
+  await page.goto('/settings')
+  const onboarding = page.getByRole('button', { name: 'Continue to workspace' })
+  if (await onboarding.isVisible().catch(() => false)) {
+    await onboarding.click()
+  }
+
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Models and cost guardrails' }),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save settings' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Timeline' })).toBeVisible()
+})

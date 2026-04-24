@@ -35,31 +35,32 @@ const viteDevServerURL = "http://localhost:5173"
 // the DashScope qwen3-tts-flash client. Returns an error if the API key is
 // missing or any construction step fails; the caller decides how to handle the
 // absence (warn + skip vs. fatal).
+//
+// The limiter factory is injected rather than created per-call so TTS and
+// image tracks continue to share a single DashScope limiter budget across
+// stages and retries — otherwise each rebuild would hand each track a fresh
+// budget and the rate-limit guarantees the old code established silently
+// disappear.
 func buildPhaseBRunner(
 	cfg domain.PipelineConfig,
+	dashScopeAPIKey string,
+	limiterFactory *llmclient.ProviderLimiterFactory,
 	runStore *db.RunStore,
 	segStore *db.SegmentStore,
 	logger *slog.Logger,
 ) (*pipeline.PhaseBRunner, error) {
-	apiKey := os.Getenv("DASHSCOPE_API_KEY")
-	if apiKey == "" {
+	if dashScopeAPIKey == "" {
 		return nil, fmt.Errorf("DASHSCOPE_API_KEY not set")
+	}
+	if limiterFactory == nil {
+		return nil, fmt.Errorf("phase b runner: nil limiter factory")
 	}
 
 	ttsClient, err := dashscope.NewTTSClient(&http.Client{Timeout: 120 * time.Second}, dashscope.TTSClientConfig{
-		APIKey: apiKey,
+		APIKey: dashScopeAPIKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build tts client: %w", err)
-	}
-
-	limiterFactory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
-		DashScope: llmclient.LimitConfig{RequestsPerMinute: 10, MaxConcurrent: 2, AcquireTimeout: 30 * time.Second},
-		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
-		Gemini:    llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
-	}, clock.RealClock{})
-	if err != nil {
-		return nil, fmt.Errorf("build limiter factory: %w", err)
 	}
 
 	// Compliance audit logging — creates {outputDir}/{runID}/audit.log.
@@ -96,6 +97,36 @@ func buildPhaseBRunner(
 	// load-bearing at the Phase B entry point — no future wiring can forget
 	// to thread the operator's edited descriptor.
 	return pipeline.NewPhaseBRunner(imageTrackStub, ttsTrack, nil, clock.RealClock{}, logger, nil, runStore), nil
+}
+
+type dynamicPhaseBExecutor struct {
+	settings       *service.SettingsService
+	runStore       *db.RunStore
+	segStore       *db.SegmentStore
+	logger         *slog.Logger
+	limiterFactory *llmclient.ProviderLimiterFactory
+}
+
+func (e *dynamicPhaseBExecutor) Run(ctx context.Context, req pipeline.PhaseBRequest) (pipeline.PhaseBResult, error) {
+	// Resolve per-run pinned version so a run already in flight keeps its
+	// assigned config even if a newer version was promoted after the run
+	// started.
+	files, err := e.settings.LoadRuntimeFilesForRun(ctx, req.RunID)
+	if err != nil {
+		return pipeline.PhaseBResult{}, fmt.Errorf("load settings for phase b run %s: %w", req.RunID, err)
+	}
+	runner, err := buildPhaseBRunner(
+		files.Config,
+		files.Env[domain.SettingsSecretDashScope],
+		e.limiterFactory,
+		e.runStore,
+		e.segStore,
+		e.logger,
+	)
+	if err != nil {
+		return pipeline.PhaseBResult{}, err
+	}
+	return runner.Run(ctx, req)
 }
 
 func newServeCmd() *cobra.Command {
@@ -136,31 +167,47 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	store := db.NewRunStore(database)
 	segStore := db.NewSegmentStore(database)
 	decisionStore := db.NewDecisionStore(database)
+	settingsStore := db.NewSettingsStore(database)
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	settingsFiles := config.NewSettingsFileManager(cfgPath, config.DefaultEnvPath())
+	settingsSvc := service.NewSettingsService(settingsStore, settingsFiles, clock.RealClock{})
 
-	// Build Phase B TTS track. Requires DASHSCOPE_API_KEY in environment.
-	// The TTS track and image track share the same DashScope limiter budget
-	// via ProviderLimiterFactory.DashScopeTTS() == DashScopeImage().
-	phaseBRunner, err := buildPhaseBRunner(cfg, store, segStore, logger)
-	if err != nil {
-		logger.Warn("phase b runner unavailable (TTS disabled)", "error", err.Error())
-		phaseBRunner = nil
+	if err := settingsSvc.Bootstrap(cmd.Context()); err != nil {
+		return fmt.Errorf("bootstrap settings: %w", err)
 	}
-	_ = phaseBRunner // wired into engine.SetPhaseAExecutor when Phase A lands
 
 	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
-	engine.SetPhaseBExecutor(phaseBRunner)
+	engine.SetSettingsPromoter(settingsSvc)
 	svc := service.NewRunService(store, engine)
+	svc.SetSettingsRuntime(settingsSvc)
+
+	limiterFactory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
+		DashScope: llmclient.LimitConfig{RequestsPerMinute: 10, MaxConcurrent: 2, AcquireTimeout: 30 * time.Second},
+		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
+		Gemini:    llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
+	}, clock.RealClock{})
+	if err != nil {
+		return fmt.Errorf("build limiter factory: %w", err)
+	}
+
+	engine.SetPhaseBExecutor(&dynamicPhaseBExecutor{
+		settings:       settingsSvc,
+		runStore:       store,
+		segStore:       segStore,
+		logger:         logger,
+		limiterFactory: limiterFactory,
+	})
 	hitlSvc := service.NewHITLService(store, decisionStore, logger)
 	characterCache := db.NewCharacterCacheStore(database)
 	characterClient := service.NewDuckDuckGoClient(nil)
 	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
 	characterSvc.SetDescriptorRecorder(decisionStore)
+	characterSvc.SetSettingsRuntime(settingsSvc)
 	sceneSvc := service.NewSceneService(store, segStore, decisionStore, clock.RealClock{})
 	sceneSvc.SetSceneRegenerator(service.NewNoOpSceneRegenerator(segStore))
 
-	deps := api.NewDependencies(svc, hitlSvc, characterSvc, sceneSvc, cfg.OutputDir, logger, web.FS)
+	deps := api.NewDependencies(svc, settingsSvc, hitlSvc, characterSvc, sceneSvc, cfg.OutputDir, logger, web.FS)
 	mux := http.NewServeMux()
 	if err := configureServeMux(mux, deps, devMode, mustParseURL(viteDevServerURL), cmd.OutOrStdout()); err != nil {
 		return err

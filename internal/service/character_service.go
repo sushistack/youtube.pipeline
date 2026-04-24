@@ -50,6 +50,9 @@ type CharacterService struct {
 	cache     CharacterCacheStore
 	client    CharacterSearchClient
 	decisions DescriptorDecisionRecorder
+	settings  interface {
+		PromotePendingAtSafeSeam(ctx context.Context) (bool, error)
+	}
 }
 
 func NewCharacterService(runs CharacterRunStore, cache CharacterCacheStore, client CharacterSearchClient) *CharacterService {
@@ -60,6 +63,12 @@ func NewCharacterService(runs CharacterRunStore, cache CharacterCacheStore, clie
 // undo tracking. If not set, descriptor edits are not recorded.
 func (s *CharacterService) SetDescriptorRecorder(r DescriptorDecisionRecorder) {
 	s.decisions = r
+}
+
+func (s *CharacterService) SetSettingsRuntime(settings interface {
+	PromotePendingAtSafeSeam(ctx context.Context) (bool, error)
+}) {
+	s.settings = settings
 }
 
 func (s *CharacterService) Search(ctx context.Context, runID, query string) (*domain.CharacterGroup, error) {
@@ -121,6 +130,11 @@ func (s *CharacterService) Pick(ctx context.Context, runID, candidateID, frozenD
 	}
 	if !containsCandidate(group, candidateID) {
 		return nil, fmt.Errorf("character pick: unknown candidate %q: %w", candidateID, domain.ErrValidation)
+	}
+	if s.settings != nil {
+		if _, err := s.settings.PromotePendingAtSafeSeam(ctx); err != nil {
+			return nil, fmt.Errorf("character pick: promote pending settings: %w", err)
+		}
 	}
 	nextStage, err := pipeline.NextStage(run.Stage, domain.EventApprove)
 	if err != nil {

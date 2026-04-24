@@ -1,5 +1,5 @@
 # generated: 2026-04-16
-# last_updated: 2026-04-24 # Story 9-3 code review fixes applied — status=done
+# last_updated: 2026-04-24 # Story 10-1 code review fixes applied — status=done
 # project: youtube.pipeline
 # project_key: NOKEY
 # tracking_system: file-system
@@ -129,7 +129,7 @@ development_status:
 
   # ── Epic 10: Tuning, Settings & Operational Tooling ──────────────────────
   epic-10: in-progress
-  10-1-settings-dashboard-llm-provider-config: ready-for-dev
+  10-1-settings-dashboard-llm-provider-config: done
   10-2-tuning-surface-prompt-rubric-lab: ready-for-dev
   10-3-database-vacuum-data-retention: ready-for-dev
   10-4-golden-shadow-ci-quality-gates: ready-for-dev

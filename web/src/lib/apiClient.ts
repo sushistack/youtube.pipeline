@@ -18,6 +18,10 @@ import {
   timelineListResponseSchema,
   undoResponseSchema,
 } from "../contracts/runContracts";
+import {
+  settingsResponseSchema,
+  type SettingsConfig,
+} from "../contracts/settingsContracts";
 
 const API_ROOT = "/api";
 
@@ -25,6 +29,7 @@ const errorEnvelopeSchema = z.object({
   error: z
     .object({
       code: z.string().min(1),
+      details: z.unknown().optional(),
       message: z.string().min(1),
     })
     .optional(),
@@ -33,11 +38,13 @@ const errorEnvelopeSchema = z.object({
 
 export class ApiClientError extends Error {
   code?: string;
+  details?: unknown;
   status: number;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, details?: unknown) {
     super(message);
     this.code = code;
+    this.details = details;
     this.name = "ApiClientError";
     this.status = status;
   }
@@ -66,9 +73,15 @@ async function fetchWithErrorEnvelope(path: string, init?: RequestInit) {
         `API request failed (${response.status})`,
       response.status,
       parsed_error.data?.error?.code,
+      parsed_error.data?.error?.details,
     );
   }
 
+  return { payload, headers: response.headers };
+}
+
+async function fetchPayloadOnly(path: string, init?: RequestInit) {
+  const { payload } = await fetchWithErrorEnvelope(path, init);
   return payload;
 }
 
@@ -77,7 +90,7 @@ async function apiRequest<T>(
   schema: z.ZodType<{ data: T }>,
   init?: RequestInit,
 ) {
-  const payload = await fetchWithErrorEnvelope(path, init);
+  const payload = await fetchPayloadOnly(path, init);
   return schema.parse(payload).data;
 }
 
@@ -91,7 +104,7 @@ async function apiRequestRaw<T>(
   schema: z.ZodType<T>,
   init?: RequestInit,
 ) {
-  const payload = await fetchWithErrorEnvelope(path, init);
+  const payload = await fetchPayloadOnly(path, init);
   return schema.parse(payload);
 }
 
@@ -314,4 +327,51 @@ export function fetchRunManifest(run_id: string) {
     `/runs/${encodeURIComponent(run_id)}/manifest`,
     sourceManifestSchema,
   );
+}
+
+/**
+ * fetchSettings returns the settings snapshot together with the ETag header
+ * so the caller can echo it as If-Match on subsequent writes (D6 optimistic
+ * concurrency). Consumers that don't care about the ETag can discard it.
+ */
+export async function fetchSettings() {
+  const { payload, headers } = await fetchWithErrorEnvelope("/settings");
+  const data = settingsResponseSchema.parse(payload).data;
+  return { snapshot: data, etag: headers.get("ETag") ?? null };
+}
+
+/**
+ * updateSettings sends a settings save. `env` accepts:
+ *   - `string` → set this secret to the given value
+ *   - `null`   → clear this secret from .env (D11)
+ *   - key omitted → leave the secret unchanged
+ *
+ * `etag` is echoed as the If-Match header so concurrent saves fail with
+ * ApiClientError.status=409 (SETTINGS_STALE).
+ */
+export function updateSettings(payload: {
+  config: SettingsConfig;
+  env: Record<string, string | null>;
+  etag?: string | null;
+}) {
+  const { etag, ...body } = payload;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (etag) {
+    headers["If-Match"] = etag;
+  }
+  return apiRequest("/settings", settingsResponseSchema, {
+    method: "PUT",
+    body: JSON.stringify(body),
+    headers,
+  });
+}
+
+/**
+ * resetSettingsToDefaults rewrites config.yaml with the built-in defaults —
+ * used as the recovery action when config.yaml has become unreadable.
+ */
+export function resetSettingsToDefaults() {
+  return apiRequest("/settings/reset", settingsResponseSchema, {
+    method: "POST",
+  });
 }

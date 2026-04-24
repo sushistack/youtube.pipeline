@@ -1,0 +1,622 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/sushistack/youtube.pipeline/internal/clock"
+	"github.com/sushistack/youtube.pipeline/internal/db"
+	"github.com/sushistack/youtube.pipeline/internal/domain"
+)
+
+// ErrSettingsConflict signals an ETag/If-Match mismatch on a concurrent save.
+// Handlers should translate this to HTTP 409 so the client can refresh the
+// snapshot and resubmit deliberately.
+var ErrSettingsConflict = errors.New("settings: concurrent update detected")
+
+type SettingsStore interface {
+	LoadState(ctx context.Context) (db.SettingsStateRow, error)
+	LoadVersion(ctx context.Context, version int64) (db.SettingsVersionRow, error)
+	SaveSnapshot(ctx context.Context, files domain.SettingsFileSnapshot, queued bool, queuedAt *string) (db.SettingsStateRow, int64, error)
+	PromotePending(ctx context.Context) (db.SettingsStateRow, bool, error)
+	EnsureEffectiveVersion(ctx context.Context, files domain.SettingsFileSnapshot) (db.SettingsStateRow, int64, error)
+	AssignRunToVersion(ctx context.Context, runID string, version int64) error
+	LoadVersionForRun(ctx context.Context, runID string) (int64, error)
+	ActiveRunsExist(ctx context.Context) (bool, error)
+	BudgetSourceRun(ctx context.Context) (*domain.SettingsBudgetRun, error)
+}
+
+type SettingsFileAccess interface {
+	Load() (domain.SettingsFileSnapshot, error)
+	Write(files domain.SettingsFileSnapshot) error
+}
+
+type SettingsService struct {
+	store SettingsStore
+	files SettingsFileAccess
+	clk   clock.Clock
+	// mu serializes Save/Promote against disk writes to avoid torn writes
+	// under two simultaneous operator saves. DB ops inside the hold remain
+	// fast — we only guard the read-modify-write envelope.
+	mu sync.Mutex
+}
+
+func NewSettingsService(store SettingsStore, files SettingsFileAccess, clk clock.Clock) *SettingsService {
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	return &SettingsService{store: store, files: files, clk: clk}
+}
+
+// Bootstrap seeds settings_state.effective_version from the current disk
+// snapshot if no version has ever been recorded. Intended to be called once
+// at server startup so LoadEffectiveRuntimeFiles never has to fall back to
+// raw disk reads (which would defeat the queued/effective distinction).
+func (s *SettingsService) Bootstrap(ctx context.Context) error {
+	files, err := s.files.Load()
+	if err != nil {
+		// Corrupted config.yaml on a cold start: seed from defaults so the
+		// server still comes up. The operator can fix or reset from the UI.
+		files = domain.SettingsFileSnapshot{Config: domain.DefaultConfig(), Env: map[string]string{}}
+	}
+	if _, _, err := s.store.EnsureEffectiveVersion(ctx, files); err != nil {
+		return fmt.Errorf("settings bootstrap: %w", err)
+	}
+	return nil
+}
+
+// ResetToDefaults overwrites config.yaml with domain.DefaultConfig() and
+// records a new effective version. .env is left untouched — secrets are
+// never reset via the UI surface. Intended as the recovery action when
+// config.yaml has become unreadable.
+func (s *SettingsService) ResetToDefaults(ctx context.Context) (*SettingsSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// .env stays as-is so the operator doesn't lose API keys during recovery.
+	disk, err := s.files.Load()
+	if err != nil {
+		// If even .env is unreadable, proceed with an empty env map — the
+		// point of the reset action is to break out of a stuck state.
+		disk = domain.SettingsFileSnapshot{Env: map[string]string{}}
+	}
+	next := domain.SettingsFileSnapshot{Config: domain.DefaultConfig(), Env: disk.Env}
+
+	hasActiveRuns, err := s.store.ActiveRunsExist(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reset settings: active runs: %w", err)
+	}
+
+	var queuedAt *string
+	if hasActiveRuns {
+		ts := s.clk.Now().UTC().Format(time.RFC3339Nano)
+		queuedAt = &ts
+	}
+
+	state, _, err := s.store.SaveSnapshot(ctx, next, hasActiveRuns, queuedAt)
+	if err != nil {
+		return nil, fmt.Errorf("reset settings: persist: %w", err)
+	}
+
+	if !hasActiveRuns {
+		if err := s.files.Write(next); err != nil {
+			return nil, fmt.Errorf("reset settings: write disk: %w", err)
+		}
+	}
+	return s.buildSnapshot(ctx, next, state)
+}
+
+func (s *SettingsService) Snapshot(ctx context.Context) (*SettingsSnapshot, error) {
+	state, err := s.store.LoadState(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot settings: %w", err)
+	}
+	files, err := s.effectiveSnapshotFromState(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildSnapshot(ctx, files, state)
+}
+
+// Save persists a settings edit. When active runs exist, the new version is
+// recorded as pending and neither config.yaml nor .env is rewritten — disk
+// mutation is deferred until PromotePendingAtSafeSeam flips the pending
+// version to effective. This preserves the "safe seam" contract even across
+// process restarts: if the server crashes after Save but before promotion,
+// the queued version is still discoverable in settings_state.pending_version
+// and the on-disk files still reflect the pre-save state.
+//
+// ifMatchVersion, when non-nil, is checked against the current effective
+// version before the save is accepted. A mismatch returns ErrSettingsConflict.
+// Callers that did not read a snapshot first (tests, CLI) may pass nil.
+func (s *SettingsService) Save(
+	ctx context.Context,
+	input SettingsUpdateInput,
+	ifMatchVersion *int64,
+) (*SettingsSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.store.LoadState(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("save settings: load state: %w", err)
+	}
+
+	if ifMatchVersion != nil {
+		if !versionsMatch(state.EffectiveVersion, ifMatchVersion) {
+			return nil, ErrSettingsConflict
+		}
+	}
+
+	currentFiles, err := s.effectiveSnapshotFromState(ctx, state)
+	if err != nil {
+		return nil, fmt.Errorf("save settings: load effective snapshot: %w", err)
+	}
+
+	nextFiles, validationErr := s.mergeAndValidate(currentFiles, input)
+	if validationErr != nil {
+		return nil, fmt.Errorf("save settings: %w", validationErr)
+	}
+
+	hasActiveRuns, err := s.store.ActiveRunsExist(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("save settings: active runs: %w", err)
+	}
+
+	// If a change was previously queued AND no runs are active now, any
+	// superseded pending version would be lost silently. Promote it first so
+	// queued intent reaches effective exactly once, then layer the new save
+	// on top.
+	if !hasActiveRuns && state.PendingVersion != nil {
+		if _, _, err := s.store.PromotePending(ctx); err != nil {
+			return nil, fmt.Errorf("save settings: promote superseded pending: %w", err)
+		}
+		// Persist the disk state that was queued but never materialized, so
+		// the promoted version is reflected on disk before we layer the new
+		// save. This reads the just-promoted version from the store.
+		if err := s.materializeEffectiveToDisk(ctx); err != nil {
+			return nil, fmt.Errorf("save settings: materialize promoted version: %w", err)
+		}
+	}
+
+	var queuedAt *string
+	if hasActiveRuns {
+		timestamp := s.clk.Now().UTC().Format(time.RFC3339Nano)
+		queuedAt = &timestamp
+	}
+
+	newState, _, err := s.store.SaveSnapshot(ctx, nextFiles, hasActiveRuns, queuedAt)
+	if err != nil {
+		return nil, fmt.Errorf("save settings: persist version state: %w", err)
+	}
+
+	// Only when the save is NOT queued do we commit the disk mutation. A
+	// queued save is a DB-only WAL entry; disk stays at the last-promoted
+	// state. This is what defeats the prior "queued leaks into active run"
+	// bypass — runtime readers of .env and config.yaml observe the current
+	// effective snapshot, never a queued one.
+	if !hasActiveRuns {
+		if err := s.files.Write(nextFiles); err != nil {
+			return nil, fmt.Errorf("save settings: persist files: %w", err)
+		}
+	}
+
+	return s.buildSnapshot(ctx, nextFiles, newState)
+}
+
+func (s *SettingsService) LoadEffectiveRuntimeConfig(ctx context.Context) (domain.PipelineConfig, error) {
+	files, err := s.LoadEffectiveRuntimeFiles(ctx)
+	if err != nil {
+		return domain.PipelineConfig{}, err
+	}
+	return files.Config, nil
+}
+
+// LoadEffectiveRuntimeFiles returns the snapshot the pipeline should execute
+// against right now. It reads from the DB effective_version — not from disk —
+// to preserve queued/effective separation. If effective_version is unset
+// (freshly migrated database before Bootstrap runs), it falls back to the
+// on-disk snapshot for resilience; Bootstrap should run at startup to make
+// this branch unreachable in normal operation.
+func (s *SettingsService) LoadEffectiveRuntimeFiles(ctx context.Context) (domain.SettingsFileSnapshot, error) {
+	state, err := s.store.LoadState(ctx)
+	if err != nil {
+		return domain.SettingsFileSnapshot{}, fmt.Errorf("load effective runtime config: %w", err)
+	}
+	return s.effectiveSnapshotFromState(ctx, state)
+}
+
+// LoadRuntimeFilesForRun returns the snapshot pinned to a specific run via
+// run_settings_assignments, falling back to the current effective version if
+// no assignment exists. Secrets (.env) always come from disk regardless of
+// pin, since they are never DB-backed; only the non-secret config portion is
+// resolved from the pinned version.
+func (s *SettingsService) LoadRuntimeFilesForRun(ctx context.Context, runID string) (domain.SettingsFileSnapshot, error) {
+	version, err := s.store.LoadVersionForRun(ctx, runID)
+	if err != nil {
+		// Fallback to current effective if the run predates pinning.
+		if errors.Is(err, domain.ErrNotFound) {
+			return s.LoadEffectiveRuntimeFiles(ctx)
+		}
+		return domain.SettingsFileSnapshot{}, fmt.Errorf("load runtime files for run %s: %w", runID, err)
+	}
+	row, err := s.store.LoadVersion(ctx, version)
+	if err != nil {
+		return domain.SettingsFileSnapshot{}, fmt.Errorf("load runtime files for run %s: %w", runID, err)
+	}
+	// Secrets come from disk (.env is the source of truth); merge them in.
+	disk, err := s.files.Load()
+	if err != nil {
+		return domain.SettingsFileSnapshot{}, fmt.Errorf("load runtime files for run %s: read .env: %w", runID, err)
+	}
+	return domain.SettingsFileSnapshot{Config: row.Config, Env: disk.Env}, nil
+}
+
+// PromotePendingAtSafeSeam flips the pending version to effective and writes
+// the newly-effective config to disk in the same operation. The disk write
+// happens AFTER the DB flip so any observer who raced past the DB read sees
+// either (old effective, old disk) or (new effective, new disk) — never the
+// mixed state that breaks the queued/effective invariant.
+func (s *SettingsService) PromotePendingAtSafeSeam(ctx context.Context) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, promoted, err := s.store.PromotePending(ctx)
+	if err != nil {
+		return false, fmt.Errorf("promote pending settings: %w", err)
+	}
+	if !promoted {
+		return false, nil
+	}
+	if err := s.materializeEffectiveToDisk(ctx); err != nil {
+		return false, fmt.Errorf("promote pending settings: %w", err)
+	}
+	return true, nil
+}
+
+// AssignRunToEffectiveVersion pins a newly-created run to the current
+// effective version so its Phase B executor always resolves to the snapshot
+// that was live at creation — even if another operator promotes a new
+// version mid-run.
+func (s *SettingsService) AssignRunToEffectiveVersion(ctx context.Context, runID string) error {
+	state, err := s.store.LoadState(ctx)
+	if err != nil {
+		return fmt.Errorf("assign run settings: %w", err)
+	}
+	if state.EffectiveVersion == nil {
+		// No effective version yet (pre-Bootstrap edge); skip assignment
+		// silently. LoadVersionForRun will fall back to disk.
+		return nil
+	}
+	return s.store.AssignRunToVersion(ctx, runID, *state.EffectiveVersion)
+}
+
+// EffectiveVersion returns the current effective version number, or 0 if
+// none is set. Used by handlers building ETag headers for If-Match checks.
+func (s *SettingsService) EffectiveVersion(ctx context.Context) (int64, error) {
+	state, err := s.store.LoadState(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if state.EffectiveVersion == nil {
+		return 0, nil
+	}
+	return *state.EffectiveVersion, nil
+}
+
+// effectiveSnapshotFromState resolves the config+env tuple for a given state
+// row. Config comes from the effective DB version when set; env is always
+// loaded from disk (secrets are file-backed). When no effective version
+// exists yet, both halves come from disk.
+func (s *SettingsService) effectiveSnapshotFromState(ctx context.Context, state db.SettingsStateRow) (domain.SettingsFileSnapshot, error) {
+	disk, err := s.files.Load()
+	if err != nil {
+		return domain.SettingsFileSnapshot{}, fmt.Errorf("read settings files: %w", err)
+	}
+	if state.EffectiveVersion == nil {
+		return disk, nil
+	}
+	version, err := s.store.LoadVersion(ctx, *state.EffectiveVersion)
+	if err != nil {
+		return domain.SettingsFileSnapshot{}, fmt.Errorf("load effective version: %w", err)
+	}
+	return domain.SettingsFileSnapshot{Config: version.Config, Env: disk.Env}, nil
+}
+
+func (s *SettingsService) materializeEffectiveToDisk(ctx context.Context) error {
+	state, err := s.store.LoadState(ctx)
+	if err != nil {
+		return fmt.Errorf("materialize: load state: %w", err)
+	}
+	if state.EffectiveVersion == nil {
+		return nil
+	}
+	version, err := s.store.LoadVersion(ctx, *state.EffectiveVersion)
+	if err != nil {
+		return fmt.Errorf("materialize: load version %d: %w", *state.EffectiveVersion, err)
+	}
+	disk, err := s.files.Load()
+	if err != nil {
+		return fmt.Errorf("materialize: read disk: %w", err)
+	}
+	// config switches to the promoted version; env stays as-is on disk (it
+	// was already written at Save time, since secrets are file-backed only).
+	files := domain.SettingsFileSnapshot{Config: version.Config, Env: disk.Env}
+	if err := s.files.Write(files); err != nil {
+		return fmt.Errorf("materialize: write files: %w", err)
+	}
+	return nil
+}
+
+func (s *SettingsService) buildSnapshot(ctx context.Context, files domain.SettingsFileSnapshot, state db.SettingsStateRow) (*SettingsSnapshot, error) {
+	budget, err := s.buildBudget(ctx, files.Config.CostCapPerRun)
+	if err != nil {
+		return nil, err
+	}
+	return &SettingsSnapshot{
+		Config:      normalizeSettingsConfig(files.Config),
+		Env:         normalizeSecretState(files.Env),
+		Budget:      budget,
+		Application: normalizeApplicationState(state),
+	}, nil
+}
+
+func (s *SettingsService) buildBudget(ctx context.Context, hardCap float64) (SettingsBudgetSummary, error) {
+	softCap := roundUSD(hardCap * settingsSoftCapRatio)
+	run, err := s.store.BudgetSourceRun(ctx)
+	if err != nil {
+		return SettingsBudgetSummary{}, fmt.Errorf("build settings budget: %w", err)
+	}
+	if run == nil {
+		return SettingsBudgetSummary{
+			Source: SettingsBudgetSource{
+				Kind:  "none",
+				Label: "No run telemetry available yet",
+			},
+			CurrentSpendUSD: 0,
+			SoftCapUSD:      softCap,
+			HardCapUSD:      hardCap,
+			ProgressRatio:   0,
+			Status:          "safe",
+		}, nil
+	}
+
+	progress := 0.0
+	if hardCap > 0 {
+		progress = run.CostUSD / hardCap
+	}
+	status := "safe"
+	if run.CostUSD >= hardCap && hardCap > 0 {
+		status = "exceeded"
+	} else if run.CostUSD >= softCap && softCap > 0 {
+		status = "near_cap"
+	}
+	statusValue := run.Status
+	return SettingsBudgetSummary{
+		Source: SettingsBudgetSource{
+			Kind:   resolveBudgetSourceKind(run.Status),
+			Label:  resolveBudgetSourceLabel(run.Status),
+			RunID:  &run.ID,
+			Status: &statusValue,
+		},
+		CurrentSpendUSD: roundUSD(run.CostUSD),
+		SoftCapUSD:      softCap,
+		HardCapUSD:      hardCap,
+		ProgressRatio:   progress,
+		Status:          status,
+	}, nil
+}
+
+func (s *SettingsService) mergeAndValidate(current domain.SettingsFileSnapshot, input SettingsUpdateInput) (domain.SettingsFileSnapshot, *SettingsValidationError) {
+	nextConfig := current.Config
+	applyEditableConfig(&nextConfig, input.Config)
+
+	nextEnv := cloneSecretMap(current.Env)
+	fieldErrors := map[string]string{}
+
+	for key := range input.Env {
+		if !isSupportedSettingsSecret(key) {
+			fieldErrors["env."+key] = "unsupported secret key"
+		}
+	}
+
+	for _, key := range supportedSettingsSecrets {
+		value, ok := input.Env[key]
+		if !ok {
+			continue
+		}
+		if value == nil {
+			// Explicit null clears a secret from .env. Validation below
+			// rejects clearing a required key unless the operator has set
+			// a replacement.
+			delete(nextEnv, key)
+			continue
+		}
+		nextEnv[key] = *value
+	}
+
+	validateSettingsConfig(nextConfig, nextEnv, fieldErrors)
+	if len(fieldErrors) > 0 {
+		return domain.SettingsFileSnapshot{}, &SettingsValidationError{FieldErrors: fieldErrors}
+	}
+	return domain.SettingsFileSnapshot{Config: nextConfig, Env: nextEnv}, nil
+}
+
+func validateSettingsConfig(cfg domain.PipelineConfig, env map[string]string, fieldErrors map[string]string) {
+	requiredStrings := map[string]string{
+		"config.writer_provider":  cfg.WriterProvider,
+		"config.writer_model":     cfg.WriterModel,
+		"config.critic_provider":  cfg.CriticProvider,
+		"config.critic_model":     cfg.CriticModel,
+		"config.image_provider":   cfg.ImageProvider,
+		"config.image_model":      cfg.ImageModel,
+		"config.tts_provider":     cfg.TTSProvider,
+		"config.tts_model":        cfg.TTSModel,
+		"config.tts_voice":        cfg.TTSVoice,
+		"config.tts_audio_format": cfg.TTSAudioFormat,
+	}
+	for field, value := range requiredStrings {
+		if value == "" {
+			fieldErrors[field] = "required"
+		}
+	}
+	if cfg.DashScopeRegion == "" {
+		fieldErrors["config.dashscope_region"] = "required"
+	}
+	if cfg.WriterProvider == cfg.CriticProvider && cfg.WriterProvider != "" {
+		fieldErrors["config.writer_provider"] = "Writer and Critic must use different LLM providers"
+		fieldErrors["config.critic_provider"] = "Writer and Critic must use different LLM providers"
+	}
+
+	stageCaps := map[string]float64{
+		"config.cost_cap_research": cfg.CostCapResearch,
+		"config.cost_cap_write":    cfg.CostCapWrite,
+		"config.cost_cap_image":    cfg.CostCapImage,
+		"config.cost_cap_tts":      cfg.CostCapTTS,
+		"config.cost_cap_assemble": cfg.CostCapAssemble,
+	}
+	maxStageCap := 0.0
+	for field, value := range stageCaps {
+		if value < 0 {
+			fieldErrors[field] = "must be non-negative"
+		}
+		maxStageCap = math.Max(maxStageCap, value)
+	}
+	if cfg.CostCapPerRun < 0 {
+		fieldErrors["config.cost_cap_per_run"] = "must be non-negative"
+	} else if cfg.CostCapPerRun < maxStageCap {
+		fieldErrors["config.cost_cap_per_run"] = "must be greater than or equal to the highest stage cap"
+	}
+
+	for _, key := range supportedSettingsSecrets {
+		if value, ok := env[key]; ok && strings.TrimSpace(value) == "" {
+			fieldErrors["env."+key] = "API key cannot be blank when explicitly cleared"
+		}
+	}
+}
+
+func normalizeSettingsConfig(cfg domain.PipelineConfig) SettingsConfigInput {
+	return SettingsConfigInput{
+		WriterModel:     cfg.WriterModel,
+		CriticModel:     cfg.CriticModel,
+		ImageModel:      cfg.ImageModel,
+		TTSModel:        cfg.TTSModel,
+		TTSVoice:        cfg.TTSVoice,
+		TTSAudioFormat:  cfg.TTSAudioFormat,
+		WriterProvider:  cfg.WriterProvider,
+		CriticProvider:  cfg.CriticProvider,
+		ImageProvider:   cfg.ImageProvider,
+		TTSProvider:     cfg.TTSProvider,
+		DashScopeRegion: cfg.DashScopeRegion,
+		CostCapResearch: cfg.CostCapResearch,
+		CostCapWrite:    cfg.CostCapWrite,
+		CostCapImage:    cfg.CostCapImage,
+		CostCapTTS:      cfg.CostCapTTS,
+		CostCapAssemble: cfg.CostCapAssemble,
+		CostCapPerRun:   cfg.CostCapPerRun,
+	}
+}
+
+func normalizeSecretState(env map[string]string) map[string]SettingsSecretState {
+	state := make(map[string]SettingsSecretState, len(supportedSettingsSecrets))
+	for _, key := range supportedSettingsSecrets {
+		state[key] = SettingsSecretState{Configured: env[key] != ""}
+	}
+	return state
+}
+
+func normalizeApplicationState(state db.SettingsStateRow) SettingsApplicationState {
+	status := "effective"
+	if state.PendingVersion != nil {
+		status = "queued"
+	}
+	return SettingsApplicationState{
+		Status:           status,
+		EffectiveVersion: state.EffectiveVersion,
+		PendingVersion:   state.PendingVersion,
+		QueuedAt:         state.QueuedAt,
+	}
+}
+
+func applyEditableConfig(cfg *domain.PipelineConfig, input SettingsConfigInput) {
+	cfg.WriterModel = input.WriterModel
+	cfg.CriticModel = input.CriticModel
+	cfg.ImageModel = input.ImageModel
+	cfg.TTSModel = input.TTSModel
+	cfg.TTSVoice = input.TTSVoice
+	cfg.TTSAudioFormat = input.TTSAudioFormat
+	cfg.WriterProvider = input.WriterProvider
+	cfg.CriticProvider = input.CriticProvider
+	cfg.ImageProvider = input.ImageProvider
+	cfg.TTSProvider = input.TTSProvider
+	cfg.DashScopeRegion = input.DashScopeRegion
+	cfg.CostCapResearch = input.CostCapResearch
+	cfg.CostCapWrite = input.CostCapWrite
+	cfg.CostCapImage = input.CostCapImage
+	cfg.CostCapTTS = input.CostCapTTS
+	cfg.CostCapAssemble = input.CostCapAssemble
+	cfg.CostCapPerRun = input.CostCapPerRun
+}
+
+func cloneSecretMap(values map[string]string) map[string]string {
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		if isSupportedSettingsSecret(key) {
+			cloned[key] = value
+		}
+	}
+	return cloned
+}
+
+func resolveBudgetSourceKind(status string) string {
+	switch status {
+	case string(domain.StatusRunning), string(domain.StatusWaiting):
+		return "active_run"
+	case string(domain.StatusFailed):
+		return "failed_run"
+	default:
+		return "latest_run"
+	}
+}
+
+func resolveBudgetSourceLabel(status string) string {
+	switch resolveBudgetSourceKind(status) {
+	case "active_run":
+		return "Active run spend"
+	case "failed_run":
+		return "Last failed run spend"
+	default:
+		return "Latest run spend"
+	}
+}
+
+func isSupportedSettingsSecret(key string) bool {
+	for _, candidate := range supportedSettingsSecrets {
+		if candidate == key {
+			return true
+		}
+	}
+	return false
+}
+
+func roundUSD(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	return math.Round(value*100) / 100
+}
+
+func versionsMatch(actual, expected *int64) bool {
+	if actual == nil && expected == nil {
+		return true
+	}
+	if actual == nil || expected == nil {
+		return false
+	}
+	return *actual == *expected
+}

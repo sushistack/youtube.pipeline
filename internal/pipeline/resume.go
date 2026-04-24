@@ -29,6 +29,14 @@ type PhaseBExecutor interface {
 	Run(ctx context.Context, req PhaseBRequest) (PhaseBResult, error)
 }
 
+// SettingsPromoter is the narrow surface the engine uses to flip queued
+// settings versions to effective at stage boundaries. *service.SettingsService
+// satisfies it structurally. Nil is tolerated for callers (tests, tools)
+// that don't care about settings promotion.
+type SettingsPromoter interface {
+	PromotePendingAtSafeSeam(ctx context.Context) (bool, error)
+}
+
 // SegmentStore is the minimal persistence surface the Engine needs for
 // Phase B clean-slate semantics. *db.SegmentStore satisfies it structurally.
 type SegmentStore interface {
@@ -66,6 +74,7 @@ type Engine struct {
 	phaseB         PhaseBExecutor
 	phaseC         *PhaseCRunner
 	phaseCMetadata MetadataBuilder
+	settings       SettingsPromoter
 	clock          clock.Clock
 	outputDir      string
 	logger         *slog.Logger
@@ -108,6 +117,32 @@ func (e *Engine) SetPhaseCMetadataBuilder(builder MetadataBuilder) {
 	e.phaseCMetadata = builder
 }
 
+// SetSettingsPromoter wires the queued-settings promoter that fires at every
+// stage-advance boundary. Nil disables promotion (acceptable for tests).
+func (e *Engine) SetSettingsPromoter(p SettingsPromoter) {
+	e.settings = p
+}
+
+// promoteSettingsAtBoundary fires the queued-settings promoter at a stage
+// boundary. Errors are logged but not propagated — a promotion failure
+// should not block a stage transition that succeeded otherwise. The next
+// boundary will retry.
+func (e *Engine) promoteSettingsAtBoundary(ctx context.Context, runID string, from, to domain.Stage) {
+	if e.settings == nil {
+		return
+	}
+	promoted, err := e.settings.PromotePendingAtSafeSeam(ctx)
+	if err != nil {
+		e.logger.Warn("settings promotion at stage boundary failed",
+			"run_id", runID, "from", from, "to", to, "error", err.Error())
+		return
+	}
+	if promoted {
+		e.logger.Info("settings promoted at stage boundary",
+			"run_id", runID, "from", from, "to", to)
+	}
+}
+
 // Advance executes or re-executes the full Phase A chain for any run whose
 // current stage is pending through critic.
 func (e *Engine) Advance(ctx context.Context, runID string) error {
@@ -122,6 +157,11 @@ func (e *Engine) Advance(ctx context.Context, runID string) error {
 	if !isPhaseAEntryStage(run.Stage) {
 		return fmt.Errorf("advance %s: %w: stage %s is not a Phase A entry point", runID, domain.ErrConflict, run.Stage)
 	}
+
+	// Promote queued settings BEFORE Phase A begins so the full Phase A
+	// chain runs against a coherent snapshot. Mid-chain promotion would
+	// violate the invariant that each stage sees exactly one config.
+	e.promoteSettingsAtBoundary(ctx, runID, run.Stage, domain.StageResearch)
 
 	state := &agents.PipelineState{
 		RunID: run.ID,
@@ -286,6 +326,10 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 		return report, fmt.Errorf("resume %s: reset: %w", runID, err)
 	}
 
+	// Resume is a fresh stage entry: promote queued settings before the
+	// stage executes so the retried stage sees the latest approved config.
+	e.promoteSettingsAtBoundary(ctx, runID, run.Stage, run.Stage)
+
 	if isPhaseB(run.Stage) && e.phaseB != nil {
 		req := PhaseBRequest{
 			RunID:        runID,
@@ -347,6 +391,9 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 		if err != nil {
 			return report, fmt.Errorf("resume %s: compute next stage: %w", runID, err)
 		}
+		// Stage boundary — promote queued settings so metadata entry runs
+		// against the newly-approved config.
+		e.promoteSettingsAtBoundary(ctx, runID, run.Stage, nextStage)
 		res := domain.PhaseAAdvanceResult{
 			Stage:  nextStage,
 			Status: StatusForStage(nextStage),

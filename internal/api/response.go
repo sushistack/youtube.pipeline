@@ -17,6 +17,7 @@ type apiResponse struct {
 // apiError carries classified error details in the response envelope.
 type apiError struct {
 	Code        string `json:"code"`
+	Details     any    `json:"details,omitempty"`
 	Message     string `json:"message"`
 	Recoverable bool   `json:"recoverable"`
 }
@@ -31,11 +32,15 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 // writeError maps an error to an HTTP status via domain.Classify and writes
 // a versioned error envelope. Use the raw variant for non-domain errors.
 func writeError(w http.ResponseWriter, status int, code, msg string, recoverable bool) {
+	writeErrorWithDetails(w, status, code, msg, recoverable, nil)
+}
+
+func writeErrorWithDetails(w http.ResponseWriter, status int, code, msg string, recoverable bool, details any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(apiResponse{ //nolint:errcheck
 		Version: 1,
-		Error:   &apiError{Code: code, Message: msg, Recoverable: recoverable},
+		Error:   &apiError{Code: code, Details: details, Message: msg, Recoverable: recoverable},
 	})
 }
 

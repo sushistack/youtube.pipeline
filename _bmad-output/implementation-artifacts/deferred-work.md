@@ -1,5 +1,17 @@
 # Deferred Work
 
+## Deferred from: code review of 10-1-settings-dashboard-llm-provider-config (2026-04-24)
+
+- **DF1: `dynamicPhaseBExecutor` re-parses `config.yaml`/`.env` from disk every invocation** — transient I/O errors can fail active stages; tied to D7 caching decision ([cmd/pipeline/serve.go:50-54](../../cmd/pipeline/serve.go)).
+- **DF2: `dynamicPhaseBExecutor` logs no settings version** — no post-hoc correlation of regressions to a version; needed alongside `run_settings_assignments` wiring ([cmd/pipeline/serve.go:50-65](../../cmd/pipeline/serve.go)).
+- **DF3: Budget `progress_ratio=0` with `hardCap=0`** — empty progress bar with "Exceeded" pill when operator sets an all-zero cap; unusual configuration, edge-case UX ([internal/service/settings_service.go:156-165](../../internal/service/settings_service.go)).
+- **DF4: `DataDir`/`OutputDir`/`DBPath` reset to defaults on first save if `config.yaml` missing** — `doctor` catches missing config upstream, so exposure window is narrow ([internal/config/settings_files.go:1589-1617](../../internal/config/settings_files.go)).
+- **DF5: `SecretFieldsPanel` 10s `staleTime` allows cross-tab lost-update of secrets** — multi-operator coordination is out of MVP scope ([web/src/hooks/useSettings.ts:7](../../web/src/hooks/useSettings.ts)).
+- **DF6: `QueuedChangeBanner` shows no pending-version preview/diff** — operator can't tell if queued state is their save or another tab's; UX enhancement ([web/src/components/settings/QueuedChangeBanner.tsx](../../web/src/components/settings/QueuedChangeBanner.tsx)).
+- **DF7: Soft-cap ratio `0.8` only lives in backend constant** — frontend can't independently validate derivation; Dev Notes documents it and payload consistency is sufficient ([internal/service/settings_types.go:6](../../internal/service/settings_types.go)).
+- **DF8: No audited secret-logging scrubbing** — no identified leak, but service error wrapping could surface env-writer OS errors in future refactors; preventive hardening item ([internal/service/settings_service.go](../../internal/service/settings_service.go)).
+- **DF9: `QueuedAt` uses `time.RFC3339` without sub-second precision** — micro-collision ambiguity on burst saves; rare and low-impact ([internal/service/settings_service.go:69-72](../../internal/service/settings_service.go)).
+
 ## Deferred from: code review of 9-4-pre-upload-compliance-gate (2026-04-24)
 
 - Symlink path-traversal defense-in-depth — `os.Open` follows symlinks in `{outputDir}/{runID}/{filename}`; no `filepath.EvalSymlinks` check. Low risk for single-operator desktop tool (attacker model is weak; output dir created by pipeline itself) ([internal/api/handler_artifacts.go:55](../../internal/api/handler_artifacts.go)).

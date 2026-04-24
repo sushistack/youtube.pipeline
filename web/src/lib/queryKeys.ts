@@ -7,6 +7,9 @@ export const queryKeys = {
       limit?: number
     }) => ['decisions', 'timeline', params] as const,
   },
+  settings: {
+    detail: () => ['settings', 'detail'] as const,
+  },
   runs: {
     all: ['runs'] as const,
     characters: (run_id: string) => ['runs', 'characters', run_id] as const,

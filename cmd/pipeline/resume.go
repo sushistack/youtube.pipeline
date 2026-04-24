@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/config"
 	"github.com/sushistack/youtube.pipeline/internal/db"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
+	"github.com/sushistack/youtube.pipeline/internal/llmclient"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline"
 	"github.com/sushistack/youtube.pipeline/internal/service"
 
@@ -55,7 +57,15 @@ func runResume(cmd *cobra.Command, runID string, force bool) error {
 	decisionStore := db.NewDecisionStore(database)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
-	if phaseBRunner, err := buildPhaseBRunner(cfg, store, segStore, logger); err == nil {
+	limiterFactory, limiterErr := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
+		DashScope: llmclient.LimitConfig{RequestsPerMinute: 10, MaxConcurrent: 2, AcquireTimeout: 30 * time.Second},
+		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
+		Gemini:    llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
+	}, clock.RealClock{})
+	if limiterErr != nil {
+		return fmt.Errorf("build limiter factory: %w", limiterErr)
+	}
+	if phaseBRunner, err := buildPhaseBRunner(cfg, os.Getenv("DASHSCOPE_API_KEY"), limiterFactory, store, segStore, logger); err == nil {
 		engine.SetPhaseBExecutor(phaseBRunner)
 	} else {
 		logger.Warn("phase b runner unavailable (resume retries disabled for phase b)", "error", err.Error())

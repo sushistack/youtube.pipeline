@@ -34,10 +34,19 @@ type Resumer interface {
 	ResumeWithOptions(ctx context.Context, runID string, opts pipeline.ResumeOptions) (*domain.InconsistencyReport, error)
 }
 
+// SettingsRuntime is the narrow surface RunService needs from the settings
+// service: promote queued settings at safe seams and pin newly-created runs
+// to the effective version so AC-4's per-run guarantee holds.
+type SettingsRuntime interface {
+	PromotePendingAtSafeSeam(ctx context.Context) (bool, error)
+	AssignRunToEffectiveVersion(ctx context.Context, runID string) error
+}
+
 // RunService implements pipeline run lifecycle management.
 type RunService struct {
-	store   RunStore
-	resumer Resumer
+	store    RunStore
+	resumer  Resumer
+	settings SettingsRuntime
 }
 
 // NewRunService creates a RunService backed by the provided RunStore.
@@ -47,15 +56,35 @@ func NewRunService(store RunStore, resumer Resumer) *RunService {
 	return &RunService{store: store, resumer: resumer}
 }
 
+func (s *RunService) SetSettingsRuntime(settings SettingsRuntime) {
+	s.settings = settings
+}
+
 // Create creates a new pipeline run for the given SCP ID and returns it.
 // scpID is validated against scpIDPattern to block path-escape and injection.
+// The order is load-bearing: validation must happen BEFORE any settings
+// side-effect so a malformed request can't drive premature promotion.
 func (s *RunService) Create(ctx context.Context, scpID, outputDir string) (*domain.Run, error) {
 	if !scpIDPattern.MatchString(scpID) {
 		return nil, fmt.Errorf("create run: invalid scp_id %q: %w", scpID, domain.ErrValidation)
 	}
+	if s.settings != nil {
+		if _, err := s.settings.PromotePendingAtSafeSeam(ctx); err != nil {
+			return nil, fmt.Errorf("create run: promote pending settings: %w", err)
+		}
+	}
 	run, err := s.store.Create(ctx, scpID, outputDir)
 	if err != nil {
 		return nil, fmt.Errorf("create run: %w", err)
+	}
+	if s.settings != nil {
+		// Pin the run to the now-effective version so its Phase B executor
+		// resolves to this snapshot even if another save+promotion happens
+		// mid-run. Failure here is non-fatal: the run proceeds, and
+		// LoadRuntimeFilesForRun falls back to the current effective version.
+		if err := s.settings.AssignRunToEffectiveVersion(ctx, run.ID); err != nil {
+			return nil, fmt.Errorf("create run: pin settings version: %w", err)
+		}
 	}
 	return run, nil
 }

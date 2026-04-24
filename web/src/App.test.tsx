@@ -77,6 +77,7 @@ describe('App', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     cleanup()
   })
 
@@ -122,11 +123,69 @@ describe('App', () => {
     window.history.pushState({}, '', '/tuning')
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Tuning' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save settings' })).not.toBeInTheDocument()
 
     cleanup()
     window.history.pushState({}, '', '/settings')
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.url
+      if (url.endsWith('/api/settings')) {
+        return new Response(
+          JSON.stringify({
+            version: 1,
+            data: {
+              config: {
+                writer_model: 'deepseek-chat',
+                critic_model: 'gemini-2.0-flash',
+                image_model: 'qwen-max-vl',
+                tts_model: 'qwen3-tts',
+                tts_voice: 'longhua',
+                tts_audio_format: 'wav',
+                writer_provider: 'deepseek',
+                critic_provider: 'gemini',
+                image_provider: 'dashscope',
+                tts_provider: 'dashscope',
+                dashscope_region: 'cn-beijing',
+                cost_cap_research: 0.5,
+                cost_cap_write: 0.5,
+                cost_cap_image: 2,
+                cost_cap_tts: 1,
+                cost_cap_assemble: 0.1,
+                cost_cap_per_run: 5,
+              },
+              env: {
+                DASHSCOPE_API_KEY: { configured: true },
+                DEEPSEEK_API_KEY: { configured: false },
+                GEMINI_API_KEY: { configured: true },
+              },
+              budget: {
+                source: { kind: 'none', label: 'No run telemetry available yet' },
+                current_spend_usd: 0,
+                soft_cap_usd: 4,
+                hard_cap_usd: 5,
+                progress_ratio: 0,
+                status: 'safe',
+              },
+              application: { status: 'effective', effective_version: 1 },
+            },
+          }),
+          {
+            headers: { 'Content-Type': 'application/json', ETag: '"1"' },
+            status: 200,
+          },
+        )
+      }
+      if (url.includes('/api/decisions')) {
+        return new Response(
+          JSON.stringify({ version: 1, data: { items: [], next_cursor: null } }),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 },
+        )
+      }
+      return new Response('not found', { status: 404 })
+    })
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Save settings' })).toBeInTheDocument()
   })
 
   it('redirects unknown routes to /production', async () => {
