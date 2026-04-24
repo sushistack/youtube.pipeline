@@ -9,12 +9,22 @@ import (
 	"time"
 )
 
+// PairResult records the evaluation outcome for one Golden fixture pair.
+type PairResult struct {
+	Index       int    `json:"index"`
+	NegVerdict  string `json:"neg_verdict"`
+	PosVerdict  string `json:"pos_verdict"`
+	NegMissed   bool   `json:"neg_missed,omitempty"`
+	FalseReject bool   `json:"false_reject,omitempty"`
+}
+
 // Report is the outcome of a full Golden run.
 type Report struct {
-	Recall           float64 `json:"recall"`
-	TotalNegative    int     `json:"total_negative"`
-	DetectedNegative int     `json:"detected_negative"`
-	FalseRejects     int     `json:"false_rejects"`
+	Recall           float64      `json:"recall"`
+	TotalNegative    int          `json:"total_negative"`
+	DetectedNegative int          `json:"detected_negative"`
+	FalseRejects     int          `json:"false_rejects"`
+	Pairs            []PairResult `json:"pairs,omitempty"`
 }
 
 // RunGolden evaluates all registered pairs and computes recall against the
@@ -52,12 +62,21 @@ func RunGolden(ctx context.Context, projectRoot string, evaluator Evaluator, now
 		}
 
 		report.TotalNegative++
-		if negResult.Verdict == "retry" {
+		negMissed := negResult.Verdict != "retry"
+		falseReject := posResult.Verdict == "retry"
+		if !negMissed {
 			report.DetectedNegative++
 		}
-		if posResult.Verdict == "retry" {
+		if falseReject {
 			report.FalseRejects++
 		}
+		report.Pairs = append(report.Pairs, PairResult{
+			Index:       entry.Index,
+			NegVerdict:  negResult.Verdict,
+			PosVerdict:  posResult.Verdict,
+			NegMissed:   negMissed,
+			FalseReject: falseReject,
+		})
 	}
 
 	if report.TotalNegative > 0 {

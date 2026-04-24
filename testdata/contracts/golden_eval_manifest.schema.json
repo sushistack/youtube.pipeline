@@ -17,7 +17,22 @@
         "recall": { "type": "number", "minimum": 0, "maximum": 1 },
         "total_negative": { "type": "integer", "minimum": 0 },
         "detected_negative": { "type": "integer", "minimum": 0 },
-        "false_rejects": { "type": "integer", "minimum": 0 }
+        "false_rejects": { "type": "integer", "minimum": 0 },
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["index", "neg_verdict", "pos_verdict"],
+            "additionalProperties": false,
+            "properties": {
+              "index": { "type": "integer", "minimum": 1 },
+              "neg_verdict": { "type": "string" },
+              "pos_verdict": { "type": "string" },
+              "neg_missed": { "type": "boolean" },
+              "false_reject": { "type": "boolean" }
+            }
+          }
+        }
       }
     },
     "pairs": {

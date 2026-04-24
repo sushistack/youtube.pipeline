@@ -66,6 +66,68 @@ jobs:
           # No API keys — Layer 3 defense
           CI: true
 
+  # ── Golden / Shadow CI Quality Gates (Story 10.4) ──────────────────────────
+  # Runs after test-go so Go build cache is already warm. Uses a
+  # fixture-expectation evaluator (no LLM API keys) so it is safe to run in
+  # the no-secrets CI posture established by Story 1.7.
+  #
+  # Watched paths (AC-1): changes to any of these always execute the gate on
+  # pull_request. On push to non-main branches the gate also runs so regressions
+  # are caught before merge. Unrelated web-only changes (web/**) do not touch
+  # these paths and therefore do not trigger extra quality-gate work when GitHub
+  # path filtering is active.
+  #
+  # Path mapping (AC-1 documentation requirement): the planning shorthand
+  # "internal/pipeline/agents/critic*" maps to the current repository layout:
+  #   - internal/critic/eval/   — evaluator, runner, shadow, manifest
+  #   - docs/prompts/scenario/critic_agent.md — prompt file
+  #   - testdata/golden/        — Golden fixture set
+  quality-gate:
+    needs: [test-go]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history on PRs to detect changed files reliably.
+          fetch-depth: 0
+
+      # Detect whether any Critic-related file changed. On non-PR events
+      # (push) we always run the gate. On pull_request we skip when only
+      # unrelated files (e.g. web/**) changed.
+      - name: Detect Critic-related changes
+        id: critic_changed
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.sha }}"
+          if git diff --name-only "$BASE" "$HEAD" | grep -qE \
+            '(^internal/critic/|^docs/prompts/scenario/critic_agent\.md|^testdata/golden/|^\.github/workflows/ci\.yml|^cmd/quality-gate/)'; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.critic_changed.outputs.changed == 'true'
+        with:
+          go-version: '1.25.7'
+          cache: true
+
+      - name: Run Golden quality gate
+        if: steps.critic_changed.outputs.changed == 'true'
+        run: CGO_ENABLED=0 go run ./cmd/quality-gate/ --gate=golden --project-root=.
+
+      - name: Run Shadow quality gate
+        if: steps.critic_changed.outputs.changed == 'true' && success()
+        run: CGO_ENABLED=0 go run ./cmd/quality-gate/ --gate=shadow --project-root=.
+
+      - name: Quality gate skipped (no Critic-related changes)
+        if: steps.critic_changed.outputs.changed != 'true'
+        run: echo "No Critic-related changes detected — quality gate skipped."
+
   build:
     needs: [test-go, test-web]
     runs-on: ubuntu-latest

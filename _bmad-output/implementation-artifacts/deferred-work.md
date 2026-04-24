@@ -1,5 +1,11 @@
 # Deferred Work
 
+## Deferred from: code review of 10-4-golden-shadow-ci-quality-gates (2026-04-24)
+
+- **`RunGolden` mutates `testdata/golden/eval/manifest.json` on every invocation** — on developer machines `go run ./cmd/quality-gate/` creates spurious dirty-tree diffs; in CI the workspace is ephemeral so writes are discarded. Pre-existing behavior in `internal/critic/eval`; a `--dry-run` flag for the gate command would address the developer-machine case ([internal/critic/eval/runner.go:73-75](../../internal/critic/eval/runner.go)).
+- **`go-version: '1.25.7'` does not exist as a Go release** — `actions/setup-go` may silently resolve to the closest available version. Pre-existing in the `test-go` job; the `quality-gate` job inherits the same string ([.github/workflows/ci.yml:116](../../.github/workflows/ci.yml)).
+- **No integration test proving `main()` exit path on Golden runner error** — `TestGoldenGate_EvaluatorErrorFails` confirms `result.Err != nil`; the `hardFail → os.Exit(1)` path in `main()` is trivially correct but unexercised end-to-end. Testing `os.Exit` requires a subprocess harness. Add when CI test infrastructure gains subprocess support ([cmd/quality-gate/main.go](../../cmd/quality-gate/main.go)).
+
 ## Deferred from: code review of 10-1-settings-dashboard-llm-provider-config (2026-04-24)
 
 - **DF1: `dynamicPhaseBExecutor` re-parses `config.yaml`/`.env` from disk every invocation** — transient I/O errors can fail active stages; tied to D7 caching decision ([cmd/pipeline/serve.go:50-54](../../cmd/pipeline/serve.go)).
