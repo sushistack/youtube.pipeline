@@ -10,6 +10,12 @@ export const queryKeys = {
   settings: {
     detail: () => ['settings', 'detail'] as const,
   },
+  tuning: {
+    prompt: () => ['tuning', 'prompt'] as const,
+    golden: () => ['tuning', 'golden'] as const,
+    calibration: (params: { window?: number; limit?: number }) =>
+      ['tuning', 'calibration', params] as const,
+  },
   runs: {
     all: ['runs'] as const,
     characters: (run_id: string) => ['runs', 'characters', run_id] as const,

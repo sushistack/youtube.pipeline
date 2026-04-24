@@ -1150,3 +1150,64 @@ func TestRunStore_UpdateOutputPath_ReturnsValidationErrorForEmptyRunID(t *testin
 		t.Fatalf("want ErrValidation, got %v", err)
 	}
 }
+
+func TestRunStore_Create_LeavesPromptVersionNullByDefault(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	run, err := store.Create(context.Background(), "049", t.TempDir())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if run.CriticPromptVersion != nil {
+		t.Errorf("expected nil critic_prompt_version, got %q", *run.CriticPromptVersion)
+	}
+	if run.CriticPromptHash != nil {
+		t.Errorf("expected nil critic_prompt_hash, got %q", *run.CriticPromptHash)
+	}
+}
+
+func TestRunStore_CreateWithPromptVersion_StampsColumns(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	tag := &db.PromptVersionTag{
+		Version: "20260424T031522Z-f6b34b6",
+		Hash:    "abc123def",
+	}
+	run, err := store.CreateWithPromptVersion(context.Background(), "049", t.TempDir(), tag)
+	if err != nil {
+		t.Fatalf("CreateWithPromptVersion: %v", err)
+	}
+	if run.CriticPromptVersion == nil || *run.CriticPromptVersion != tag.Version {
+		t.Errorf("want version %q, got %v", tag.Version, run.CriticPromptVersion)
+	}
+	if run.CriticPromptHash == nil || *run.CriticPromptHash != tag.Hash {
+		t.Errorf("want hash %q, got %v", tag.Hash, run.CriticPromptHash)
+	}
+
+	// Reload via Get to confirm persistence, not just the create-time struct.
+	fetched, err := store.Get(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if fetched.CriticPromptVersion == nil || *fetched.CriticPromptVersion != tag.Version {
+		t.Errorf("get: want version %q, got %v", tag.Version, fetched.CriticPromptVersion)
+	}
+}
+
+func TestRunStore_CreateWithPromptVersion_NilTagKeepsColumnsNull(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	run, err := store.CreateWithPromptVersion(context.Background(), "049", t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("CreateWithPromptVersion: %v", err)
+	}
+	if run.CriticPromptVersion != nil || run.CriticPromptHash != nil {
+		t.Errorf("want both nil, got version=%v hash=%v", run.CriticPromptVersion, run.CriticPromptHash)
+	}
+}

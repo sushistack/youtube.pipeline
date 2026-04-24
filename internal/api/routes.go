@@ -15,6 +15,7 @@ type Dependencies struct {
 	Artifacts *ArtifactsHandler // NEW
 	Character *CharacterHandler
 	Scene     *SceneHandler
+	Tuning    *TuningHandler
 	HITL      *service.HITLService
 	Logger    *slog.Logger
 	WebFS     fs.FS
@@ -55,6 +56,18 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("PUT /api/settings", deps.Settings.Put)
 	api.HandleFunc("POST /api/settings/reset", deps.Settings.ResetToDefaults)
 
+	// Tuning surface — Story 10.2.
+	if deps.Tuning != nil {
+		api.HandleFunc("GET /api/tuning/critic-prompt", deps.Tuning.GetPrompt)
+		api.HandleFunc("PUT /api/tuning/critic-prompt", deps.Tuning.PutPrompt)
+		api.HandleFunc("GET /api/tuning/golden", deps.Tuning.GetGolden)
+		api.HandleFunc("POST /api/tuning/golden/run", deps.Tuning.RunGolden)
+		api.HandleFunc("POST /api/tuning/golden/pairs", deps.Tuning.AddGoldenPair)
+		api.HandleFunc("POST /api/tuning/shadow/run", deps.Tuning.RunShadow)
+		api.HandleFunc("GET /api/tuning/calibration", deps.Tuning.GetCalibration)
+		api.HandleFunc("POST /api/tuning/fast-feedback", deps.Tuning.FastFeedback)
+	}
+
 	apiChain := Chain(api,
 		WithRequestID,
 		WithRecover,
@@ -71,17 +84,20 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 
 // NewDependencies constructs a Dependencies value wiring the standard objects.
 // outputDir is the server-configured run output base (never client-controlled).
+// tuning may be nil in deployments that haven't wired the Tuning surface; in
+// that case /api/tuning/* routes are simply not registered.
 func NewDependencies(
 	svc *service.RunService,
 	settings *service.SettingsService,
 	hitl *service.HITLService,
 	characters *service.CharacterService,
 	scenes *service.SceneService,
+	tuning TuningService,
 	outputDir string,
 	logger *slog.Logger,
 	webFS fs.FS,
 ) *Dependencies {
-	return &Dependencies{
+	deps := &Dependencies{
 		Run:       NewRunHandler(svc, hitl, outputDir, logger),
 		Settings:  NewSettingsHandler(settings),
 		Artifacts: NewArtifactsHandler(svc, outputDir),
@@ -91,4 +107,8 @@ func NewDependencies(
 		WebFS:     webFS,
 		OutputDir: outputDir,
 	}
+	if tuning != nil {
+		deps.Tuning = NewTuningHandler(tuning)
+	}
+	return deps
 }

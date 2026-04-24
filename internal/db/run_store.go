@@ -39,6 +39,14 @@ func NewRunStore(db *sql.DB) *RunStore {
 // foreseeable concurrency level for a single-operator desktop tool.
 const maxCreateRetries = 3
 
+// PromptVersionTag carries the Critic prompt version metadata stamped on a
+// run at creation time. Both fields are required together: Story 10.2 AC-3
+// treats version+hash as one immutable unit.
+type PromptVersionTag struct {
+	Version string
+	Hash    string
+}
+
 // Create inserts a new run row and creates the per-run output directory.
 // Run ID is derived as scp-{scpID}-run-{n} where n = COUNT(*)+1 for this scpID.
 // The INSERT and ID calculation are wrapped in a transaction; on rare
@@ -47,9 +55,22 @@ const maxCreateRetries = 3
 // BEFORE the transaction commits so a failed mkdir rolls back the DB row,
 // avoiding orphans.
 func (s *RunStore) Create(ctx context.Context, scpID, outputDir string) (*domain.Run, error) {
+	return s.CreateWithPromptVersion(ctx, scpID, outputDir, nil)
+}
+
+// CreateWithPromptVersion is the AC-3 variant of Create that also stamps the
+// active Critic prompt version/hash on the new row. When tag is nil the
+// behavior is identical to Create — the columns remain NULL, matching the
+// "existing rows stay NULL" rule for runs created before a prompt was ever
+// saved through the Tuning surface.
+func (s *RunStore) CreateWithPromptVersion(
+	ctx context.Context,
+	scpID, outputDir string,
+	tag *PromptVersionTag,
+) (*domain.Run, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxCreateRetries; attempt++ {
-		run, err := s.createOnce(ctx, scpID, outputDir)
+		run, err := s.createOnce(ctx, scpID, outputDir, tag)
 		if err == nil {
 			return run, nil
 		}
@@ -61,7 +82,7 @@ func (s *RunStore) Create(ctx context.Context, scpID, outputDir string) (*domain
 	return nil, fmt.Errorf("create run after %d retries: %w", maxCreateRetries, lastErr)
 }
 
-func (s *RunStore) createOnce(ctx context.Context, scpID, outputDir string) (*domain.Run, error) {
+func (s *RunStore) createOnce(ctx context.Context, scpID, outputDir string, tag *PromptVersionTag) (*domain.Run, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
@@ -77,9 +98,17 @@ func (s *RunStore) createOnce(ctx context.Context, scpID, outputDir string) (*do
 
 	id := fmt.Sprintf("scp-%s-run-%d", scpID, seq)
 
+	var promptVersion, promptHash sql.NullString
+	if tag != nil && tag.Version != "" {
+		promptVersion = sql.NullString{String: tag.Version, Valid: true}
+		promptHash = sql.NullString{String: tag.Hash, Valid: true}
+	}
+
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO runs (id, scp_id, stage, status) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO runs (id, scp_id, stage, status, critic_prompt_version, critic_prompt_hash)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
 		id, scpID, string(domain.StagePending), string(domain.StatusPending),
+		promptVersion, promptHash,
 	); err != nil {
 		return nil, fmt.Errorf("insert run: %w", err)
 	}
@@ -103,15 +132,17 @@ func (s *RunStore) createOnce(ctx context.Context, scpID, outputDir string) (*do
 }
 
 // isPKCollision reports whether err is a SQLite primary-key constraint
-// violation. Uses string matching because the driver doesn't export typed
-// error codes.
+// violation on runs.id. Uses string matching because the driver doesn't
+// export typed error codes. The match is intentionally exact: earlier
+// variants also accepted any message mentioning "constraint failed" and
+// "runs.id" together, which spuriously matched unrelated FK violations
+// and triggered retry loops on non-recoverable errors.
 func isPKCollision(err error) bool {
 	if err == nil {
 		return false
 	}
 	s := err.Error()
-	return strings.Contains(s, "UNIQUE constraint failed: runs.id") ||
-		strings.Contains(s, "constraint failed") && strings.Contains(s, "runs.id")
+	return strings.Contains(s, "UNIQUE constraint failed: runs.id")
 }
 
 // Get returns the run with the given ID, or domain.ErrNotFound if absent.
@@ -120,7 +151,9 @@ func (s *RunStore) Get(ctx context.Context, id string) (*domain.Run, error) {
 		`SELECT id, scp_id, stage, status, retry_count, retry_reason,
 		        critic_score, cost_usd, token_in, token_out, duration_ms,
 		        human_override, scenario_path, character_query_key,
-		        selected_character_id, frozen_descriptor, created_at, updated_at
+		        selected_character_id, frozen_descriptor,
+		        critic_prompt_version, critic_prompt_hash,
+		        created_at, updated_at
 		   FROM runs WHERE id = ?`, id)
 
 	run, err := scanRun(row)
@@ -139,7 +172,9 @@ func (s *RunStore) List(ctx context.Context) ([]*domain.Run, error) {
 		`SELECT id, scp_id, stage, status, retry_count, retry_reason,
 		        critic_score, cost_usd, token_in, token_out, duration_ms,
 		        human_override, scenario_path, character_query_key,
-		        selected_character_id, frozen_descriptor, created_at, updated_at
+		        selected_character_id, frozen_descriptor,
+		        critic_prompt_version, critic_prompt_hash,
+		        created_at, updated_at
 		   FROM runs ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list runs: %w", err)
@@ -694,6 +729,8 @@ func scanRun(s scanner) (*domain.Run, error) {
 	var characterQueryKey sql.NullString
 	var selectedCharacterID sql.NullString
 	var frozenDescriptor sql.NullString
+	var criticPromptVersion sql.NullString
+	var criticPromptHash sql.NullString
 	var humanOverride int
 
 	err := s.Scan(
@@ -701,7 +738,9 @@ func scanRun(s scanner) (*domain.Run, error) {
 		&r.RetryCount, &retryReason,
 		&criticScore, &r.CostUSD, &r.TokenIn, &r.TokenOut, &r.DurationMs,
 		&humanOverride, &scenarioPath, &characterQueryKey, &selectedCharacterID,
-		&frozenDescriptor, &r.CreatedAt, &r.UpdatedAt,
+		&frozenDescriptor,
+		&criticPromptVersion, &criticPromptHash,
+		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -725,6 +764,12 @@ func scanRun(s scanner) (*domain.Run, error) {
 	}
 	if frozenDescriptor.Valid {
 		r.FrozenDescriptor = &frozenDescriptor.String
+	}
+	if criticPromptVersion.Valid {
+		r.CriticPromptVersion = &criticPromptVersion.String
+	}
+	if criticPromptHash.Valid {
+		r.CriticPromptHash = &criticPromptHash.String
 	}
 	return &r, nil
 }

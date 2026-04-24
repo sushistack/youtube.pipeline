@@ -1,0 +1,172 @@
+[
+  {
+    "fixture_id": "ff_sample_00",
+    "kind": "positive",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF00",
+      "title": "Fast feedback sample 0 — strong hook",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_hook", "narration": "A calm corridor ended without warning.", "fact_tags": [{"key": "class", "content": "euclid"}], "mood": "tension", "entity_visible": true, "location": "corridor", "characters_present": ["D-class"], "color_palette": "dark_gray", "atmosphere": "uneasy"},
+        {"scene_num": 2, "act_id": "act_close", "narration": "The containment held — until it didn't.", "fact_tags": [{"key": "status", "content": "contained"}], "mood": "ominous", "entity_visible": false, "location": "observation room", "characters_present": ["researcher"], "color_palette": "cold_white", "atmosphere": "tense"}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "pass",
+    "category": "fast_feedback"
+  },
+  {
+    "fixture_id": "ff_sample_01",
+    "kind": "positive",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF01",
+      "title": "Fast feedback sample 1 — varied scene moods",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_hook", "narration": "The photograph refused to develop.", "fact_tags": [{"key": "object", "content": "photo"}], "mood": "curious", "entity_visible": false, "location": "darkroom", "characters_present": ["archivist"], "color_palette": "amber_glow", "atmosphere": "quiet"},
+        {"scene_num": 2, "act_id": "act_lore", "narration": "Archival notes traced it to 1974.", "fact_tags": [{"key": "year", "content": "1974"}], "mood": "investigative", "entity_visible": false, "location": "archive", "characters_present": ["archivist"], "color_palette": "sepia", "atmosphere": "dusty"}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "pass",
+    "category": "fast_feedback"
+  },
+  {
+    "fixture_id": "ff_sample_02",
+    "kind": "positive",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF02",
+      "title": "Fast feedback sample 2 — fact-dense",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_hook", "narration": "Subject exhibits coherent self-preservation reflexes.", "fact_tags": [{"key": "behavior", "content": "reflexive"}], "mood": "clinical", "entity_visible": true, "location": "lab", "characters_present": ["researcher"], "color_palette": "neutral", "atmosphere": "sterile"},
+        {"scene_num": 2, "act_id": "act_procedure", "narration": "Protocol 7-B mandates dual-observer sessions.", "fact_tags": [{"key": "protocol", "content": "7-B"}], "mood": "procedural", "entity_visible": false, "location": "lab", "characters_present": ["two researchers"], "color_palette": "neutral", "atmosphere": "routine"}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "pass",
+    "category": "fast_feedback"
+  },
+  {
+    "fixture_id": "ff_sample_03",
+    "kind": "negative",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF03",
+      "title": "Fast feedback sample 3 — anti-progress loop",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_hook", "narration": "The door opened. The door opened. The door opened.", "fact_tags": [], "mood": "flat", "entity_visible": false, "location": "", "characters_present": [], "color_palette": "", "atmosphere": ""},
+        {"scene_num": 2, "act_id": "act_close", "narration": "Repeat.", "fact_tags": [], "mood": "flat", "entity_visible": false, "location": "", "characters_present": [], "color_palette": "", "atmosphere": ""}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "retry",
+    "category": "fast_feedback"
+  },
+  {
+    "fixture_id": "ff_sample_04",
+    "kind": "negative",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF04",
+      "title": "Fast feedback sample 4 — off-topic drift",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_hook", "narration": "Let me tell you about my summer vacation instead.", "fact_tags": [], "mood": "casual", "entity_visible": false, "location": "beach", "characters_present": [], "color_palette": "sunny", "atmosphere": "lighthearted"},
+        {"scene_num": 2, "act_id": "act_close", "narration": "Anyway, back to the anomaly — maybe later.", "fact_tags": [], "mood": "casual", "entity_visible": false, "location": "beach", "characters_present": [], "color_palette": "sunny", "atmosphere": "lighthearted"}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "retry",
+    "category": "fast_feedback"
+  },
+  {
+    "fixture_id": "ff_sample_05",
+    "kind": "positive",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF05",
+      "title": "Fast feedback sample 5 — hook plus lore",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_hook", "narration": "The photograph still blinks when no one is watching.", "fact_tags": [{"key": "anomaly", "content": "animation"}], "mood": "dread", "entity_visible": true, "location": "vault", "characters_present": ["archivist"], "color_palette": "blue_shadow", "atmosphere": "uneasy"},
+        {"scene_num": 2, "act_id": "act_lore", "narration": "Archived by Dr. Kwon in 1998.", "fact_tags": [{"key": "year", "content": "1998"}], "mood": "investigative", "entity_visible": false, "location": "vault", "characters_present": ["archivist"], "color_palette": "muted", "atmosphere": "cold"}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "pass",
+    "category": "fast_feedback"
+  },
+  {
+    "fixture_id": "ff_sample_06",
+    "kind": "positive",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF06",
+      "title": "Fast feedback sample 6 — procedural with stakes",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_hook", "narration": "Three observers stood at equal distance. None blinked.", "fact_tags": [{"key": "protocol", "content": "3-observer"}], "mood": "tense", "entity_visible": true, "location": "observation cell", "characters_present": ["three observers"], "color_palette": "fluorescent", "atmosphere": "strained"},
+        {"scene_num": 2, "act_id": "act_threat", "narration": "A single lapse meant the end of the test.", "fact_tags": [{"key": "consequence", "content": "test termination"}], "mood": "dread", "entity_visible": false, "location": "observation cell", "characters_present": ["observers"], "color_palette": "red_alert", "atmosphere": "hostile"}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "pass",
+    "category": "fast_feedback"
+  },
+  {
+    "fixture_id": "ff_sample_07",
+    "kind": "negative",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF07",
+      "title": "Fast feedback sample 7 — fabricated citation",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_lore", "narration": "According to Reuters, the Foundation publicly announced SCP-FF07 in 2024.", "fact_tags": [{"key": "source", "content": "Reuters"}], "mood": "authoritative", "entity_visible": false, "location": "press room", "characters_present": ["journalist"], "color_palette": "daylight", "atmosphere": "formal"},
+        {"scene_num": 2, "act_id": "act_close", "narration": "This is obviously untrue — the Foundation has never spoken to the press.", "fact_tags": [], "mood": "contradictory", "entity_visible": false, "location": "press room", "characters_present": [], "color_palette": "daylight", "atmosphere": "neutral"}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "retry",
+    "category": "fast_feedback"
+  },
+  {
+    "fixture_id": "ff_sample_08",
+    "kind": "positive",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF08",
+      "title": "Fast feedback sample 8 — varied emotional beats",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_hook", "narration": "She smiled. It was the wrong smile.", "fact_tags": [{"key": "expression", "content": "anomalous"}], "mood": "uncanny", "entity_visible": true, "location": "cafeteria", "characters_present": ["subject"], "color_palette": "warm", "atmosphere": "strange"},
+        {"scene_num": 2, "act_id": "act_close", "narration": "The interview ended early.", "fact_tags": [{"key": "outcome", "content": "early termination"}], "mood": "subdued", "entity_visible": false, "location": "office", "characters_present": ["interviewer"], "color_palette": "gray", "atmosphere": "resigned"}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "pass",
+    "category": "fast_feedback"
+  },
+  {
+    "fixture_id": "ff_sample_09",
+    "kind": "positive",
+    "checkpoint": "post_writer",
+    "input": {
+      "scp_id": "SCP-FF09",
+      "title": "Fast feedback sample 9 — closing beat with fourth-wall",
+      "scenes": [
+        {"scene_num": 1, "act_id": "act_hook", "narration": "You have read far enough to be implicated.", "fact_tags": [], "mood": "fourth_wall", "entity_visible": false, "location": "reader space", "characters_present": ["reader"], "color_palette": "screen_glow", "atmosphere": "immersive"},
+        {"scene_num": 2, "act_id": "act_close", "narration": "Close the file. The file will remember.", "fact_tags": [], "mood": "ominous", "entity_visible": false, "location": "reader space", "characters_present": ["reader"], "color_palette": "dim", "atmosphere": "unsettling"}
+      ],
+      "metadata": {"language": "en", "scene_count": 2, "writer_model": "ff-sample", "writer_provider": "ff", "prompt_template": "ff-v1", "format_guide_template": "ff-v1", "forbidden_terms_version": "v1"},
+      "source_version": "ff-fixture-v1"
+    },
+    "expected_verdict": "pass",
+    "category": "fast_feedback"
+  }
+]

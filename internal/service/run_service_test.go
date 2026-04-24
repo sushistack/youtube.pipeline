@@ -219,3 +219,74 @@ func TestRunService_Resume_PropagatesResumerError(t *testing.T) {
 		t.Errorf("expected ErrConflict propagation; got %v", err)
 	}
 }
+
+// fakePromptVersionProvider supplies a canned active prompt tag for
+// AC-3 stamping tests.
+type fakePromptVersionProvider struct {
+	tag *db.PromptVersionTag
+}
+
+func (f *fakePromptVersionProvider) ActivePromptVersion() *db.PromptVersionTag {
+	if f.tag == nil {
+		return nil
+	}
+	v := *f.tag
+	return &v
+}
+
+func TestRunService_Create_StampsActivePromptVersion(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	svc.SetPromptVersionProvider(&fakePromptVersionProvider{
+		tag: &db.PromptVersionTag{Version: "20260424T000000Z-abc1234", Hash: "deadbeef"},
+	})
+
+	run, err := svc.Create(context.Background(), "049", t.TempDir())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if run.CriticPromptVersion == nil || *run.CriticPromptVersion != "20260424T000000Z-abc1234" {
+		t.Errorf("critic_prompt_version = %v, want 20260424T000000Z-abc1234", run.CriticPromptVersion)
+	}
+	if run.CriticPromptHash == nil || *run.CriticPromptHash != "deadbeef" {
+		t.Errorf("critic_prompt_hash = %v, want deadbeef", run.CriticPromptHash)
+	}
+}
+
+func TestRunService_Create_NilProviderLeavesColumnsNull(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	// Provider intentionally nil → "no prompt saved this session" path.
+
+	run, err := svc.Create(context.Background(), "049", t.TempDir())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if run.CriticPromptVersion != nil {
+		t.Errorf("want nil version, got %q", *run.CriticPromptVersion)
+	}
+	if run.CriticPromptHash != nil {
+		t.Errorf("want nil hash, got %q", *run.CriticPromptHash)
+	}
+}
+
+func TestRunService_Create_ProviderReturningNilLeavesColumnsNull(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	svc.SetPromptVersionProvider(&fakePromptVersionProvider{tag: nil})
+
+	run, err := svc.Create(context.Background(), "049", t.TempDir())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if run.CriticPromptVersion != nil || run.CriticPromptHash != nil {
+		t.Errorf("want both nil, got version=%v hash=%v",
+			run.CriticPromptVersion, run.CriticPromptHash)
+	}
+}

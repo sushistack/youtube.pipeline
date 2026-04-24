@@ -48,3 +48,39 @@ test('loads the settings workspace alongside the timeline', async ({ page }) => 
   await expect(page.getByRole('button', { name: 'Save settings' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Timeline' })).toBeVisible()
 })
+
+test('loads the tuning tab with six sections and Shadow gated behind Golden', async ({
+  page,
+}) => {
+  await page.goto('/tuning')
+  const onboarding = page.getByRole('button', { name: 'Continue to workspace' })
+  if (await onboarding.isVisible().catch(() => false)) {
+    await onboarding.click()
+  }
+
+  await expect(page.getByRole('heading', { name: 'Tuning', level: 1 })).toBeVisible()
+
+  for (const label of [
+    'Critic Prompt',
+    'Fast Feedback',
+    'Golden Eval',
+    'Shadow Eval',
+    'Fixture Management',
+    'Calibration',
+  ]) {
+    await expect(page.getByRole('heading', { name: label, level: 2 })).toBeVisible()
+  }
+
+  // The prompt editor loads through the backend and should be fillable.
+  await expect(page.getByLabel('Critic prompt body')).toBeVisible()
+
+  // Shadow must start disabled until Golden passes in this session (AC-6).
+  const shadowHeading = page.getByRole('heading', { name: 'Shadow Eval' })
+  const shadowSection = page
+    .locator('section')
+    .filter({ has: shadowHeading })
+    .first()
+  await expect(
+    shadowSection.getByRole('button', { name: /Run Shadow eval/i }),
+  ).toBeDisabled()
+})

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/sushistack/youtube.pipeline/internal/db"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline"
 )
@@ -19,6 +20,7 @@ var scpIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // Defined here (consumer) and implemented by internal/db.RunStore.
 type RunStore interface {
 	Create(ctx context.Context, scpID, outputDir string) (*domain.Run, error)
+	CreateWithPromptVersion(ctx context.Context, scpID, outputDir string, tag *db.PromptVersionTag) (*domain.Run, error)
 	Get(ctx context.Context, id string) (*domain.Run, error)
 	List(ctx context.Context) ([]*domain.Run, error)
 	Cancel(ctx context.Context, id string) error
@@ -47,6 +49,7 @@ type RunService struct {
 	store    RunStore
 	resumer  Resumer
 	settings SettingsRuntime
+	prompt   PromptVersionProvider
 }
 
 // NewRunService creates a RunService backed by the provided RunStore.
@@ -58,6 +61,15 @@ func NewRunService(store RunStore, resumer Resumer) *RunService {
 
 func (s *RunService) SetSettingsRuntime(settings SettingsRuntime) {
 	s.settings = settings
+}
+
+// SetPromptVersionProvider wires the Story 10.2 AC-3 stamping path. When
+// provider is non-nil, Create reads the active Critic prompt version tag
+// at run-creation time and persists it on the new row. A nil provider
+// (tests, headless flows, legacy call sites) leaves the columns NULL,
+// matching "existing runs stay NULL" behavior.
+func (s *RunService) SetPromptVersionProvider(provider PromptVersionProvider) {
+	s.prompt = provider
 }
 
 // Create creates a new pipeline run for the given SCP ID and returns it.
@@ -73,7 +85,11 @@ func (s *RunService) Create(ctx context.Context, scpID, outputDir string) (*doma
 			return nil, fmt.Errorf("create run: promote pending settings: %w", err)
 		}
 	}
-	run, err := s.store.Create(ctx, scpID, outputDir)
+	var tag *db.PromptVersionTag
+	if s.prompt != nil {
+		tag = s.prompt.ActivePromptVersion()
+	}
+	run, err := s.store.CreateWithPromptVersion(ctx, scpID, outputDir, tag)
 	if err != nil {
 		return nil, fmt.Errorf("create run: %w", err)
 	}

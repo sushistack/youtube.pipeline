@@ -31,6 +31,8 @@ export const runSummarySchema = z.object({
   character_query_key: z.string().nullable().optional(),
   cost_usd: z.number().nonnegative(),
   created_at: z.string().min(1),
+  critic_prompt_hash: z.string().nullable().optional(),
+  critic_prompt_version: z.string().nullable().optional(),
   critic_score: z.number().min(0).nullable().optional(),
   duration_ms: z.number().int().nonnegative(),
   frozen_descriptor: z.string().nullable().optional(),

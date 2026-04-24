@@ -22,6 +22,9 @@ type fakeRunStore struct {
 func (f *fakeRunStore) Create(_ context.Context, _, _ string) (*domain.Run, error) {
 	return nil, errors.New("unused")
 }
+func (f *fakeRunStore) CreateWithPromptVersion(_ context.Context, _, _ string, _ *db.PromptVersionTag) (*domain.Run, error) {
+	return nil, errors.New("unused")
+}
 func (f *fakeRunStore) Get(_ context.Context, id string) (*domain.Run, error) {
 	r, ok := f.runs[id]
 	if !ok {

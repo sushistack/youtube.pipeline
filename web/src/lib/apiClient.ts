@@ -22,6 +22,15 @@ import {
   settingsResponseSchema,
   type SettingsConfig,
 } from "../contracts/settingsContracts";
+import {
+  calibrationResponseSchema,
+  criticPromptResponseSchema,
+  fastFeedbackResponseSchema,
+  goldenPairResponseSchema,
+  goldenReportResponseSchema,
+  goldenStateResponseSchema,
+  shadowReportResponseSchema,
+} from "../contracts/tuningContracts";
 
 const API_ROOT = "/api";
 
@@ -374,4 +383,70 @@ export function resetSettingsToDefaults() {
   return apiRequest("/settings/reset", settingsResponseSchema, {
     method: "POST",
   });
+}
+
+// --- Story 10.2: Tuning surface ---
+
+export function fetchCriticPrompt() {
+  return apiRequest("/tuning/critic-prompt", criticPromptResponseSchema);
+}
+
+export function saveCriticPrompt(body: string) {
+  return apiRequest("/tuning/critic-prompt", criticPromptResponseSchema, {
+    method: "PUT",
+    body: JSON.stringify({ body }),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export function fetchGoldenState() {
+  return apiRequest("/tuning/golden", goldenStateResponseSchema);
+}
+
+export function runGolden() {
+  return apiRequest("/tuning/golden/run", goldenReportResponseSchema, {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export async function addGoldenPair(positive: File, negative: File) {
+  const form = new FormData();
+  form.append("positive", positive);
+  form.append("negative", negative);
+  const payload = await fetchPayloadOnly("/tuning/golden/pairs", {
+    method: "POST",
+    body: form,
+  });
+  return goldenPairResponseSchema.parse(payload).data;
+}
+
+export function runShadow() {
+  return apiRequest("/tuning/shadow/run", shadowReportResponseSchema, {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export function runFastFeedback() {
+  return apiRequest("/tuning/fast-feedback", fastFeedbackResponseSchema, {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export function fetchCalibration(params?: { window?: number; limit?: number }) {
+  const search = new URLSearchParams();
+  if (params?.window != null) {
+    search.set("window", String(params.window));
+  }
+  if (params?.limit != null) {
+    search.set("limit", String(params.limit));
+  }
+  const query = search.toString();
+  const path = query.length > 0 ? `/tuning/calibration?${query}` : "/tuning/calibration";
+  return apiRequest(path, calibrationResponseSchema);
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/api"
 	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/config"
+	"github.com/sushistack/youtube.pipeline/internal/critic/eval"
 	"github.com/sushistack/youtube.pipeline/internal/db"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient"
@@ -207,7 +208,25 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	sceneSvc := service.NewSceneService(store, segStore, decisionStore, clock.RealClock{})
 	sceneSvc.SetSceneRegenerator(service.NewNoOpSceneRegenerator(segStore))
 
-	deps := api.NewDependencies(svc, settingsSvc, hitlSvc, characterSvc, sceneSvc, cfg.OutputDir, logger, web.FS)
+	// projectRoot for Tuning is the process working directory. Prompts,
+	// Golden fixtures, and manifest.json are all repo-relative artifacts,
+	// so cwd must be the repo root at server start.
+	projectRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve project root: %w", err)
+	}
+	tuningSvc := service.NewTuningService(service.TuningServiceOptions{
+		ProjectRoot:  projectRoot,
+		Evaluator:    eval.NotConfiguredEvaluator{},
+		ShadowSource: eval.NewSQLiteShadowSource(database),
+		Calibration:  db.NewCalibrationStore(database),
+		Clock:        clock.RealClock{},
+	})
+	// RunService stamps newly-created runs with the active Critic prompt
+	// version so later metrics can group runs by prompt version (AC-3).
+	svc.SetPromptVersionProvider(tuningSvc)
+
+	deps := api.NewDependencies(svc, settingsSvc, hitlSvc, characterSvc, sceneSvc, tuningSvc, cfg.OutputDir, logger, web.FS)
 	mux := http.NewServeMux()
 	if err := configureServeMux(mux, deps, devMode, mustParseURL(viteDevServerURL), cmd.OutOrStdout()); err != nil {
 		return err

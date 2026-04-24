@@ -81,8 +81,8 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 12 {
-		t.Errorf("user_version = %d, want %d", version, 12)
+	if version != 13 {
+		t.Errorf("user_version = %d, want %d", version, 13)
 	}
 
 	db.Close()
@@ -100,8 +100,8 @@ func TestMigrate_UserVersion(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 12 {
-		t.Errorf("user_version = %d, want %d", version, 12)
+	if version != 13 {
+		t.Errorf("user_version = %d, want %d", version, 13)
 	}
 }
 
@@ -304,6 +304,8 @@ func TestSchema_RunsColumns(t *testing.T) {
 		"selected_character_id": "TEXT",
 		"frozen_descriptor":     "TEXT",
 		"output_path":           "TEXT",
+		"critic_prompt_version": "TEXT",
+		"critic_prompt_hash":    "TEXT",
 		"created_at":            "TEXT",
 		"updated_at":            "TEXT",
 	}
