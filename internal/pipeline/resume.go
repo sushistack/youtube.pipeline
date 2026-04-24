@@ -285,12 +285,28 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 			Segments: segments,
 		}
 		if _, err := e.phaseC.Run(ctx, req); err != nil {
+			// ResetForResume already set status=running. Roll back to failed so
+			// the run is resumable again rather than permanently stuck.
+			if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
+				Stage:  run.Stage,
+				Status: domain.StatusFailed,
+			}); fixErr != nil {
+				e.logger.Warn("failed to reset status after phase c error",
+					"run_id", runID, "error", fixErr)
+			}
 			return report, fmt.Errorf("resume %s: phase c assembly: %w", runID, err)
 		}
 
 		// Build and write metadata bundles before advancing to StageMetadataAck.
 		if e.phaseCMetadata != nil {
 			if err := PhaseCMetadataEntry(ctx, e.phaseCMetadata, runID); err != nil {
+				if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
+					Stage:  run.Stage,
+					Status: domain.StatusFailed,
+				}); fixErr != nil {
+					e.logger.Warn("failed to reset status after metadata error",
+						"run_id", runID, "error", fixErr)
+				}
 				return report, fmt.Errorf("resume %s: phase c metadata entry: %w", runID, err)
 			}
 		}

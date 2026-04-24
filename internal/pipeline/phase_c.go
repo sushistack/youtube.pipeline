@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	ffmpeg "github.com/u2takey/ffmpeg-go"
@@ -36,8 +37,6 @@ func PhaseCMetadataEntry(ctx context.Context, builder MetadataBuilder, runID str
 	}
 	return nil
 }
-
-var _ = ffmpeg.Input // ensure ffmpeg-go is used
 
 // PhaseCRequest carries the input parameters for the assembly stage.
 type PhaseCRequest struct {
@@ -129,6 +128,7 @@ func (r *PhaseCRunner) Run(ctx context.Context, req PhaseCRequest) (PhaseCResult
 	// 2. Assemble each scene clip, persisting its path.
 	clipPaths := make([]string, len(req.Segments))
 	var g errgroup.Group
+	g.SetLimit(runtime.NumCPU())
 	for i, ep := range req.Segments {
 		i, ep := i, ep // capture for closure
 		g.Go(func() error {
@@ -212,12 +212,13 @@ func (r *PhaseCRunner) BuildSceneClip(ctx context.Context, runDir string, ep *do
 		return "", fmt.Errorf("create clips dir: %w", err)
 	}
 
-	// Single‑shot Ken Burns can use the optimized path.
-	if len(ep.Shots) == 1 && ep.Shots[0].Transition == domain.TransitionKenBurns {
+	// Single-shot scenes always use the Ken Burns path (AC3: zoompan for full
+	// TTS duration regardless of the Transition field, which is meaningless
+	// when there is no previous shot to transition from).
+	if len(ep.Shots) == 1 {
 		return r.buildSingleShotKenBurns(ctx, ep, clipPath)
 	}
 
-	// Multi‑shot (or single‑shot with other transitions) use generic builder.
 	return r.buildMultiShotClip(ctx, ep, clipPath)
 }
 
@@ -225,62 +226,61 @@ func (r *PhaseCRunner) BuildSceneClip(ctx context.Context, runDir string, ep *do
 // zoompan filter (Ken Burns effect), overlays TTS audio if present, and outputs
 // a 1920x1080 MP4 with libx264 video and AAC audio.
 func (r *PhaseCRunner) buildSingleShotKenBurns(ctx context.Context, ep *domain.Episode, clipPath string) (string, error) {
-	if len(ep.Shots) != 1 {
-		return "", fmt.Errorf("buildSingleShotKenBurns expects exactly one shot: %w", domain.ErrValidation)
-	}
 	shot := ep.Shots[0]
+	if shot.DurationSeconds <= 0 {
+		return "", fmt.Errorf("shot duration must be positive (scene %d): %w", ep.SceneIndex, domain.ErrValidation)
+	}
 	const fps = 25
+	// AC3: zoompan covers the full TTS duration when available.
 	durationSec := shot.DurationSeconds
-	if durationSec <= 0 {
-		return "", fmt.Errorf("shot duration must be positive: %w", domain.ErrValidation)
+	if ep.TTSDurationMs != nil && *ep.TTSDurationMs > 0 {
+		durationSec = float64(*ep.TTSDurationMs) / 1000.0
 	}
 	frames := int(math.Ceil(durationSec * fps))
-	// Ensure at least one frame.
 	if frames < 1 {
 		frames = 1
 	}
 
 	videoInput := ffmpeg.Input(shot.ImagePath)
-	// Apply zoompan with gentle zoom, output size 1920x1080.
 	zoom := videoInput.ZoomPan(ffmpeg.KwArgs{
 		"zoom": "min(zoom+0.0015,1.5)",
 		"d":    frames,
 		"s":    "1920x1080",
 	})
 
-	// Prepare audio stream if TTSPath exists.
 	var audioStream *ffmpeg.Stream
 	if ep.TTSPath != nil && *ep.TTSPath != "" {
-		audioInput := ffmpeg.Input(*ep.TTSPath)
-		audioStream = audioInput.Audio()
+		audioStream = ffmpeg.Input(*ep.TTSPath).Audio()
 	}
 
-	// Output with video and optional audio, applying sync padding if needed.
 	var err error
 	if audioStream != nil {
-		videoDur := shot.DurationSeconds
+		// videoDur = actual zoompan output duration.
+		videoDur := durationSec
 		var audioDur float64
 		if ep.TTSDurationMs != nil {
 			audioDur = float64(*ep.TTSDurationMs) / 1000.0
 		} else {
-			// Fallback: probe audio file duration.
 			dur, probeErr := r.probeDuration(ctx, *ep.TTSPath)
 			if probeErr != nil {
 				return "", fmt.Errorf("probe TTS duration: %w", probeErr)
 			}
 			audioDur = dur
 		}
-		// Apply sync padding.
 		paddedVideo, paddedAudio, padErr := r.applySyncPadding(zoom, audioStream, videoDur, audioDur)
 		if padErr != nil {
 			return "", fmt.Errorf("sync padding: %w", padErr)
 		}
-		err = ffmpeg.Output([]*ffmpeg.Stream{paddedVideo, paddedAudio}, clipPath).Run()
+		err = ffmpeg.Output([]*ffmpeg.Stream{paddedVideo, paddedAudio}, clipPath,
+			ffmpeg.KwArgs{"c:v": "libx264", "c:a": "aac", "pix_fmt": "yuv420p"}).
+			GlobalArgs("-y").Run()
 	} else {
-		err = ffmpeg.Output([]*ffmpeg.Stream{zoom}, clipPath).Run()
+		err = ffmpeg.Output([]*ffmpeg.Stream{zoom}, clipPath,
+			ffmpeg.KwArgs{"c:v": "libx264", "pix_fmt": "yuv420p"}).
+			GlobalArgs("-y").Run()
 	}
 	if err != nil {
-		return "", fmt.Errorf("ffmpeg error: %w", err)
+		return "", fmt.Errorf("ffmpeg error (scene %d): %w", ep.SceneIndex, err)
 	}
 	return clipPath, nil
 }
@@ -351,12 +351,10 @@ func (r *PhaseCRunner) applySyncPadding(videoStream *ffmpeg.Stream, audioStream 
 	}
 }
 
-// buildMultiShotClip assembles a scene with multiple shots using appropriate transitions.
+// buildMultiShotClip assembles a scene with two or more shots using per-pair
+// transition dispatch. Each shot boundary is handled independently:
+// cross_dissolve → xfade filter; hard_cut or ken_burns → concat filter.
 func (r *PhaseCRunner) buildMultiShotClip(ctx context.Context, ep *domain.Episode, clipPath string) (string, error) {
-	if len(ep.Shots) < 2 {
-		return "", fmt.Errorf("buildMultiShotClip expects at least two shots: %w", domain.ErrValidation)
-	}
-	// Create a stream for each shot.
 	streams := make([]*ffmpeg.Stream, len(ep.Shots))
 	for i, shot := range ep.Shots {
 		s, err := r.createShotStream(&shot)
@@ -365,66 +363,63 @@ func (r *PhaseCRunner) buildMultiShotClip(ctx context.Context, ep *domain.Episod
 		}
 		streams[i] = s
 	}
-	// Determine if any transition is cross_dissolve.
-	hasCrossDissolve := false
-	for i := 0; i < len(ep.Shots)-1; i++ {
-		if ep.Shots[i+1].Transition == domain.TransitionCrossDissolve {
-			hasCrossDissolve = true
-			break
-		}
-	}
-	var videoStream *ffmpeg.Stream
-	if hasCrossDissolve {
-		// Chain xfade between consecutive streams.
-		// Start with first stream.
-		videoStream = streams[0]
-		for i := 1; i < len(streams); i++ {
-			// Apply xfade between previous result and next stream.
-			// Offset is sum of durations of previous shots minus transition duration?
-			// For simplicity, use default offset = duration of previous shot - 0.5?
-			// We'll compute offset as total duration so far minus 0.5.
-			// For now, use a fixed 0.5s cross‑dissolve at the boundary.
+
+	// Build composite video stream with per-pair transition dispatch.
+	// streamDur tracks the actual composed stream duration (accounting for
+	// xfade overlaps) so that sync padding uses the correct video length.
+	videoStream := streams[0]
+	streamDur := ep.Shots[0].DurationSeconds
+
+	for i := 1; i < len(streams); i++ {
+		switch ep.Shots[i].Transition {
+		case domain.TransitionCrossDissolve:
+			// xfade offset = current stream duration − 0.5s, clamped to ≥ 0
+			// to guard against shots shorter than the dissolve window.
+			offset := math.Max(0, streamDur-0.5)
 			videoStream = ffmpeg.Filter([]*ffmpeg.Stream{videoStream, streams[i]}, "xfade",
 				ffmpeg.Args{},
 				ffmpeg.KwArgs{
 					"transition": "fade",
 					"duration":   "0.5",
-					"offset":     fmt.Sprintf("%.3f", ep.Shots[i-1].DurationSeconds-0.5),
+					"offset":     fmt.Sprintf("%.3f", offset),
 				})
+			// xfade overlaps 0.5 s between the two streams.
+			streamDur += ep.Shots[i].DurationSeconds - 0.5
+		default: // hard_cut, ken_burns (no inter-shot filter), or unknown
+			videoStream = ffmpeg.Concat([]*ffmpeg.Stream{videoStream, streams[i]}, ffmpeg.KwArgs{"v": 1, "a": 0})
+			streamDur += ep.Shots[i].DurationSeconds
 		}
-	} else {
-		// All hard_cut – use concat filter.
-		videoStream = ffmpeg.Concat(streams, ffmpeg.KwArgs{"v": 1, "a": 0})
 	}
-	// Overlay TTS audio if present.
+
 	var err error
 	if ep.TTSPath != nil && *ep.TTSPath != "" {
-		audioInput := ffmpeg.Input(*ep.TTSPath)
-		audioStream := audioInput.Audio()
-		// Compute durations for sync padding.
-		videoDur := r.computeVideoDuration(ep)
+		audioStream := ffmpeg.Input(*ep.TTSPath).Audio()
 		var audioDur float64
 		if ep.TTSDurationMs != nil {
 			audioDur = float64(*ep.TTSDurationMs) / 1000.0
 		} else {
-			// Fallback: probe audio file duration (expensive).
 			dur, probeErr := r.probeDuration(ctx, *ep.TTSPath)
 			if probeErr != nil {
 				return "", fmt.Errorf("probe TTS duration: %w", probeErr)
 			}
 			audioDur = dur
 		}
-		// Apply sync padding.
-		paddedVideo, paddedAudio, padErr := r.applySyncPadding(videoStream, audioStream, videoDur, audioDur)
+		// Pass actual composed stream duration (not naive shot sum) so that
+		// xfade overlaps are accounted for in sync-padding decisions (P10).
+		paddedVideo, paddedAudio, padErr := r.applySyncPadding(videoStream, audioStream, streamDur, audioDur)
 		if padErr != nil {
 			return "", fmt.Errorf("sync padding: %w", padErr)
 		}
-		err = ffmpeg.Output([]*ffmpeg.Stream{paddedVideo, paddedAudio}, clipPath).Run()
+		err = ffmpeg.Output([]*ffmpeg.Stream{paddedVideo, paddedAudio}, clipPath,
+			ffmpeg.KwArgs{"c:v": "libx264", "c:a": "aac", "pix_fmt": "yuv420p"}).
+			GlobalArgs("-y").Run()
 	} else {
-		err = ffmpeg.Output([]*ffmpeg.Stream{videoStream}, clipPath).Run()
+		err = ffmpeg.Output([]*ffmpeg.Stream{videoStream}, clipPath,
+			ffmpeg.KwArgs{"c:v": "libx264", "pix_fmt": "yuv420p"}).
+			GlobalArgs("-y").Run()
 	}
 	if err != nil {
-		return "", fmt.Errorf("ffmpeg error: %w", err)
+		return "", fmt.Errorf("ffmpeg error (scene %d): %w", ep.SceneIndex, err)
 	}
 	return clipPath, nil
 }
@@ -437,11 +432,11 @@ func (r *PhaseCRunner) probeDuration(ctx context.Context, path string) (float64,
 		"-show_format",
 		path,
 	)
-	var out bytes.Buffer
+	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		return 0, fmt.Errorf("ffprobe %q: %w", path, err)
+		return 0, fmt.Errorf("ffprobe %q: %w: %s", path, err, errBuf.String())
 	}
 	var result struct {
 		Format struct {
@@ -494,10 +489,10 @@ func (r *PhaseCRunner) concatClips(ctx context.Context, clipsDir string, clipPat
 		"-c", "copy",
 		outputPath,
 	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var concatErrBuf bytes.Buffer
+	cmd.Stderr = &concatErrBuf
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg concat failed: %w", err)
+		return fmt.Errorf("ffmpeg concat failed: %w: %s", err, concatErrBuf.String())
 	}
 
 	// Validate output duration ≈ sum of input durations (tolerance ≤0.1s).
