@@ -60,8 +60,10 @@ func validPipelineState(scpID string) *agents.PipelineState {
 	return &agents.PipelineState{
 		RunID: "test-run-1",
 		SCPID: scpID,
-		Narration: &domain.NarrationScript{
+		Research: &domain.ResearcherOutput{
 			Title: "SCP-" + scpID + " - Test Title",
+		},
+		Narration: &domain.NarrationScript{
 			Metadata: domain.NarrationMetadata{
 				WriterModel:    "deepseek-chat",
 				WriterProvider: "deepseek",
@@ -183,7 +185,7 @@ func TestMetadataBuilder_Build_HappyPath(t *testing.T) {
 		t.Errorf("SCPID = %q, want %q", bundle.SCPID, "049")
 	}
 	if bundle.Title != "SCP-049 - Test Title" {
-		t.Errorf("Title = %q, want %q", bundle.Title, "SCP-049 - Test Title")
+		t.Errorf("Title = %q (should come from Research.Title, not Narration.Title)", bundle.Title)
 	}
 	if !bundle.AIGenerated.Narration || !bundle.AIGenerated.Imagery || !bundle.AIGenerated.TTS {
 		t.Error("AIGenerated flags not all true")
@@ -595,6 +597,47 @@ func TestPhaseCMetadataEntry_HappyPath(t *testing.T) {
 	}
 	if manifest.RunID != "test-run-1" {
 		t.Errorf("manifest RunID = %q, want %q", manifest.RunID, "test-run-1")
+	}
+}
+
+func TestMetadataBuilder_Build_EmptySCPID(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	dir := t.TempDir()
+
+	state := validPipelineState("049")
+	state.SCPID = ""
+	writeScenarioJSON(t, filepath.Join(dir, "test-run-1"), state)
+
+	cfg := validMetadataBuilderConfig(t, dir)
+	builder, err := pipeline.NewMetadataBuilder(cfg)
+	if err != nil {
+		t.Fatalf("NewMetadataBuilder: %v", err)
+	}
+
+	_, _, err = builder.Build(context.Background(), "test-run-1")
+	if err == nil {
+		t.Fatal("expected error for empty scp_id in scenario.json, got nil")
+	}
+}
+
+func TestMetadataBuilder_Build_EmptyTTSVoice(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	dir := t.TempDir()
+
+	state := validPipelineState("049")
+	writeScenarioJSON(t, filepath.Join(dir, "test-run-1"), state)
+
+	cfg := validMetadataBuilderConfig(t, dir)
+	cfg.TTSVoice = "" // voice required when TTSProvider + TTSModel are set
+
+	builder, err := pipeline.NewMetadataBuilder(cfg)
+	if err != nil {
+		t.Fatalf("NewMetadataBuilder: %v", err)
+	}
+
+	_, _, err = builder.Build(context.Background(), "test-run-1")
+	if err == nil {
+		t.Fatal("expected error for empty tts voice, got nil")
 	}
 }
 

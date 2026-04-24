@@ -1,5 +1,22 @@
 # Deferred Work
 
+## Deferred from: code review of 9-2-metadata-attribution-bundle (2026-04-24)
+
+- **W1: metadata.json + manifest.json 단위 원자성 미보장** — `Write()`가 두 파일을 순차 atomic-write하지만 첫 파일 성공 후 두 번째 실패 시 타임스탬프 불일치 재시도 발생. 스테이징 디렉토리 rename 또는 "completed" 마커 파일 전략 필요 ([internal/pipeline/phase_c_metadata.go](../../internal/pipeline/phase_c_metadata.go)).
+- **W2: NewMetadataBuilder에서 WriterModel/WriterProvider 미검증** — `Build()` 시점에 검증되어 기능 문제는 없으나 `CriticModel`/`CriticProvider` 생성자 검증과 일관성 없음 ([internal/pipeline/phase_c_metadata.go](../../internal/pipeline/phase_c_metadata.go)).
+- **W3: xfade offset 음수 (shot DurationSeconds < 0.5s)** — phase_c.go 기존 이슈. `buildMultiShotClip`에서 offset = DurationSeconds - 0.5 이 음수가 될 수 있으며 FFmpeg 미정의 동작 유발 ([internal/pipeline/phase_c.go](../../internal/pipeline/phase_c.go)).
+- **W4: concatClips duration probe 0값 허용** — `probeDuration` 반환 0이 `outputDur > 0.1` 비교를 silently pass. 부분 실패한 clip 파일 잔존 시 허위 검증 통과 ([internal/pipeline/phase_c.go](../../internal/pipeline/phase_c.go)).
+- **W5: ResumeWithOptions segments 스냅샷 stale** — `ClearClipPathsByRunID` DB null 후 in-memory `segments` slice에 이전 ClipPath 잔존. 현재 사용 경로에선 무해하나 future consumer 위험 ([internal/pipeline/resume.go](../../internal/pipeline/resume.go)).
+
+## Deferred from: code review of 9-1-ffmpeg-two-stage-assembly-engine (2026-04-24)
+
+- Single-quote in file path breaks FFmpeg concat list — `fmt.Fprintf(tmpList, "file '%s'\n", abs)` does not escape single quotes; runDir is system-generated so low risk in current architecture ([internal/pipeline/phase_c.go:1006](../../internal/pipeline/phase_c.go)).
+- `phaseCRequest` helper returns empty `Segments` making it unusable — placeholder dead code; fix together with integration test implementation ([internal/pipeline/phase_c_test.go:1105](../../internal/pipeline/phase_c_test.go)).
+- Resume passes pre-`ClearClipPathsByRunID` segments slice into `PhaseCRunner` — latent inconsistency; `PhaseCRunner` does not read `ClipPath` field today but should re-fetch after clear for correctness ([internal/pipeline/resume.go](../../internal/pipeline/resume.go)).
+- `fakeUpdater` data race on `updated` slice via concurrent `append` — latent; all integration tests skipped; fix together with implementing real integration tests ([internal/pipeline/phase_c_test.go:1077](../../internal/pipeline/phase_c_test.go)).
+- `probeDuration` returns unhelpful error message for ffprobe `"N/A"` duration strings — minor UX; no correctness impact ([internal/pipeline/phase_c.go:451](../../internal/pipeline/phase_c.go)).
+- Duration tolerance false failure for large videos: codec-level container rounding ~0.1s per clip can accumulate beyond the 0.1s tolerance for >20-clip videos ([internal/pipeline/phase_c.go:1041](../../internal/pipeline/phase_c.go)).
+
 ## Deferred from: code review of 8-6-decisions-history-timeline-view (2026-04-19)
 
 - `RetryExhausted` `>` vs `>=` inconsistency across `RecordSceneDecision`/`ListReviewItems`/`DispatchSceneRegeneration` — pre-existing from Story 8.4; three sites must be unified on `>=` with a single shared constant ([internal/service/scene_service.go](../../internal/service/scene_service.go)).

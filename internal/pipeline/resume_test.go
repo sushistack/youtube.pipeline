@@ -590,13 +590,42 @@ func TestResume_Advance_Stub(t *testing.T) {
 	}
 }
 
-// TestResume_Assemble_MetadataBuilderWired verifies that when both
-// PhaseCRunner and PhaseCMetadataBuilder are configured, the metadata
-// builder is invoked during Resume at StageAssemble and the stage
-// advances to StageMetadataAck.
-func TestResume_Assemble_MetadataBuilderWired(t *testing.T) {
+// TestResume_MetadataAck_MetadataBuilderWired verifies that when resuming from
+// StageMetadataAck, the metadata builder is invoked exactly once (P6: re-run
+// after CleanStageArtifacts removes metadata.json / manifest.json).
+// Note: the full StageAssemble → metadata_ack integration path requires a real
+// PhaseCRunner (ffmpeg) and is covered by the E2E test.
+func TestResume_MetadataAck_MetadataBuilderWired(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
-	t.Skip("TODO: requires PhaseCRunner with real ffmpeg — test metadata builder wiring once ffmpeg is available in CI")
+	outDir := t.TempDir()
+	runID := "scp-049-run-1"
+
+	runs := &fakeRunStore{run: &domain.Run{
+		ID: runID, SCPID: "049",
+		Stage:  domain.StageMetadataAck,
+		Status: domain.StatusFailed,
+	}}
+	segs := newFakeSegmentStore()
+	mustMkdir(t, filepath.Join(outDir, runID))
+
+	var buildCalls int
+	mock := pipeline.MetadataBuilderFunc(func(_ context.Context, id string) (domain.MetadataBundle, domain.SourceManifest, error) {
+		if id != runID {
+			t.Errorf("Build called with runID %q, want %q", id, runID)
+		}
+		buildCalls++
+		return domain.MetadataBundle{Version: 1, RunID: id}, domain.SourceManifest{Version: 1, RunID: id}, nil
+	})
+
+	eng := newEngine(t, runs, segs, outDir)
+	eng.SetPhaseCMetadataBuilder(mock)
+
+	if _, err := eng.Resume(context.Background(), runID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if buildCalls != 1 {
+		t.Errorf("MetadataBuilder.Build called %d times, want 1", buildCalls)
+	}
 }
 
 // --- helpers ---------------------------------------------------------------

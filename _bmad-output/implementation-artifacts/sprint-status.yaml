@@ -1,5 +1,5 @@
 # generated: 2026-04-16
-# last_updated: 2026-04-21 # Story 9-1 ready for review — status=review
+# last_updated: 2026-04-24 # Story 9-1 code review done — status=done
 # project: youtube.pipeline
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-16
-last_updated: 2026-04-20 # Story 9-4 pre-upload-compliance-gate created — status=ready-for-dev
+last_updated: 2026-04-24 # Story 9-1 code review done — status=done
 project: youtube.pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -121,17 +121,17 @@ development_status:
 
   # ── Epic 9: Video Assembly & Compliance (Phase C) ────────────────────────
   epic-9: in-progress
-  9-1-ffmpeg-two-stage-assembly-engine: review
-  9-2-metadata-attribution-bundle: review
+  9-1-ffmpeg-two-stage-assembly-engine: done
+  9-2-metadata-attribution-bundle: done
   9-3-compliance-audit-logging: ready-for-dev
   9-4-pre-upload-compliance-gate: ready-for-dev
   epic-9-retrospective: optional
 
   # ── Epic 10: Tuning, Settings & Operational Tooling ──────────────────────
-  epic-10: backlog
-  10-1-settings-dashboard-llm-provider-config: backlog
-  10-2-tuning-surface-prompt-rubric-lab: backlog
-  10-3-database-vacuum-data-retention: backlog
-  10-4-golden-shadow-ci-quality-gates: backlog
-  10-5-data-export-to-json: backlog
+  epic-10: in-progress
+  10-1-settings-dashboard-llm-provider-config: ready-for-dev
+  10-2-tuning-surface-prompt-rubric-lab: ready-for-dev
+  10-3-database-vacuum-data-retention: ready-for-dev
+  10-4-golden-shadow-ci-quality-gates: ready-for-dev
+  10-5-data-export-to-json: ready-for-dev
   epic-10-retrospective: optional

@@ -28,9 +28,10 @@ func (f MetadataBuilderFunc) Build(ctx context.Context, runID string) (domain.Me
 	return f(ctx, runID)
 }
 
-// Write implements MetadataBuilder.Write.
+// Write implements MetadataBuilder.Write as a no-op. MetadataBuilderFunc is a
+// Build-only test adapter; callers that need real file writes must use NewMetadataBuilder.
 func (MetadataBuilderFunc) Write(_ context.Context, _ string, _ domain.MetadataBundle, _ domain.SourceManifest) error {
-	return fmt.Errorf("metadata builder func: %w: Write not implemented on function adapter", domain.ErrValidation)
+	return nil
 }
 
 // MetadataBuilderConfig bundles the dependencies required to build a metadata
@@ -120,7 +121,11 @@ func (b *metadataBuilder) Build(ctx context.Context, runID string) (domain.Metad
 
 	var state agents.PipelineState
 	if err := json.Unmarshal(raw, &state); err != nil {
-		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: decode scenario.json: %v", domain.ErrValidation, err)
+		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: decode scenario.json: %w", domain.ErrValidation, err)
+	}
+
+	if state.SCPID == "" {
+		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: scp_id is empty in scenario.json", domain.ErrValidation)
 	}
 
 	// Read corpus metadata.
@@ -129,32 +134,21 @@ func (b *metadataBuilder) Build(ctx context.Context, runID string) (domain.Metad
 		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: read corpus: %w", err)
 	}
 
-	// Determine title.
+	// Determine title: Research.Title is the primary source (AC-3).
 	title := state.SCPID
-	if state.Narration != nil && state.Narration.Title != "" {
-		title = state.Narration.Title
-	} else if state.Research != nil && state.Research.Title != "" {
+	if state.Research != nil && state.Research.Title != "" {
 		title = state.Research.Title
 	}
 
-	// Validate required fields.
-	if b.cfg.WriterProvider == "" && state.Narration != nil && state.Narration.Metadata.WriterProvider != "" {
-		// Use config-level WriterProvider if set, otherwise fall through to scenario.json.
+	// Writer model/provider from scenario.json only (AC-3, LLM source map).
+	if state.Narration == nil || state.Narration.Metadata.WriterProvider == "" {
+		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: writer provider is empty in scenario.json", domain.ErrValidation)
 	}
-	writerProvider := b.cfg.WriterProvider
-	writerModel := b.cfg.WriterModel
-	if writerProvider == "" && state.Narration != nil {
-		writerProvider = state.Narration.Metadata.WriterProvider
+	if state.Narration.Metadata.WriterModel == "" {
+		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: writer model is empty in scenario.json", domain.ErrValidation)
 	}
-	if writerModel == "" && state.Narration != nil {
-		writerModel = state.Narration.Metadata.WriterModel
-	}
-	if writerProvider == "" {
-		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: writer provider is empty", domain.ErrValidation)
-	}
-	if writerModel == "" {
-		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: writer model is empty", domain.ErrValidation)
-	}
+	writerProvider := state.Narration.Metadata.WriterProvider
+	writerModel := state.Narration.Metadata.WriterModel
 
 	// Visual breakdown model/provider from scenario.json.
 	var vbProvider, vbModel string
@@ -202,6 +196,10 @@ func (b *metadataBuilder) Build(ctx context.Context, runID string) (domain.Metad
 		if rec.Model == "" {
 			return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: models_used[%q].model is empty", domain.ErrValidation, key)
 		}
+	}
+	// TTS voice is required when TTS provider and model are both set (D5).
+	if b.cfg.TTSProvider != "" && b.cfg.TTSModel != "" && b.cfg.TTSVoice == "" {
+		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: tts voice is empty", domain.ErrValidation)
 	}
 
 	bundle := domain.MetadataBundle{

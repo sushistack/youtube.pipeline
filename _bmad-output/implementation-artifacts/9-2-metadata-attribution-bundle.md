@@ -1,6 +1,6 @@
 # Story 9.2: Metadata & Attribution Bundle
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -300,6 +300,33 @@ type MetadataBuilderConfig struct {
   - [ ] Add `phase_c_test.go` integration tests
 - [ ] Task 6: Verify E2E test assertions pass (AC-7)
   - [ ] Run `go test -run E2E ./internal/pipeline/...` and confirm `metadata.json` / `manifest.json` assertions pass
+
+### Review Findings
+
+**Decision-Needed (resolve before patching):**
+
+- [x] [Review][Decision] D1: MetadataBuilderFunc.Write → no-op return nil (test adapter 패턴) [internal/pipeline/phase_c_metadata.go:32]
+- [x] [Review][Decision] D2: Title priority → Research.Title 우선, SCPID fallback (spec 준수, Narration.Title 중간 fallback 제거) [internal/pipeline/phase_c_metadata.go:136]
+- [x] [Review][Decision] D3: WriterProvider → scenario.json-only (config fallback 제거, spec LLM source map 준수) [internal/pipeline/phase_c_metadata.go:141]
+- [x] [Review][Decision] D4: phaseCMetadata nil → slog.Warn 추가 (테스트 유연성 유지 + 컴플라이언스 가시성) [internal/pipeline/resume.go]
+- [x] [Review][Decision] D5: TTSVoice → TTSProvider+TTSModel 모두 설정 시 공백이면 ErrValidation [internal/pipeline/phase_c_metadata.go:205]
+
+**Patch (완료):**
+
+- [x] [Review][Patch] P1: Dead if-block 제거 [internal/pipeline/phase_c_metadata.go:141]
+- [x] [Review][Patch] P2: TestResume_MetadataAck_MetadataBuilderWired 구현 (StageMetadataAck 경로, ffmpeg 불필요) [internal/pipeline/resume_test.go]
+- [x] [Review][Patch] P3: PhaseCMetadataEntry 순서 수정 — NextStage DB advance 후 실행 [internal/pipeline/resume.go]
+- [x] [Review][Patch] P4: state.SCPID 빈 문자열 검증 추가 [internal/pipeline/phase_c_metadata.go:127]
+- [x] [Review][Patch] P5: scenario.json 디코드 에러 %v → %w [internal/pipeline/phase_c_metadata.go:123]
+- [x] [Review][Patch] P6: StageMetadataAck resume 경로 metadata 재생성 추가 [internal/pipeline/resume.go]
+
+**Defer (사전 이슈 또는 추후 개선):**
+
+- [x] [Review][Defer] W1: metadata.json + manifest.json 단위 원자성 미보장 — 첫 파일 성공 후 두 번째 실패 시 타임스탬프 불일치 재시도 발생. 스테이징 디렉토리 또는 트랜잭션 설계 필요 [internal/pipeline/phase_c_metadata.go:262] — deferred, 설계 작업 필요
+- [x] [Review][Defer] W2: NewMetadataBuilder에서 WriterModel/WriterProvider 미검증 — Build()에서 검증되므로 기능 문제는 없으나 CriticModel 등 다른 필드와 불일치 [internal/pipeline/phase_c_metadata.go:68] — deferred, pre-existing style inconsistency
+- [x] [Review][Defer] W3: xfade offset 음수 (shot < 0.5s) — phase_c.go 기존 이슈, 이번 스토리 미도입 [internal/pipeline/phase_c.go:392] — deferred, pre-existing
+- [x] [Review][Defer] W4: concatClips duration probe 0값 허용 — phase_c.go 기존 이슈 [internal/pipeline/phase_c.go:505] — deferred, pre-existing
+- [x] [Review][Defer] W5: ResumeWithOptions segments 스냅샷 stale — ClearClipPathsByRunID 후 in-memory slice에 stale ClipPath 잔존. 기존 이슈 [internal/pipeline/resume.go:209] — deferred, pre-existing
 
 ## Dev Notes
 

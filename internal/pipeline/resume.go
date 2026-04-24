@@ -297,21 +297,9 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 			return report, fmt.Errorf("resume %s: phase c assembly: %w", runID, err)
 		}
 
-		// Build and write metadata bundles before advancing to StageMetadataAck.
-		if e.phaseCMetadata != nil {
-			if err := PhaseCMetadataEntry(ctx, e.phaseCMetadata, runID); err != nil {
-				if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
-					Stage:  run.Stage,
-					Status: domain.StatusFailed,
-				}); fixErr != nil {
-					e.logger.Warn("failed to reset status after metadata error",
-						"run_id", runID, "error", fixErr)
-				}
-				return report, fmt.Errorf("resume %s: phase c metadata entry: %w", runID, err)
-			}
-		}
-
-		// Assembly succeeded; advance stage to StageMetadataAck.
+		// Advance stage to StageMetadataAck before running metadata entry so that
+		// a PhaseCMetadataEntry failure leaves the run at metadata_ack (not assemble),
+		// enabling targeted retry without re-running assembly.
 		nextStage, err := NextStage(run.Stage, domain.EventComplete)
 		if err != nil {
 			return report, fmt.Errorf("resume %s: compute next stage: %w", runID, err)
@@ -322,6 +310,31 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 		}
 		if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
 			return report, fmt.Errorf("resume %s: apply stage advance: %w", runID, err)
+		}
+
+		// Build and write metadata bundles after DB stage advance (spec: entry action for metadata_ack).
+		if e.phaseCMetadata != nil {
+			if err := PhaseCMetadataEntry(ctx, e.phaseCMetadata, runID); err != nil {
+				if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
+					Stage:  nextStage,
+					Status: domain.StatusFailed,
+				}); fixErr != nil {
+					e.logger.Warn("failed to reset status after metadata error",
+						"run_id", runID, "error", fixErr)
+				}
+				return report, fmt.Errorf("resume %s: phase c metadata entry: %w", runID, err)
+			}
+		} else {
+			e.logger.Warn("phase c metadata builder not configured — compliance files skipped",
+				"run_id", runID)
+		}
+	}
+
+	// Re-run metadata entry when resuming from StageMetadataAck (artifacts were
+	// cleaned by CleanStageArtifacts and must be regenerated before HITL review).
+	if run.Stage == domain.StageMetadataAck && e.phaseCMetadata != nil {
+		if err := PhaseCMetadataEntry(ctx, e.phaseCMetadata, runID); err != nil {
+			return report, fmt.Errorf("resume %s: phase c metadata entry: %w", runID, err)
 		}
 	}
 
