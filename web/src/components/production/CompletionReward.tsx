@@ -29,17 +29,19 @@ export function CompletionReward({ run }: CompletionRewardProps) {
     return () => video.removeEventListener("timeupdate", onTimeUpdate);
   }, [run.id]);
 
+  // Artifact JSON is regenerated on resume, so we refetch on mount rather than
+  // serving up to 60s of stale data — see ComplianceGate for full rationale.
   const metadata_query = useQuery({
     queryFn: () => fetchRunMetadata(run.id),
     queryKey: queryKeys.runs.metadata(run.id),
-    staleTime: 60_000,
+    staleTime: 0,
     retry: false,
   });
 
   const manifest_query = useQuery({
     queryFn: () => fetchRunManifest(run.id),
     queryKey: queryKeys.runs.manifest(run.id),
-    staleTime: 60_000,
+    staleTime: 0,
     retry: false,
   });
 

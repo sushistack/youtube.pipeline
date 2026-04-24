@@ -114,18 +114,13 @@ func (s *RunService) Resume(ctx context.Context, id string, force bool) (*domain
 }
 
 // AcknowledgeMetadata transitions a run from metadata_ack+waiting to complete+completed.
-// Returns ErrConflict if the run is not in the correct stage/status.
-// This is the NFR-L1 enforcement point: ready-for-upload is ONLY reachable via this path.
+// Returns ErrNotFound if the run does not exist, ErrConflict if it is not in the
+// correct stage/status. This is the NFR-L1 enforcement point: ready-for-upload is
+// ONLY reachable via this path. The stage/status guard is enforced atomically in
+// RunStore.MarkComplete to eliminate TOCTOU races with concurrent Cancel.
 func (s *RunService) AcknowledgeMetadata(ctx context.Context, runID string) (*domain.Run, error) {
-	run, err := s.store.Get(ctx, runID)
-	if err != nil {
-		return nil, err
-	}
-	if run.Stage != domain.StageMetadataAck || run.Status != domain.StatusWaiting {
-		return nil, fmt.Errorf("acknowledge metadata: run is not awaiting metadata acknowledgment: %w", domain.ErrConflict)
-	}
 	if err := s.store.MarkComplete(ctx, runID); err != nil {
-		return nil, fmt.Errorf("acknowledge metadata: persist: %w", err)
+		return nil, fmt.Errorf("acknowledge metadata: %w", err)
 	}
 	return s.store.Get(ctx, runID)
 }

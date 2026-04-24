@@ -48,11 +48,7 @@ async function parseJson(response: Response) {
   return text.length === 0 ? null : JSON.parse(text);
 }
 
-async function apiRequest<T>(
-  path: string,
-  schema: z.ZodType<{ data: T }>,
-  init?: RequestInit,
-) {
+async function fetchWithErrorEnvelope(path: string, init?: RequestInit) {
   const response = await fetch(`${API_ROOT}${path}`, {
     ...init,
     headers: {
@@ -73,7 +69,30 @@ async function apiRequest<T>(
     );
   }
 
+  return payload;
+}
+
+async function apiRequest<T>(
+  path: string,
+  schema: z.ZodType<{ data: T }>,
+  init?: RequestInit,
+) {
+  const payload = await fetchWithErrorEnvelope(path, init);
   return schema.parse(payload).data;
+}
+
+/**
+ * apiRequestRaw parses the response body directly with the provided schema —
+ * no `{data: T}` wrapper — while still extracting the standard error envelope
+ * on non-2xx responses. Use for endpoints that serve raw JSON artifacts.
+ */
+async function apiRequestRaw<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  init?: RequestInit,
+) {
+  const payload = await fetchWithErrorEnvelope(path, init);
+  return schema.parse(payload);
 }
 
 export function fetchRunList() {
@@ -276,35 +295,23 @@ export function acknowledgeMetadata(run_id: string) {
 /**
  * GET /api/runs/{id}/metadata — serves the raw metadata.json file.
  * Not wrapped in the version envelope; parse the JSON body directly.
+ * Error responses still use the standard envelope so `code` is populated.
  */
-export async function fetchRunMetadata(run_id: string) {
-  const response = await fetch(
-    `${API_ROOT}/runs/${encodeURIComponent(run_id)}/metadata`,
-    { headers: { Accept: "application/json" } },
+export function fetchRunMetadata(run_id: string) {
+  return apiRequestRaw(
+    `/runs/${encodeURIComponent(run_id)}/metadata`,
+    metadataBundleSchema,
   );
-  if (!response.ok) {
-    throw new ApiClientError(
-      `Metadata fetch failed (${response.status})`,
-      response.status,
-    );
-  }
-  return metadataBundleSchema.parse(await response.json());
 }
 
 /**
  * GET /api/runs/{id}/manifest — serves the raw manifest.json file.
  * Not wrapped in the version envelope; parse the JSON body directly.
+ * Error responses still use the standard envelope so `code` is populated.
  */
-export async function fetchRunManifest(run_id: string) {
-  const response = await fetch(
-    `${API_ROOT}/runs/${encodeURIComponent(run_id)}/manifest`,
-    { headers: { Accept: "application/json" } },
+export function fetchRunManifest(run_id: string) {
+  return apiRequestRaw(
+    `/runs/${encodeURIComponent(run_id)}/manifest`,
+    sourceManifestSchema,
   );
-  if (!response.ok) {
-    throw new ApiClientError(
-      `Manifest fetch failed (${response.status})`,
-      response.status,
-    );
-  }
-  return sourceManifestSchema.parse(await response.json());
 }

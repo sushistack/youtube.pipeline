@@ -1,6 +1,6 @@
 # Story 9.4: Pre-Upload Compliance Gate
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -258,6 +258,28 @@ values; verify "Start Next SCP" button invokes `open_new_run_panel`.
 - [x] Task 9: ProductionShell integration (AC: 4, 5)
   - [x] 9.1 Add imports for `ComplianceGate` and `CompletionReward` to `ProductionShell.tsx`
   - [x] 9.2 Add two new cases in the stage dispatch block
+
+### Review Findings (2026-04-24)
+
+- [x] [Review][Patch] Zod schema strictness split: keep `.min(1)` on compliance-critical fields, relax nice-to-have fields ([web/src/contracts/runContracts.ts](../../web/src/contracts/runContracts.ts)) — Decision C: `title`, `source_url`, `license` remain `.min(1)` (NFR-L1 compliance disclosure requires them); `author_name` → `.string()` (allow empty — orphan works), `license_url` → `.string()` (CC0 and some PD licenses omit URL). Also make `license_chain[].author_name` and `license_chain[].license_url` consistent.
+- [x] [Review][Patch] Split `apiRequest` into envelope-less variant for raw-JSON endpoints ([web/src/lib/apiClient.ts](../../web/src/lib/apiClient.ts)) — Decision B: extract a `apiRequestRaw<T>(path, schema, init)` helper that (a) still parses `errorEnvelopeSchema` from non-2xx responses so `ApiClientError.code` is populated, but (b) parses the 2xx body directly with the provided schema (no `{data: T}` wrapper). Replace the raw `fetch` in `fetchRunMetadata`/`fetchRunManifest` with this helper.
+- [x] [Review][Patch] Video error banner bound to wrong signal ([web/src/components/production/ComplianceGate.tsx:129-134](../../web/src/components/production/ComplianceGate.tsx)) — `{metadata_query.isError && <... "Video not yet available" ...>}`. Spec AC-4: "On 404/error, show amber banner". Video element has no `onError` handler. Metadata fetch error ≠ video error; signals are crossed. Attach `onError`/`onLoadedData` to the `<video>` element and gate the banner on video-load state.
+- [x] [Review][Patch] `MarkComplete` + `AcknowledgeMetadata` TOCTOU / no RowsAffected check ([internal/db/run_store.go:298-304](../../internal/db/run_store.go), [internal/service/run_service.go:119-131](../../internal/service/run_service.go)) — `MarkComplete` UPDATE has no stage/status predicate and ignores `RowsAffected`. Every other UPDATE in the same file returns `ErrNotFound` on 0 rows. Service `Get → check → MarkComplete` is not transactional. A concurrent `Cancel` racing an `Ack` flips a cancelled run to `complete/completed`, violating NFR-L1's terminal-state invariant. `TestRunStore_MarkComplete_NotFound` ([internal/db/run_store_test.go:1084-1090](../../internal/db/run_store_test.go)) even codifies the silent-success behavior as desired. Fix: `UPDATE runs SET ... WHERE id=? AND stage='metadata_ack' AND status='waiting'`, check `RowsAffected`, return `ErrConflict` on 0 rows; update the test to assert this.
+- [x] [Review][Patch] Stale metadata/manifest after resume — staleTime 60s + no cache control ([web/src/components/production/ComplianceGate.tsx:48-60](../../web/src/components/production/ComplianceGate.tsx), [internal/api/handler_artifacts.go:67-68](../../internal/api/handler_artifacts.go)) — `resume.go:333-335` re-runs metadata entry on `StageMetadataAck` resume, rewriting `metadata.json`/`manifest.json`. React Query holds stale data for 60s; backend sets no `Cache-Control` on JSON artifacts. Operator can confirm checklist against pre-resume content. Fix: set `staleTime: 0` on these two queries (cheap JSON), OR set `Cache-Control: no-store` on `GET /api/runs/{id}/metadata` + `/manifest` handlers, OR invalidate `runs.metadata`/`runs.manifest` when `useRunStatus` observes `updated_at` change.
+- [x] [Review][Patch] `runs.list()` not invalidated after ack ([web/src/components/production/ComplianceGate.tsx:64-68](../../web/src/components/production/ComplianceGate.tsx)) — only `queryKeys.runs.status(run.id)` is invalidated. Sidebar (list) shows run at `metadata_ack/waiting` for up to 5s after ack. Add `query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })` alongside the status invalidation.
+- [x] [Review][Patch] Finalize button re-enabled briefly between ack success and status refetch ([web/src/components/production/ComplianceGate.tsx:185](../../web/src/components/production/ComplianceGate.tsx)) — `disabled={!all_checked || ack_mutation.isPending}`. After success, `isPending` flips to `false` synchronously while the status query refetch is in-flight. Component still mounted (stage hasn't changed in state yet). Second click → 409 conflict → red error banner on an already-successful ack. Fix: also gate on `ack_mutation.isSuccess` or track a local `ack_submitted` flag.
+- [x] [Review][Patch] Error banner is sticky across retries/success ([web/src/components/production/ComplianceGate.tsx:33,69-72](../../web/src/components/production/ComplianceGate.tsx)) — `error_message` set in `onError` but never cleared in `onSuccess` or before `mutate()`. First attempt fails (transient 500), retry succeeds, red banner still visible. Clear `error_message` in `onSuccess` and in `onMutate`.
+- [x] [Review][Patch] Hard-coded test path `scp-049-run-1` drifts if Create ID format changes ([internal/api/handler_artifacts_test.go:38](../../internal/api/handler_artifacts_test.go)) — `filepath.Join(outDir, "scp-049-run-1")` + raw UPDATE seeding by `scp_id='049'`. If `RunStore.Create` ever changes ID synthesis, the UPDATE mutates 0 rows silently and tests false-pass via 404 paths. Use `run.ID` from `svc.Create`'s return value instead.
+- [x] [Review][Patch] Missing nil guard in `serveRunFile` ([internal/api/handler_artifacts.go:50-52](../../internal/api/handler_artifacts.go)) — `if err != nil || (run.Stage != ...)`. Current `db.RunStore.Get` never returns `(nil, nil)`, but `RunArtifactsStore` is an exported interface others can implement. Add explicit `run == nil` branch before the stage check.
+- [x] [Review][Patch] No test for `ack_mutation.onSuccess` invalidation ([web/src/components/production/ComplianceGate.test.tsx](../../web/src/components/production/ComplianceGate.test.tsx)) — AC-4 tests list requires "Successful ack → invalidates status query" but no assertion verifies `queryClient.invalidateQueries({queryKey: queryKeys.runs.status(run.id)})` is invoked. Add a test that spies on the query client.
+- [x] [Review][Patch] Checklist state typed `Record<string, boolean>` instead of `Record<ChecklistId, boolean>` ([web/src/components/production/ComplianceGate.tsx:32](../../web/src/components/production/ComplianceGate.tsx)) — loses the compile-time guarantee that `toggleCheckbox(id)` accepts only valid checklist IDs. Tighten the type.
+- [x] [Review][Defer] Symlink path-traversal defense-in-depth [internal/api/handler_artifacts.go:55](../../internal/api/handler_artifacts.go) — deferred, low risk for single-operator desktop tool (attacker model is weak; output dir created by pipeline itself).
+- [x] [Review][Defer] `CompletionReward` autoplay missing `currentTime = 0` reset on replay [web/src/components/production/CompletionReward.tsx:23-26](../../web/src/components/production/CompletionReward.tsx) — deferred, nit UX polish.
+- [x] [Review][Defer] Zod `version: z.number().int().nonnegative()` accepts any non-negative int [web/src/contracts/runContracts.ts](../../web/src/contracts/runContracts.ts) — deferred, forward-compat trap but no current break.
+- [x] [Review][Defer] `ack_mutation.onError` doesn't distinguish error types (network vs 409 vs 500) [web/src/components/production/ComplianceGate.tsx:69-72](../../web/src/components/production/ComplianceGate.tsx) — deferred, minor UX.
+- [x] [Review][Defer] `AcknowledgeMetadata` handler lacks `MaxBytesReader` protection [internal/api/handler_run.go](../../internal/api/handler_run.go) — deferred, hardening item not exercised by normal client.
+
+**Review summary:** Blind Hunter + Edge Case Hunter + Acceptance Auditor. 2 decisions resolved (D1→C, D2→B), 12 patch, 5 deferred, 7 dismissed (spec-sanctioned `has_fetch_error` Finalize allowance, false-positive Provider-crash, spec typo `VALIDATION_ERROR` vs `NOT_FOUND`, `BlockExternalHTTP` cargo-culting, `fakeRunStore` stub, spec self-contradictory "Video plays" checklist item, `http.ServeContent` preset Content-Type).
 
 ---
 
@@ -549,7 +571,7 @@ that bypasses this check.
 
 ## Story Status
 
-**Status:** `review`
+**Status:** `done`
 
 ### Acceptance Criteria Verification
 

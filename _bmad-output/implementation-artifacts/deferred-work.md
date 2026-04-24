@@ -1,5 +1,13 @@
 # Deferred Work
 
+## Deferred from: code review of 9-4-pre-upload-compliance-gate (2026-04-24)
+
+- Symlink path-traversal defense-in-depth — `os.Open` follows symlinks in `{outputDir}/{runID}/{filename}`; no `filepath.EvalSymlinks` check. Low risk for single-operator desktop tool (attacker model is weak; output dir created by pipeline itself) ([internal/api/handler_artifacts.go:55](../../internal/api/handler_artifacts.go)).
+- `CompletionReward` autoplay pauses at 5s but never resets `currentTime = 0`, so pressing play resumes past the auto-stop — minor UX polish ([web/src/components/production/CompletionReward.tsx:23-26](../../web/src/components/production/CompletionReward.tsx)).
+- Zod `version: z.number().int().nonnegative()` accepts any non-negative int instead of the literal `1` — forward-compat trap (a future v2 parse would silently succeed on an older client). No current break ([web/src/contracts/runContracts.ts](../../web/src/contracts/runContracts.ts)).
+- `ack_mutation.onError` treats network errors, 409 conflicts, and 500s identically (single `error_message` string) — minor UX; no distinct "already completed" vs "transient failure" messaging ([web/src/components/production/ComplianceGate.tsx:69-72](../../web/src/components/production/ComplianceGate.tsx)).
+- `AcknowledgeMetadata` handler lacks `MaxBytesReader` protection — endpoint ignores the request body but Go still reads it per connection limits. Hardening item; not exercised by normal client ([internal/api/handler_run.go](../../internal/api/handler_run.go)).
+
 ## Deferred from: code review of 9-2-metadata-attribution-bundle (2026-04-24)
 
 - **W1: metadata.json + manifest.json 단위 원자성 미보장** — `Write()`가 두 파일을 순차 atomic-write하지만 첫 파일 성공 후 두 번째 실패 시 타임스탬프 불일치 재시도 발생. 스테이징 디렉토리 rename 또는 "completed" 마커 파일 전략 필요 ([internal/pipeline/phase_c_metadata.go](../../internal/pipeline/phase_c_metadata.go)).

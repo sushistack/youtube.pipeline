@@ -48,7 +48,7 @@ func (h *ArtifactsHandler) Manifest(w http.ResponseWriter, r *http.Request) {
 func (h *ArtifactsHandler) serveRunFile(w http.ResponseWriter, r *http.Request, filename, contentType string) {
 	runID := r.PathValue("id")
 	run, err := h.svc.Get(r.Context(), runID)
-	if err != nil || (run.Stage != domain.StageMetadataAck && run.Stage != domain.StageComplete) {
+	if err != nil || run == nil || (run.Stage != domain.StageMetadataAck && run.Stage != domain.StageComplete) {
 		http.NotFound(w, r)
 		return
 	}
@@ -65,5 +65,8 @@ func (h *ArtifactsHandler) serveRunFile(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
+	// metadata.json/manifest.json are regenerated on resume; disable caching so
+	// the browser never serves a stale copy that disagrees with the DB state.
+	w.Header().Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, filename, stat.ModTime(), f)
 }

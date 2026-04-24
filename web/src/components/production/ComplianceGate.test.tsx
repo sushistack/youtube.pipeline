@@ -1,9 +1,9 @@
 import "@testing-library/jest-dom";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../test/renderWithProviders";
+import { queryKeys } from "../../lib/queryKeys";
 import { ComplianceGate } from "./ComplianceGate";
 import type { RunSummary } from "../../contracts/runContracts";
 
@@ -194,6 +194,77 @@ describe("ComplianceGate", () => {
 
     await waitFor(() => {
       expect(acknowledgeMetadata).toHaveBeenCalledWith(run.id);
+    });
+  });
+
+  it("invalidates status and list queries after successful ack", async () => {
+    const user = userEvent.setup();
+    const { queryClient } = renderWithProviders(<ComplianceGate run={run} />);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Title confirmed: SCP-049 Test Video/),
+      ).toBeInTheDocument();
+    });
+
+    for (const cb of screen.getAllByRole("checkbox")) {
+      await user.click(cb);
+    }
+    await user.click(
+      screen.getByRole("button", { name: /Acknowledge & Complete/ }),
+    );
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: queryKeys.runs.status(run.id),
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: queryKeys.runs.list(),
+      });
+    });
+  });
+
+  it("keeps the Finalize button disabled after a successful ack to prevent double-submit", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ComplianceGate run={run} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Title confirmed: SCP-049 Test Video/),
+      ).toBeInTheDocument();
+    });
+
+    for (const cb of screen.getAllByRole("checkbox")) {
+      await user.click(cb);
+    }
+    await user.click(
+      screen.getByRole("button", { name: /Acknowledge & Complete/ }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Acknowledged/ })).toBeDisabled();
+    });
+  });
+
+  it("shows the video-unavailable banner only when the video element errors", async () => {
+    renderWithProviders(<ComplianceGate run={run} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Title confirmed: SCP-049 Test Video/),
+      ).toBeInTheDocument();
+    });
+
+    // Metadata loaded successfully — banner should NOT appear even though metadata query is fine.
+    expect(screen.queryByText(/Video not yet available/)).not.toBeInTheDocument();
+
+    // Simulate the video element failing to load.
+    const video = document.querySelector("video") as HTMLVideoElement;
+    video.dispatchEvent(new Event("error"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Video not yet available/)).toBeInTheDocument();
     });
   });
 });

@@ -29,8 +29,11 @@ type ChecklistId = (typeof CHECKLIST_ITEMS)[number];
 export function ComplianceGate({ run }: ComplianceGateProps) {
   const query_client = useQueryClient();
   const video_ref = useRef<HTMLVideoElement>(null);
-  const [checklist, set_checklist] = useState<Record<string, boolean>>({});
+  const [checklist, set_checklist] = useState<Record<ChecklistId, boolean>>(
+    () => Object.fromEntries(CHECKLIST_ITEMS.map((id) => [id, false])) as Record<ChecklistId, boolean>,
+  );
   const [error_message, set_error_message] = useState<string | null>(null);
+  const [video_load_failed, set_video_load_failed] = useState(false);
 
   // 5-second video auto-stop.
   useEffect(() => {
@@ -45,25 +48,35 @@ export function ComplianceGate({ run }: ComplianceGateProps) {
     return () => video.removeEventListener("timeupdate", onTimeUpdate);
   }, [run.id]);
 
+  // Artifact JSON is regenerated on resume (see internal/pipeline/resume.go),
+  // so we never want cached data to outlive the current mount — `staleTime: 0`
+  // forces a refetch every time the operator lands on the gate.
   const metadata_query = useQuery({
     queryFn: () => fetchRunMetadata(run.id),
     queryKey: queryKeys.runs.metadata(run.id),
-    staleTime: 60_000,
+    staleTime: 0,
     retry: false,
   });
 
   const manifest_query = useQuery({
     queryFn: () => fetchRunManifest(run.id),
     queryKey: queryKeys.runs.manifest(run.id),
-    staleTime: 60_000,
+    staleTime: 0,
     retry: false,
   });
 
   const ack_mutation = useMutation({
     mutationFn: () => acknowledgeMetadata(run.id),
+    onMutate: () => {
+      set_error_message(null);
+    },
     onSuccess: () => {
+      set_error_message(null);
       void query_client.invalidateQueries({
         queryKey: queryKeys.runs.status(run.id),
+      });
+      void query_client.invalidateQueries({
+        queryKey: queryKeys.runs.list(),
       });
     },
     onError: (err: Error) => {
@@ -71,7 +84,7 @@ export function ComplianceGate({ run }: ComplianceGateProps) {
     },
   });
 
-  function toggleCheckbox(id: string) {
+  function toggleCheckbox(id: ChecklistId) {
     set_checklist((prev) => ({ ...prev, [id]: !prev[id] }));
   }
 
@@ -123,10 +136,12 @@ export function ComplianceGate({ run }: ComplianceGateProps) {
           muted
           playsInline
           className="compliance-gate__video"
+          onError={() => set_video_load_failed(true)}
+          onLoadedData={() => set_video_load_failed(false)}
         >
           <track kind="captions" />
         </video>
-        {metadata_query.isError && (
+        {video_load_failed && (
           <div className="compliance-gate__video-warning" role="alert">
             <strong>Video not yet available</strong>
             <p>The assembled video could not be loaded. You may still proceed.</p>
@@ -152,7 +167,7 @@ export function ComplianceGate({ run }: ComplianceGateProps) {
             <label key={id} className="compliance-gate__checkbox-label">
               <input
                 type="checkbox"
-                checked={checklist[id] ?? false}
+                checked={checklist[id]}
                 onChange={() => toggleCheckbox(id)}
               />
               <span>{checklistLabel(id)}</span>
@@ -182,10 +197,16 @@ export function ComplianceGate({ run }: ComplianceGateProps) {
       <button
         type="button"
         className="compliance-gate__finalize-btn"
-        disabled={!all_checked || ack_mutation.isPending}
+        disabled={
+          !all_checked || ack_mutation.isPending || ack_mutation.isSuccess
+        }
         onClick={() => ack_mutation.mutate()}
       >
-        {ack_mutation.isPending ? "Finalising…" : "Acknowledge & Complete"}
+        {ack_mutation.isPending
+          ? "Finalising…"
+          : ack_mutation.isSuccess
+            ? "Acknowledged"
+            : "Acknowledge & Complete"}
       </button>
     </section>
   );

@@ -1082,10 +1082,49 @@ func TestRunStore_MarkComplete_NotFound(t *testing.T) {
 	store := db.NewRunStore(database)
 
 	err := store.MarkComplete(context.Background(), "scp-999-run-1")
-	// MarkComplete does not check rows affected (no ErrNotFound returned).
-	// It simply runs the UPDATE; if no rows match, SQLite reports success with 0 rows.
-	if err != nil {
-		t.Fatalf("MarkComplete on non-existent run should not error: %v", err)
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("MarkComplete on non-existent run: expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestRunStore_MarkComplete_WrongStage(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := store.Create(ctx, "049", outDir)
+	// Run is at pending+pending — wrong stage for MarkComplete.
+
+	err := store.MarkComplete(ctx, run.ID)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("MarkComplete on wrong stage: expected ErrConflict, got %v", err)
+	}
+
+	// Verify the row was NOT mutated.
+	current, _ := store.Get(ctx, run.ID)
+	testutil.AssertEqual(t, current.Stage, domain.StagePending)
+	testutil.AssertEqual(t, current.Status, domain.StatusPending)
+}
+
+func TestRunStore_MarkComplete_AlreadyCompleted(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := store.Create(ctx, "049", outDir)
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET stage = 'complete', status = 'completed' WHERE id = ?`, run.ID); err != nil {
+		t.Fatalf("seed stage/status: %v", err)
+	}
+
+	// Second ack on an already-completed run must not silently succeed.
+	err := store.MarkComplete(ctx, run.ID)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("MarkComplete on already-completed run: expected ErrConflict, got %v", err)
 	}
 }
 

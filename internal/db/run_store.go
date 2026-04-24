@@ -293,14 +293,35 @@ func (s *RunStore) SetCharacterQueryKey(ctx context.Context, id, queryKey string
 	return nil
 }
 
-// MarkComplete sets the run's stage to 'complete' and status to 'completed'.
-// This is the NFR-L1 gate: ready-for-upload is ONLY reachable via this path.
+// MarkComplete atomically transitions a run from (metadata_ack, waiting) to
+// (complete, completed). This is the NFR-L1 gate: ready-for-upload is ONLY
+// reachable via this path, and the stage/status predicate in WHERE prevents
+// TOCTOU races with concurrent Cancel or repeat Ack attempts.
+//
+// Returns domain.ErrNotFound when the run does not exist, domain.ErrConflict
+// when the run exists but is not at (metadata_ack, waiting). Ordering mirrors
+// Cancel: on RowsAffected=0 we re-Get to disambiguate missing vs. terminal.
 func (s *RunStore) MarkComplete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE runs SET stage = 'complete', status = 'completed', updated_at = ? WHERE id = ?`,
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET stage = 'complete', status = 'completed', updated_at = ?
+		  WHERE id = ? AND stage = ? AND status = ?`,
 		time.Now().UTC().Format(time.RFC3339Nano), id,
+		string(domain.StageMetadataAck), string(domain.StatusWaiting),
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("mark complete %s: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark complete %s rows affected: %w", id, err)
+	}
+	if n == 0 {
+		if _, err := s.Get(ctx, id); err != nil {
+			return err
+		}
+		return fmt.Errorf("mark complete %s: %w", id, domain.ErrConflict)
+	}
+	return nil
 }
 
 // SetSelectedCharacterID persists the operator's selected character candidate ID.

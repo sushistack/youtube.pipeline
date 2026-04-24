@@ -377,10 +377,14 @@ export const metadataBundleSchema = z.object({
   models_used: z.record(z.string(), modelRecordSchema),
 });
 
+// author_name / license_url can be empty for orphan works, CC0, or some
+// public-domain sources. The UI is already defensive (`?? "—"`), so parsing
+// must accept "". Core compliance fields (component, source_url, license)
+// stay strict — the gate is pointless without them.
 export const licenseEntrySchema = z.object({
   component: z.string().min(1),
   source_url: z.string().min(1),
-  author_name: z.string().min(1),
+  author_name: z.string(),
   license: z.string().min(1),
 });
 
@@ -390,9 +394,9 @@ export const sourceManifestSchema = z.object({
   run_id: z.string().min(1),
   scp_id: z.string().min(1),
   source_url: z.string().min(1),
-  author_name: z.string().min(1),
+  author_name: z.string(),
   license: z.string().min(1),
-  license_url: z.string().min(1),
+  license_url: z.string(),
   license_chain: z.array(licenseEntrySchema),
 });
 
