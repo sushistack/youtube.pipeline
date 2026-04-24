@@ -55,6 +55,11 @@ func runResume(cmd *cobra.Command, runID string, force bool) error {
 	decisionStore := db.NewDecisionStore(database)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
+	if phaseBRunner, err := buildPhaseBRunner(cfg, store, segStore, logger); err == nil {
+		engine.SetPhaseBExecutor(phaseBRunner)
+	} else {
+		logger.Warn("phase b runner unavailable (resume retries disabled for phase b)", "error", err.Error())
+	}
 	svc := service.NewRunService(store, engine)
 	hitlSvc := service.NewHITLService(store, decisionStore, logger)
 

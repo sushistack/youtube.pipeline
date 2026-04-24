@@ -1,6 +1,6 @@
 # Story 9.3: Compliance Audit Logging
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -330,5 +330,11 @@ claude-sonnet-4-6
 ### Debug Log References
 
 ### Completion Notes List
+
+### Review Findings
+
+- [x] [Review][Patch] Production wiring still leaves `phaseBRunner` unused in `serve`, so AC-1 remains unmet for runtime `text_generation` and `image_generation` logging [cmd/pipeline/serve.go:145]
+- [x] [Review][Patch] Blocked-voice error text includes the wrapped `validation error` suffix instead of the exact operator-facing message required by AC-2 [internal/pipeline/tts_track.go:139]
+- [x] [Review][Patch] `truncatePrompt` returns 2047 runes for over-limit prompts, so logged prompts are shorter than the 2048-char contract in AC-1 [internal/pipeline/audit.go:60]
 
 ### File List

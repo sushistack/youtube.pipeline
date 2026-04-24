@@ -58,6 +58,19 @@ type RetryRecorder interface {
 	RecordRetry(ctx context.Context, runID string, stage domain.Stage, reason string) error
 }
 
+type classifiedMessageError struct {
+	msg   string
+	cause error
+}
+
+func (e classifiedMessageError) Error() string {
+	return e.msg
+}
+
+func (e classifiedMessageError) Unwrap() error {
+	return e.cause
+}
+
 // NewTTSTrack constructs the Phase B TTS track from cfg. The returned function
 // is safe to pass as pipeline.TTSTrack to NewPhaseBRunner.
 func NewTTSTrack(cfg TTSTrackConfig) (TTSTrack, error) {
@@ -136,10 +149,10 @@ func runTTSTrack(
 					BlockedID: blockedID,
 				})
 			}
-			return TTSTrackResult{}, fmt.Errorf(
-				"Voice profile '%s' is blocked by compliance policy: %w",
-				blockedID, domain.ErrValidation,
-			)
+			return TTSTrackResult{}, classifiedMessageError{
+				msg:   fmt.Sprintf("Voice profile '%s' is blocked by compliance policy", blockedID),
+				cause: domain.ErrValidation,
+			}
 		}
 	}
 

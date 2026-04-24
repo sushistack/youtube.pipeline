@@ -150,6 +150,7 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	_ = phaseBRunner // wired into engine.SetPhaseAExecutor when Phase A lands
 
 	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
+	engine.SetPhaseBExecutor(phaseBRunner)
 	svc := service.NewRunService(store, engine)
 	hitlSvc := service.NewHITLService(store, decisionStore, logger)
 	characterCache := db.NewCharacterCacheStore(database)

@@ -139,17 +139,13 @@ func renderForbiddenTermsSection(patterns []string) string {
 
 // truncatePrompt rune-aware truncates s to at most n runes.
 func truncatePrompt(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
 	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
-	var idx int
-	for i := range s {
-		if utf8.RuneCountInString(s[:i]) >= n {
-			break
-		}
-		idx = i
-	}
-	return s[:idx]
+	return string([]rune(s)[:n])
 }
 
 func fillNarrationMetadata(script *domain.NarrationScript, resp domain.TextResponse, cfg TextAgentConfig, terms *ForbiddenTerms) {

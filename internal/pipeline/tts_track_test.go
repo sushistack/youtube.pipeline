@@ -815,6 +815,9 @@ func TestTTSTrack_BlockedVoiceRejectedWithAuditLog(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for blocked voice, got nil")
 	}
+	if got, want := err.Error(), "Voice profile 'blocked-voice' is blocked by compliance policy"; got != want {
+		t.Fatalf("error message = %q, want %q", got, want)
+	}
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Errorf("error does not wrap ErrValidation: %v", err)
 	}

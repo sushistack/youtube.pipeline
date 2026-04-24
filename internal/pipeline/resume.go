@@ -25,6 +25,10 @@ type PhaseAExecutor interface {
 	Run(ctx context.Context, state *agents.PipelineState) error
 }
 
+type PhaseBExecutor interface {
+	Run(ctx context.Context, req PhaseBRequest) (PhaseBResult, error)
+}
+
 // SegmentStore is the minimal persistence surface the Engine needs for
 // Phase B clean-slate semantics. *db.SegmentStore satisfies it structurally.
 type SegmentStore interface {
@@ -59,6 +63,7 @@ type Engine struct {
 	segments       SegmentStore
 	sessions       HITLSessionCleaner
 	phaseA         PhaseAExecutor
+	phaseB         PhaseBExecutor
 	phaseC         *PhaseCRunner
 	phaseCMetadata MetadataBuilder
 	clock          clock.Clock
@@ -86,6 +91,10 @@ func NewEngine(runs RunStore, segments SegmentStore, sessions HITLSessionCleaner
 
 func (e *Engine) SetPhaseAExecutor(exec PhaseAExecutor) {
 	e.phaseA = exec
+}
+
+func (e *Engine) SetPhaseBExecutor(exec PhaseBExecutor) {
+	e.phaseB = exec
 }
 
 func (e *Engine) SetPhaseCRunner(runner *PhaseCRunner) {
@@ -275,6 +284,40 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 	newStatus := StatusForStage(run.Stage)
 	if err := e.runs.ResetForResume(ctx, runID, newStatus); err != nil {
 		return report, fmt.Errorf("resume %s: reset: %w", runID, err)
+	}
+
+	if isPhaseB(run.Stage) && e.phaseB != nil {
+		req := PhaseBRequest{
+			RunID:        runID,
+			Stage:        run.Stage,
+			ScenarioPath: ScenarioPath(e.outputDir, runID),
+			Segments:     segments,
+		}
+		if _, err := e.phaseB.Run(ctx, req); err != nil {
+			res := domain.PhaseAAdvanceResult{
+				Stage:        run.Stage,
+				Status:       domain.StatusFailed,
+				RetryReason:  run.RetryReason,
+				CriticScore:  run.CriticScore,
+				ScenarioPath: run.ScenarioPath,
+			}
+			if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, res); fixErr != nil {
+				e.logger.Warn("failed to reset status after phase b error",
+					"run_id", runID, "error", fixErr)
+			}
+			return report, fmt.Errorf("resume %s: phase b run: %w", runID, err)
+		}
+
+		res := domain.PhaseAAdvanceResult{
+			Stage:        domain.StageBatchReview,
+			Status:       domain.StatusWaiting,
+			RetryReason:  nil,
+			CriticScore:  run.CriticScore,
+			ScenarioPath: run.ScenarioPath,
+		}
+		if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
+			return report, fmt.Errorf("resume %s: apply phase b success result: %w", runID, err)
+		}
 	}
 
 	// Execute StageAssemble if Phase C runner is configured.

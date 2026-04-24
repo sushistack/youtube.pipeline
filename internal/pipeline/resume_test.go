@@ -74,6 +74,19 @@ func (f *fakeRunStore) ApplyPhaseAResult(ctx context.Context, id string, res dom
 	return nil
 }
 
+type fakePhaseBExecutor struct {
+	run   func(context.Context, pipeline.PhaseBRequest) (pipeline.PhaseBResult, error)
+	calls []pipeline.PhaseBRequest
+}
+
+func (f *fakePhaseBExecutor) Run(ctx context.Context, req pipeline.PhaseBRequest) (pipeline.PhaseBResult, error) {
+	f.calls = append(f.calls, req)
+	if f.run == nil {
+		return pipeline.PhaseBResult{Request: req}, nil
+	}
+	return f.run(ctx, req)
+}
+
 type fakeSegmentStore struct {
 	mu              sync.Mutex
 	byRun           map[string][]*domain.Episode
@@ -332,6 +345,77 @@ func TestResume_PhaseBFailure_NoPartialSuccess_FallsBackToCleanSlate(t *testing.
 	}
 	assertMissing(t, filepath.Join(runDir, "images"))
 	assertMissing(t, filepath.Join(runDir, "tts"))
+}
+
+func TestResume_PhaseBConfigured_SuccessAdvancesToBatchReview(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	outDir := t.TempDir()
+	runID := "scp-049-run-1"
+	runs := &fakeRunStore{run: &domain.Run{
+		ID:           runID,
+		SCPID:        "049",
+		Stage:        domain.StageTTS,
+		Status:       domain.StatusFailed,
+		ScenarioPath: strPtr("scenario.json"),
+	}}
+	segs := newFakeSegmentStore()
+	mustWrite(t, filepath.Join(outDir, runID, "scenario.json"), `{"run_id":"scp-049-run-1"}`)
+
+	phaseB := &fakePhaseBExecutor{}
+	eng := newEngine(t, runs, segs, outDir)
+	eng.SetPhaseBExecutor(phaseB)
+
+	if _, err := eng.Resume(context.Background(), runID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	if len(phaseB.calls) != 1 {
+		t.Fatalf("phaseB calls = %d, want 1", len(phaseB.calls))
+	}
+	wantScenarioPath := filepath.Join(outDir, runID, "scenario.json")
+	if got := phaseB.calls[0].ScenarioPath; got != wantScenarioPath {
+		t.Fatalf("ScenarioPath = %q, want %q", got, wantScenarioPath)
+	}
+	if runs.run.Stage != domain.StageBatchReview {
+		t.Fatalf("stage = %q, want %q", runs.run.Stage, domain.StageBatchReview)
+	}
+	if runs.run.Status != domain.StatusWaiting {
+		t.Fatalf("status = %q, want %q", runs.run.Status, domain.StatusWaiting)
+	}
+}
+
+func TestResume_PhaseBConfigured_FailureRestoresFailedStatus(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	outDir := t.TempDir()
+	runID := "scp-049-run-1"
+	runs := &fakeRunStore{run: &domain.Run{
+		ID:           runID,
+		SCPID:        "049",
+		Stage:        domain.StageImage,
+		Status:       domain.StatusFailed,
+		ScenarioPath: strPtr("scenario.json"),
+	}}
+	segs := newFakeSegmentStore()
+	mustWrite(t, filepath.Join(outDir, runID, "scenario.json"), `{"run_id":"scp-049-run-1"}`)
+
+	phaseB := &fakePhaseBExecutor{
+		run: func(context.Context, pipeline.PhaseBRequest) (pipeline.PhaseBResult, error) {
+			return pipeline.PhaseBResult{}, errors.New("tts provider exploded")
+		},
+	}
+	eng := newEngine(t, runs, segs, outDir)
+	eng.SetPhaseBExecutor(phaseB)
+
+	_, err := eng.Resume(context.Background(), runID)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if runs.run.Stage != domain.StageImage {
+		t.Fatalf("stage = %q, want %q", runs.run.Stage, domain.StageImage)
+	}
+	if runs.run.Status != domain.StatusFailed {
+		t.Fatalf("status = %q, want %q", runs.run.Status, domain.StatusFailed)
+	}
 }
 
 func TestResume_AssembleFailure_RemovesClipsAndOutputMP4(t *testing.T) {
