@@ -293,6 +293,53 @@ func TestConfigLoad_RejectsOutOfRangeAutoApprovalThreshold(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_ArtifactRetentionDaysDefault(t *testing.T) {
+	cfg, err := Load("", "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ArtifactRetentionDays != 30 {
+		t.Errorf("ArtifactRetentionDays = %d, want 30 default", cfg.ArtifactRetentionDays)
+	}
+}
+
+func TestLoadConfig_ArtifactRetentionDaysOverride(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := `artifact_retention_days: 7
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	cfg, err := Load(cfgPath, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ArtifactRetentionDays != 7 {
+		t.Errorf("ArtifactRetentionDays = %d, want 7", cfg.ArtifactRetentionDays)
+	}
+}
+
+func TestLoadConfig_ArtifactRetentionDaysRejectsInvalid(t *testing.T) {
+	for _, tc := range []string{"0", "-1"} {
+		t.Run(tc, func(t *testing.T) {
+			tmp := t.TempDir()
+			cfgPath := filepath.Join(tmp, "config.yaml")
+			yaml := "artifact_retention_days: " + tc + "\n"
+			if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+				t.Fatalf("write yaml: %v", err)
+			}
+			_, err := Load(cfgPath, "")
+			if err == nil {
+				t.Fatalf("expected validation error for artifact_retention_days=%s", tc)
+			}
+			if !errors.Is(err, domain.ErrValidation) {
+				t.Fatalf("expected ErrValidation, got %v", err)
+			}
+		})
+	}
+}
+
 func TestDefaultConfigDir(t *testing.T) {
 	dir := DefaultConfigDir()
 	if dir == "" {

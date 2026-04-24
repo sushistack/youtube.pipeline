@@ -126,6 +126,7 @@ func writeConfigFile(path string, cfg domain.PipelineConfig, existingMode os.Fil
 		ShadowEvalWindow:      cfg.ShadowEvalWindow,
 		AutoApprovalThreshold: cfg.AutoApprovalThreshold,
 		BlockedVoiceIDs:       cfg.BlockedVoiceIDs,
+		ArtifactRetentionDays: cfg.ArtifactRetentionDays,
 	}
 	data, err := yaml.Marshal(&ordered)
 	if err != nil {
@@ -403,4 +404,5 @@ type orderedPipelineConfig struct {
 	ShadowEvalWindow      int      `yaml:"shadow_eval_window"`
 	AutoApprovalThreshold float64  `yaml:"auto_approval_threshold"`
 	BlockedVoiceIDs       []string `yaml:"blocked_voice_ids,omitempty"`
+	ArtifactRetentionDays int      `yaml:"artifact_retention_days"`
 }

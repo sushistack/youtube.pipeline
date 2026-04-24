@@ -98,6 +98,13 @@ func TestDefaultConfig_AutoApprovalThreshold(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ArtifactRetentionDays(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.ArtifactRetentionDays != 30 {
+		t.Errorf("ArtifactRetentionDays = %d, want 30 (Story 10.3 default)", cfg.ArtifactRetentionDays)
+	}
+}
+
 func TestDefaultConfig_PathsUnderHome(t *testing.T) {
 	cfg := DefaultConfig()
 	if !strings.Contains(cfg.OutputDir, ".youtube-pipeline") {

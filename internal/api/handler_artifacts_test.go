@@ -158,3 +158,32 @@ func TestArtifactsHandler_NotFound_MissingFile(t *testing.T) {
 
 	testutil.AssertEqual(t, rec.Code, http.StatusNotFound)
 }
+
+// TestArtifactsHandler_NotFound_ArchivedRun exercises Story 10.3 AC-6: an
+// archived run still exists in the DB at (complete, completed) but its
+// artifact files have been removed from disk. The handler must serve 404
+// via the natural "file missing" branch, never panic, and not assume a
+// non-null output_path column.
+func TestArtifactsHandler_ArchivedRun_GracefulNotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	// Complete stage + completed status — the exact shape of an archived run.
+	// No artifact files are created; this mimics post-clean filesystem state.
+	h, runID := newArtifactTestHandler(t, "complete", "completed")
+
+	for _, path := range []string{"/video", "/metadata", "/manifest"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/runs/"+runID+path, nil)
+		req.SetPathValue("id", runID)
+		rec := httptest.NewRecorder()
+		switch path {
+		case "/video":
+			h.Video(rec, req)
+		case "/metadata":
+			h.Metadata(rec, req)
+		case "/manifest":
+			h.Manifest(rec, req)
+		}
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("archived run %s: got status %d want 404", path, rec.Code)
+		}
+	}
+}

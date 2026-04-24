@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -1209,5 +1210,373 @@ func TestRunStore_CreateWithPromptVersion_NilTagKeepsColumnsNull(t *testing.T) {
 	}
 	if run.CriticPromptVersion != nil || run.CriticPromptHash != nil {
 		t.Errorf("want both nil, got version=%v hash=%v", run.CriticPromptVersion, run.CriticPromptHash)
+	}
+}
+
+// --- Story 10.3 Soft Archive helpers ---
+
+// insertSeedRunDirect inserts a run row directly into the SQL layer with an
+// explicit status and updated_at so archive candidate selection can be tested
+// deterministically without real clock ticks. Returns the run ID.
+func insertSeedRunDirect(t *testing.T, database *sql.DB, scpID, outDir string, status domain.Status, updatedAt string) string {
+	t.Helper()
+	// Derive a unique run ID per SCP. Tests pass different scpIDs per row,
+	// so the sequence stays at 1 per SCP.
+	id := fmt.Sprintf("scp-%s-run-1", scpID)
+	// Satisfy the filesystem invariant that the run dir exists for completeness,
+	// though the archive tests only need DB rows. Ignoring mkdir errors is
+	// intentional — the test dir is a TempDir.
+	_ = os.MkdirAll(filepath.Join(outDir, id), 0755)
+	// Use the terminal stage that matches the status so seeded rows reflect
+	// a valid pipeline state. Active statuses use StagePending as their natural
+	// initial stage; completed runs are at the "complete" stage.
+	stage := string(domain.StagePending)
+	if status == domain.StatusCompleted {
+		stage = "complete"
+	}
+	_, err := database.ExecContext(context.Background(),
+		`INSERT INTO runs (id, scp_id, stage, status, updated_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		id, scpID, stage, string(status), updatedAt,
+	)
+	if err != nil {
+		t.Fatalf("insert seed run %s: %v", id, err)
+	}
+	return id
+}
+
+// idsOf extracts IDs from a slice of ArchiveCandidates for error messages.
+func idsOf(cs []db.ArchiveCandidate) []string {
+	out := make([]string, len(cs))
+	for i, c := range cs {
+		out[i] = c.ID
+	}
+	return out
+}
+
+func TestRunStore_ListArchiveCandidates_TerminalOnlyPastCutoff(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+
+	old := "2026-01-01 00:00:00"
+	newer := "2026-04-20 00:00:00"
+
+	// Three terminal runs, two old (eligible), one newer than cutoff.
+	idCompletedOld := insertSeedRunDirect(t, database, "049", outDir, domain.StatusCompleted, old)
+	idFailedOld := insertSeedRunDirect(t, database, "050", outDir, domain.StatusFailed, old)
+	idCompletedRecent := insertSeedRunDirect(t, database, "051", outDir, domain.StatusCompleted, newer)
+
+	// Two active runs even older than the cutoff — must not be returned.
+	idRunning := insertSeedRunDirect(t, database, "052", outDir, domain.StatusRunning, old)
+	idWaiting := insertSeedRunDirect(t, database, "053", outDir, domain.StatusWaiting, old)
+
+	cutoff, err := time.Parse("2006-01-02 15:04:05", "2026-04-15 00:00:00")
+	if err != nil {
+		t.Fatalf("parse cutoff: %v", err)
+	}
+
+	got, err := store.ListArchiveCandidates(context.Background(), cutoff)
+	if err != nil {
+		t.Fatalf("ListArchiveCandidates: %v", err)
+	}
+
+	wantIDs := []string{idCompletedOld, idFailedOld}
+	if len(got) != len(wantIDs) {
+		t.Fatalf("got %d candidates, want %d (%v)", len(got), len(wantIDs), idsOf(got))
+	}
+	for _, c := range got {
+		if c.ID == idCompletedRecent {
+			t.Errorf("recent run %s must not be eligible", c.ID)
+		}
+		if c.ID == idRunning || c.ID == idWaiting {
+			t.Errorf("active run %s must not be eligible", c.ID)
+		}
+	}
+}
+
+func TestRunStore_ListArchiveCandidates_OldestFirstDeterministicOrdering(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+
+	// Same timestamp for two runs: tie-break must be run ID ASC.
+	// Insert C (scp-051) before B (scp-050) so that natural rowid order
+	// differs from alphabetical order — this forces the ORDER BY id ASC
+	// clause to actually do work; without it the assertion would pass by
+	// accident.
+	idA := insertSeedRunDirect(t, database, "049", outDir, domain.StatusCompleted, "2026-02-01 00:00:00")
+	idC := insertSeedRunDirect(t, database, "051", outDir, domain.StatusFailed, "2026-03-01 00:00:00")
+	idB := insertSeedRunDirect(t, database, "050", outDir, domain.StatusCompleted, "2026-03-01 00:00:00")
+
+	cutoff, _ := time.Parse("2006-01-02 15:04:05", "2026-04-15 00:00:00")
+	got, err := store.ListArchiveCandidates(context.Background(), cutoff)
+	if err != nil {
+		t.Fatalf("ListArchiveCandidates: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d candidates, want 3", len(got))
+	}
+	if got[0].ID != idA {
+		t.Errorf("first candidate: got %s want %s (oldest)", got[0].ID, idA)
+	}
+	if got[1].ID != idB || got[2].ID != idC {
+		t.Errorf("tie-break order: got %s,%s want %s,%s (ID ASC)",
+			got[1].ID, got[2].ID, idB, idC)
+	}
+}
+
+func TestRunStore_ListArchiveCandidates_EmptyWhenNoneEligible(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	cutoff, _ := time.Parse("2006-01-02 15:04:05", "2026-04-15 00:00:00")
+	got, err := store.ListArchiveCandidates(context.Background(), cutoff)
+	if err != nil {
+		t.Fatalf("ListArchiveCandidates on empty DB: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no candidates on empty DB, got %d", len(got))
+	}
+}
+
+func TestRunStore_HasActiveRuns(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	active, err := store.HasActiveRuns(ctx)
+	if err != nil {
+		t.Fatalf("HasActiveRuns empty: %v", err)
+	}
+	if active {
+		t.Error("expected no active runs on empty DB")
+	}
+
+	// Only terminal runs → still idle.
+	insertSeedRunDirect(t, database, "049", outDir, domain.StatusCompleted, "2026-01-01 00:00:00")
+	insertSeedRunDirect(t, database, "050", outDir, domain.StatusFailed, "2026-01-01 00:00:00")
+	insertSeedRunDirect(t, database, "051", outDir, domain.StatusCancelled, "2026-01-01 00:00:00")
+
+	active, err = store.HasActiveRuns(ctx)
+	if err != nil {
+		t.Fatalf("HasActiveRuns terminal-only: %v", err)
+	}
+	if active {
+		t.Error("expected no active runs when only terminal runs exist")
+	}
+
+	// Add a waiting run → active.
+	insertSeedRunDirect(t, database, "052", outDir, domain.StatusWaiting, "2026-01-01 00:00:00")
+
+	active, err = store.HasActiveRuns(ctx)
+	if err != nil {
+		t.Fatalf("HasActiveRuns with waiting: %v", err)
+	}
+	if !active {
+		t.Error("expected active runs when a waiting run is present")
+	}
+}
+
+func TestRunStore_ClearRunArtifactPaths_PreservesNonPathColumns(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, err := store.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Seed a variety of columns to prove they survive archive.
+	// Order: ApplyPhaseAResult runs FIRST because its SET list overwrites
+	// retry_reason/critic_score unconditionally (nil → NULL). Accumulating
+	// via RecordStageObservation afterwards ensures the observation values
+	// are what persist into the archive check.
+	scenarioPath := "scenario.json"
+	if err := store.ApplyPhaseAResult(ctx, run.ID, domain.PhaseAAdvanceResult{
+		Stage:        domain.StageScenarioReview,
+		Status:       domain.StatusWaiting,
+		ScenarioPath: &scenarioPath,
+	}); err != nil {
+		t.Fatalf("ApplyPhaseAResult: %v", err)
+	}
+	reason := "upstream_timeout"
+	score := 0.88
+	obs := domain.StageObservation{
+		Stage:         domain.StageCritic,
+		DurationMs:    1234,
+		TokenIn:       100,
+		TokenOut:      200,
+		RetryCount:    3,
+		RetryReason:   &reason,
+		CriticScore:   &score,
+		CostUSD:       0.42,
+		HumanOverride: true,
+	}
+	if err := store.RecordStageObservation(ctx, run.ID, obs); err != nil {
+		t.Fatalf("RecordStageObservation: %v", err)
+	}
+	if err := store.UpdateOutputPath(ctx, run.ID, "output.mp4"); err != nil {
+		t.Fatalf("UpdateOutputPath: %v", err)
+	}
+
+	before, _ := store.Get(ctx, run.ID)
+	if before.ScenarioPath == nil {
+		t.Fatal("precondition: scenario_path should be set before archive")
+	}
+
+	if err := store.ClearRunArtifactPaths(ctx, run.ID); err != nil {
+		t.Fatalf("ClearRunArtifactPaths: %v", err)
+	}
+
+	after, err := store.Get(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("Get after archive: %v", err)
+	}
+	if after.ScenarioPath != nil {
+		t.Errorf("scenario_path: want nil after archive, got %v", *after.ScenarioPath)
+	}
+	// output_path is not yet in domain.Run — verify via raw SQL.
+	var outputPath sql.NullString
+	if err := database.QueryRowContext(ctx,
+		"SELECT output_path FROM runs WHERE id = ?", run.ID,
+	).Scan(&outputPath); err != nil {
+		t.Fatalf("select output_path: %v", err)
+	}
+	if outputPath.Valid {
+		t.Errorf("output_path: want NULL after archive, got %q", outputPath.String)
+	}
+
+	// Non-path columns unchanged.
+	if after.CostUSD != before.CostUSD {
+		t.Errorf("cost_usd changed: %v → %v", before.CostUSD, after.CostUSD)
+	}
+	if after.RetryCount != before.RetryCount {
+		t.Errorf("retry_count changed: %v → %v", before.RetryCount, after.RetryCount)
+	}
+	if after.HumanOverride != before.HumanOverride {
+		t.Errorf("human_override changed: %v → %v", before.HumanOverride, after.HumanOverride)
+	}
+	if after.RetryReason == nil || *after.RetryReason != reason {
+		t.Errorf("retry_reason: want preserved, got %v", after.RetryReason)
+	}
+	if after.CriticScore == nil || *after.CriticScore != score {
+		t.Errorf("critic_score: want preserved, got %v", after.CriticScore)
+	}
+	if after.Stage != domain.StageScenarioReview {
+		t.Errorf("stage changed: %v → %v", domain.StageScenarioReview, after.Stage)
+	}
+}
+
+func TestRunStore_ClearRunArtifactPaths_RunScoped(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	runA, _ := store.Create(ctx, "049", outDir)
+	runB, _ := store.Create(ctx, "050", outDir)
+	for _, id := range []string{runA.ID, runB.ID} {
+		if err := store.UpdateOutputPath(ctx, id, "output.mp4"); err != nil {
+			t.Fatalf("UpdateOutputPath %s: %v", id, err)
+		}
+	}
+
+	if err := store.ClearRunArtifactPaths(ctx, runA.ID); err != nil {
+		t.Fatalf("ClearRunArtifactPaths: %v", err)
+	}
+
+	var outputA, outputB sql.NullString
+	if err := database.QueryRowContext(ctx,
+		"SELECT output_path FROM runs WHERE id = ?", runA.ID).Scan(&outputA); err != nil {
+		t.Fatalf("select output A: %v", err)
+	}
+	if err := database.QueryRowContext(ctx,
+		"SELECT output_path FROM runs WHERE id = ?", runB.ID).Scan(&outputB); err != nil {
+		t.Fatalf("select output B: %v", err)
+	}
+	if outputA.Valid {
+		t.Errorf("run A output_path: want NULL, got %q", outputA.String)
+	}
+	if !outputB.Valid || outputB.String != "output.mp4" {
+		t.Errorf("run B output_path: want 'output.mp4' (untouched), got %v", outputB)
+	}
+}
+
+func TestRunStore_ClearRunArtifactPaths_IdempotentOnArchivedRun(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, _ := store.Create(ctx, "049", outDir)
+
+	// First call on an un-archived run.
+	if err := store.ClearRunArtifactPaths(ctx, run.ID); err != nil {
+		t.Fatalf("first ClearRunArtifactPaths: %v", err)
+	}
+	// Second call on the already-archived run — must succeed (idempotent),
+	// not return ErrNotFound. The row still exists; paths are just already NULL.
+	if err := store.ClearRunArtifactPaths(ctx, run.ID); err != nil {
+		t.Fatalf("idempotent ClearRunArtifactPaths: %v", err)
+	}
+}
+
+func TestRunStore_ClearRunArtifactPaths_MissingRunReturnsNotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	err := store.ClearRunArtifactPaths(context.Background(), "scp-999-run-1")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// TestRunStore_ListAndGet_ArchivedRun is Story 10.3 AC-6 coverage: an
+// archived run (all artifact-path columns NULL) must still surface via
+// List and Get without errors or panics. This matches the promise that
+// `pipeline status` continues to enumerate archived runs unchanged.
+func TestRunStore_ListAndGet_ArchivedRun(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	ctx := context.Background()
+
+	run, err := store.Create(ctx, "049", t.TempDir())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := store.ClearRunArtifactPaths(ctx, run.ID); err != nil {
+		t.Fatalf("ClearRunArtifactPaths: %v", err)
+	}
+
+	got, err := store.Get(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("Get archived run: %v", err)
+	}
+	if got.ScenarioPath != nil {
+		t.Errorf("archived run scenario_path: want nil, got %v", *got.ScenarioPath)
+	}
+
+	listed, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List with archived run: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("List length: got %d want 1", len(listed))
+	}
+	if listed[0].ID != run.ID {
+		t.Errorf("List ID: got %s want %s", listed[0].ID, run.ID)
 	}
 }

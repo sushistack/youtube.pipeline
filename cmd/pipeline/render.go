@@ -144,6 +144,30 @@ type CancelOutput struct {
 	Status string `json:"status"`
 }
 
+// CleanOutput is the Story 10.3 structured output for `pipeline clean`.
+// It mirrors service.CleanSummary verbatim so human and JSON renderers can
+// consume the same payload without an extra transform.
+type CleanOutput struct {
+	RetentionDays int                `json:"retention_days"`
+	CutoffUTC     string             `json:"cutoff_utc"`
+	RunsScanned   int                `json:"runs_scanned"`
+	RunsArchived  int                `json:"runs_archived"`
+	FilesDeleted  int                `json:"files_deleted"`
+	DBRefsCleared int                `json:"db_refs_cleared"`
+	Vacuum        string             `json:"vacuum"`
+	VacuumError   string             `json:"vacuum_error,omitempty"`
+	ArchivedRuns  []CleanArchivedRun `json:"archived_runs,omitempty"`
+}
+
+// CleanArchivedRun is one entry in CleanOutput.ArchivedRuns.
+type CleanArchivedRun struct {
+	ID            string `json:"id"`
+	Status        string `json:"status"`
+	UpdatedAt     string `json:"updated_at"`
+	FilesDeleted  int    `json:"files_deleted"`
+	DBRefsCleared int    `json:"db_refs_cleared"`
+}
+
 // ResumeOutput is the structured output for the resume command.
 // Warnings carries filesystem/DB inconsistency descriptions that were
 // bypassed via --force (empty when no mismatches were present).
@@ -191,6 +215,8 @@ func (r *HumanRenderer) RenderSuccess(data any) {
 		r.renderGoldenAdd(v)
 	case *GoldenListOutput:
 		r.renderGoldenList(v)
+	case *CleanOutput:
+		r.renderClean(v)
 	default:
 		fmt.Fprintf(r.w, "%v\n", data)
 	}
@@ -342,6 +368,26 @@ func (r *HumanRenderer) renderResume(o *ResumeOutput) {
 		}
 	}
 	r.renderHITLBlock(o.Summary, o.Run.PausedPosition, o.ChangesSince)
+}
+
+func (r *HumanRenderer) renderClean(o *CleanOutput) {
+	fmt.Fprintf(r.w, "%sSoft archive complete%s\n", colorGreen, colorReset)
+	fmt.Fprintf(r.w, "  Retention:     %d days\n", o.RetentionDays)
+	fmt.Fprintf(r.w, "  Cutoff (UTC):  %s\n", o.CutoffUTC)
+	fmt.Fprintf(r.w, "  Runs scanned:  %d\n", o.RunsScanned)
+	fmt.Fprintf(r.w, "  Runs archived: %d\n", o.RunsArchived)
+	fmt.Fprintf(r.w, "  Files deleted: %d\n", o.FilesDeleted)
+	fmt.Fprintf(r.w, "  DB refs cleared: %d\n", o.DBRefsCleared)
+	switch o.Vacuum {
+	case "ran":
+		fmt.Fprintf(r.w, "  VACUUM:        %sran%s\n", colorGreen, colorReset)
+	case "skipped_active_runs":
+		fmt.Fprintf(r.w, "  VACUUM:        %sskipped (active runs present)%s\n", colorYellow, colorReset)
+	case "failed":
+		fmt.Fprintf(r.w, "  VACUUM:        %sfailed%s — %s\n", colorRed, colorReset, o.VacuumError)
+	default:
+		fmt.Fprintf(r.w, "  VACUUM:        %s\n", o.Vacuum)
+	}
 }
 
 func (r *HumanRenderer) renderMetrics(m *domain.MetricsReport) {

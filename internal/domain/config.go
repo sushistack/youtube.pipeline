@@ -79,6 +79,14 @@ type PipelineConfig struct {
 	// track rejects the request before any external API call and appends a
 	// voice_blocked audit entry. Default is nil (no voices blocked).
 	BlockedVoiceIDs []string `yaml:"blocked_voice_ids" mapstructure:"blocked_voice_ids"`
+
+	// ArtifactRetentionDays is the Story 10.3 Soft Archive cutoff. Terminal
+	// runs whose `updated_at` is older than `now - ArtifactRetentionDays` are
+	// eligible for archive: artifact files are deleted from disk and DB path
+	// references are nulled, while the run/segment/decision rows are retained
+	// indefinitely per NFR-O2. Must be >= 1; 0 or negative is rejected as
+	// domain.ErrValidation by the loader.
+	ArtifactRetentionDays int `yaml:"artifact_retention_days" mapstructure:"artifact_retention_days"`
 }
 
 // DefaultConfig returns a PipelineConfig with sensible defaults.
@@ -112,5 +120,6 @@ func DefaultConfig() PipelineConfig {
 		GoldenStalenessDays:   30,
 		ShadowEvalWindow:      10,
 		AutoApprovalThreshold: 0.85,
+		ArtifactRetentionDays: 30,
 	}
 }

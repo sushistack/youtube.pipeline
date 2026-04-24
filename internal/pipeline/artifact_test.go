@@ -133,6 +133,89 @@ func TestCleanStageArtifacts_Idempotent(t *testing.T) {
 	}
 }
 
+// --- Story 10.3 ArchiveRunArtifacts ---
+
+func TestArchiveRunArtifacts_RemovesAllKnownArtifacts(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	runDir := t.TempDir()
+	mustWrite(t, filepath.Join(runDir, "scenario.json"), "{}")
+	mustWrite(t, filepath.Join(runDir, "output.mp4"), "final")
+	mustWrite(t, filepath.Join(runDir, "metadata.json"), "{}")
+	mustWrite(t, filepath.Join(runDir, "manifest.json"), "{}")
+	mustWrite(t, filepath.Join(runDir, "images", "scene_01", "shot_01.png"), "img")
+	mustWrite(t, filepath.Join(runDir, "tts", "scene_01.wav"), "wav")
+	mustWrite(t, filepath.Join(runDir, "clips", "scene_01.mp4"), "clip")
+
+	deleted, err := pipeline.ArchiveRunArtifacts(runDir)
+	if err != nil {
+		t.Fatalf("ArchiveRunArtifacts: %v", err)
+	}
+	// 3 subtrees + 4 files = 7 removed entries.
+	if deleted != 7 {
+		t.Errorf("deleted count: got %d want 7", deleted)
+	}
+	// After removing all known artifacts, the (now empty) runDir is also removed.
+	assertMissing(t, runDir)
+}
+
+func TestArchiveRunArtifacts_IsIdempotent(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	runDir := t.TempDir()
+	mustWrite(t, filepath.Join(runDir, "scenario.json"), "{}")
+	// NOTES.md is unknown — runDir is preserved after first pass, giving a
+	// second pass a live directory with no known artifacts to delete.
+	mustWrite(t, filepath.Join(runDir, "NOTES.md"), "hand-written notes")
+
+	deleted, err := pipeline.ArchiveRunArtifacts(runDir)
+	if err != nil {
+		t.Fatalf("first ArchiveRunArtifacts: %v", err)
+	}
+	if deleted != 1 {
+		t.Errorf("first deleted count: got %d want 1", deleted)
+	}
+	// runDir survives because NOTES.md remains. Second pass must succeed and
+	// report 0 — scenario.json is already gone, nothing new to delete.
+	deleted, err = pipeline.ArchiveRunArtifacts(runDir)
+	if err != nil {
+		t.Fatalf("second ArchiveRunArtifacts: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("second deleted count: got %d want 0", deleted)
+	}
+	// Unknown file must still be present.
+	assertPresent(t, filepath.Join(runDir, "NOTES.md"))
+}
+
+func TestArchiveRunArtifacts_PreservesUnknownFiles(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	runDir := t.TempDir()
+	mustWrite(t, filepath.Join(runDir, "scenario.json"), "{}")
+	// Operator-authored note file outside the known allowlist.
+	mustWrite(t, filepath.Join(runDir, "NOTES.md"), "hand-written notes")
+
+	deleted, err := pipeline.ArchiveRunArtifacts(runDir)
+	if err != nil {
+		t.Fatalf("ArchiveRunArtifacts: %v", err)
+	}
+	if deleted != 1 {
+		t.Errorf("deleted count: got %d want 1 (only scenario.json)", deleted)
+	}
+	// Unknown file + its parent runDir must remain.
+	assertPresent(t, filepath.Join(runDir, "NOTES.md"))
+}
+
+func TestArchiveRunArtifacts_RunDirMissingIsNotError(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	runDir := filepath.Join(t.TempDir(), "never-created")
+	deleted, err := pipeline.ArchiveRunArtifacts(runDir)
+	if err != nil {
+		t.Fatalf("missing runDir should be idempotent, got err=%v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("deleted count: got %d want 0", deleted)
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {

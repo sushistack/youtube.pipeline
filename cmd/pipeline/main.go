@@ -48,6 +48,7 @@ func main() {
 	rootCmd.AddCommand(newMetricsCmd())
 	rootCmd.AddCommand(newServeCmd())
 	rootCmd.AddCommand(newGoldenCmd())
+	rootCmd.AddCommand(newCleanCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		// silentErr means the command already rendered output; skip re-rendering.

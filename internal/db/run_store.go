@@ -445,6 +445,132 @@ func (s *RunStore) SetFrozenDescriptor(ctx context.Context, id, descriptor strin
 	return nil
 }
 
+// ArchiveCandidate is a minimal per-run view returned by
+// ListArchiveCandidates for Soft Archive consideration (Story 10.3 AC-2).
+// It carries enough metadata to decide filesystem actions without re-reading
+// the full run row — updated_at is included so callers can log the age that
+// caused a run to be eligible.
+type ArchiveCandidate struct {
+	ID            string
+	Status        domain.Status
+	ScenarioPath  *string
+	OutputPath    *string
+	UpdatedAt     string
+}
+
+// ListArchiveCandidates returns terminal runs whose updated_at is strictly
+// older than cutoff, ordered oldest-first with run ID as the tie-breaker.
+// "Terminal" = status ∈ {completed, failed, cancelled}; active statuses
+// (pending, running, waiting) are never returned. The ordering is stable
+// and deterministic so repeat calls on the same DB produce the same slice.
+//
+// A run whose scenario_path and output_path are already NULL is still
+// returned — the cleaner treats it as already archived and continues without
+// error (idempotency).
+func (s *RunStore) ListArchiveCandidates(ctx context.Context, cutoff time.Time) ([]ArchiveCandidate, error) {
+	// Use datetime() on both sides so SQLite normalises the comparison regardless
+	// of how updated_at was written — MarkComplete stores RFC3339Nano
+	// ("2026-01-02T15:04:05.999Z") while the AFTER UPDATE trigger stores the
+	// space-separated SQLite format ("2026-01-02 15:04:05"). A plain TEXT
+	// comparison between these two formats is unreliable at the sub-day boundary
+	// because 'T' (0x54) > ' ' (0x20), which would exclude boundary-day
+	// RFC3339-formatted rows that should be archived.
+	cutoffSQL := cutoff.UTC().Format(time.RFC3339)
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, status, scenario_path, output_path, updated_at
+		   FROM runs
+		  WHERE status IN (?, ?, ?)
+		    AND datetime(updated_at) < datetime(?)
+		  ORDER BY datetime(updated_at) ASC, id ASC`,
+		string(domain.StatusCompleted),
+		string(domain.StatusFailed),
+		string(domain.StatusCancelled),
+		cutoffSQL,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list archive candidates: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ArchiveCandidate
+	for rows.Next() {
+		var (
+			c            ArchiveCandidate
+			status       string
+			scenarioPath sql.NullString
+			outputPath   sql.NullString
+		)
+		if err := rows.Scan(&c.ID, &status, &scenarioPath, &outputPath, &c.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan archive candidate: %w", err)
+		}
+		c.Status = domain.Status(status)
+		if scenarioPath.Valid {
+			v := scenarioPath.String
+			c.ScenarioPath = &v
+		}
+		if outputPath.Valid {
+			v := outputPath.String
+			c.OutputPath = &v
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate archive candidates: %w", err)
+	}
+	return out, nil
+}
+
+// HasActiveRuns reports whether any runs are currently non-terminal
+// (status ∈ {pending, running, waiting}). Used as the Story 10.3 AC-5 idle
+// gate for VACUUM — VACUUM is skipped when any run is active, even if the
+// archive phase itself still ran successfully on eligible terminal runs.
+func (s *RunStore) HasActiveRuns(ctx context.Context) (bool, error) {
+	var exists int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT EXISTS (
+		   SELECT 1 FROM runs WHERE status IN (?, ?, ?) LIMIT 1
+		 )`,
+		string(domain.StatusPending),
+		string(domain.StatusRunning),
+		string(domain.StatusWaiting),
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check active runs: %w", err)
+	}
+	return exists == 1, nil
+}
+
+// ClearRunArtifactPaths nulls scenario_path and output_path for the target
+// run as part of Story 10.3 Soft Archive. All other columns — including
+// critic_score, retry metadata, frozen_descriptor, timestamps, etc. — are
+// preserved so archived runs remain visible to status/history/metrics
+// surfaces with only their artifact file refs gone. Scope is strictly the
+// single target run ID; other runs' columns are untouched. Missing rows
+// return ErrNotFound. Calling on an already-archived run (paths already
+// NULL) is a no-op success — zero rows updated would still RowsAffected=1
+// because the WHERE matches, but the SET value is already NULL.
+func (s *RunStore) ClearRunArtifactPaths(ctx context.Context, runID string) error {
+	if runID == "" {
+		return fmt.Errorf("clear run artifact paths: %w: run_id is empty", domain.ErrValidation)
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET scenario_path = NULL, output_path = NULL WHERE id = ?`,
+		runID,
+	)
+	if err != nil {
+		return fmt.Errorf("clear run artifact paths %s: %w", runID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("clear run artifact paths %s rows affected: %w", runID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("clear run artifact paths %s: %w", runID, domain.ErrNotFound)
+	}
+	return nil
+}
+
 // UpdateOutputPath writes the output_path column for a run.
 // Returns ErrNotFound when the run does not exist.
 func (s *RunStore) UpdateOutputPath(ctx context.Context, runID string, outputPath string) error {

@@ -54,6 +54,7 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("golden_staleness_days", cfg.GoldenStalenessDays)
 	v.SetDefault("shadow_eval_window", cfg.ShadowEvalWindow)
 	v.SetDefault("auto_approval_threshold", cfg.AutoApprovalThreshold)
+	v.SetDefault("artifact_retention_days", cfg.ArtifactRetentionDays)
 
 	// Read config.yaml if it exists.
 	if cfgPath != "" {
@@ -87,6 +88,10 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	if cfg.AutoApprovalThreshold <= 0 || cfg.AutoApprovalThreshold >= 1 {
 		return cfg, fmt.Errorf("auto_approval_threshold must be in (0,1), got %v: %w",
 			cfg.AutoApprovalThreshold, domain.ErrValidation)
+	}
+	if cfg.ArtifactRetentionDays < 1 {
+		return cfg, fmt.Errorf("artifact_retention_days must be >= 1, got %d: %w",
+			cfg.ArtifactRetentionDays, domain.ErrValidation)
 	}
 
 	return cfg, nil
