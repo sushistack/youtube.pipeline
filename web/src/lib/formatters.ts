@@ -436,10 +436,12 @@ export function buildStageGraph(
         const done =
           decisions_summary.approved_count + decisions_summary.rejected_count
         const total = done + decisions_summary.pending_count
-        node.counter = {
-          done,
-          total,
-          suffix: 'reviewed',
+        if (total > 0) {
+          node.counter = {
+            done,
+            total,
+            suffix: 'reviewed',
+          }
         }
       }
 

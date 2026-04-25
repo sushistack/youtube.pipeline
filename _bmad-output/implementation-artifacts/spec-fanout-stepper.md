@@ -2,7 +2,7 @@
 title: 'Production stepper — n8n-style fan-out / fan-in expansion'
 type: 'feature'
 created: '2026-04-25'
-status: 'in-progress'
+status: 'done'
 baseline_commit: 'f35582ae847378582c0a805f428d4ad204e00fa9'
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/spec-production-master-detail.md'
@@ -65,6 +65,7 @@ context:
 ## Spec Change Log
 
 - **2026-04-25 (post-approval correction, user-authorized [C])**: Frozen Intent claimed assets fans into "parallel TTS + Image rails", and Design Notes had scenario order `research → structure → write → review → critic → scenario_review → visual_break`. Both contradicted `internal/pipeline/engine.go:NextStage`, which encodes scenario as `research → structure → write → visual_break → review → critic → scenario_review` and assets as sequential `image → tts → batch_review`. Internal `phase_b.go` errgroup parallelism is not observable from the polled status payload. Corrected Intent, I/O matrix (split assets row by image/tts), Code Map (renamed `ASSETS_PARALLEL_STAGES` → `ASSETS_SUB_STAGES`), Acceptance Criteria, and Design Notes. **KEEP**: the no-fabrication principle is reinforced — sub-nodes only ever reflect what `run.stage` actually says.
+- **2026-04-25 (review patches, no spec change)**: Step-04 review surfaced two patch-class findings: (1) batch_review counter rendered "0/0 reviewed" when `decisions_summary` was present with all zeros — added a `total > 0` guard in `buildStageGraph` and a regression test in `formatters.test.ts`; (2) under `prefers-reduced-motion: reduce` the active rail's `border-left-style` switched dashed→solid even though the spec promised "static dashed" — extended the reduced-motion media query to also revert `border-left-style: dashed`. Three findings deferred to `deferred-work.md` (counter loss past batch_review, aria-pressed/aria-label SR double-announce, sub-label ellipsis without title). All other review findings rejected (engine invariants or pre-existing patterns).
 
 ## Tasks & Acceptance
 
@@ -114,3 +115,47 @@ context:
 - Reload after toggling: expanded state persists.
 - OS "reduce motion" toggle: connectors stop pulsing.
 - Seed `stage=batch_review` with decisions_summary: "10/32 reviewed" renders; without decisions_summary, no counter (not "0/0").
+
+## Suggested Review Order
+
+**Data layer — entry point**
+
+- `buildStageGraph` is the single source of truth for sub-stage state, derived from `run.stage` + `decisions_summary` only (no fabrication).
+  [`formatters.ts:387`](../../web/src/lib/formatters.ts#L387)
+
+- Sub-stage ordering constants verified against the engine's `NextStage` state machine.
+  [`formatters.ts:113`](../../web/src/lib/formatters.ts#L113)
+
+**Render — expanded variant**
+
+- Variant fork: `expanded` runs a different render branch; `full`/`compact` paths are bit-identical for regression safety.
+  [`StageStepper.tsx:37`](../../web/src/components/shared/StageStepper.tsx#L37)
+
+**UX wiring — toggle + payload thread**
+
+- Header reads `stage_stepper_expanded` from the store, flips chevron + variant, and threads `decisions_summary` down.
+  [`ProductionAppHeader.tsx:23`](../../web/src/components/shared/ProductionAppHeader.tsx#L23)
+
+- Shell now passes `status_payload` so the batch_review counter has a data source.
+  [`ProductionShell.tsx:325`](../../web/src/components/shells/ProductionShell.tsx#L325)
+
+**Persistence**
+
+- New global UX preference field with `partialize` — defaults to `false`, survives reload.
+  [`useUIStore.ts:76`](../../web/src/stores/useUIStore.ts#L76)
+  [`useUIStore.ts:129`](../../web/src/stores/useUIStore.ts#L129)
+
+**Styling — pulse + reduced-motion**
+
+- Active rail gets a CSS opacity pulse via `:has()`; reduced-motion guard zeroes the animation and reverts the dashed border.
+  [`index.css:1218`](../../web/src/index.css#L1218)
+  [`index.css:1293`](../../web/src/index.css#L1293)
+
+**Tests (peripheral)**
+
+- `buildStageGraph` derivation: every parent group, the failed sub-state, the all-zeros counter suppression.
+  [`formatters.test.ts:130`](../../web/src/lib/formatters.test.ts#L130)
+
+- Component tests cover the expanded sub-rails, sequential image→tts→batch_review, and toggle store binding.
+  [`StageStepper.test.tsx:28`](../../web/src/components/shared/StageStepper.test.tsx#L28)
+  [`ProductionAppHeader.test.tsx:28`](../../web/src/components/shared/ProductionAppHeader.test.tsx#L28)

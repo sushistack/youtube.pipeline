@@ -1293,6 +1293,7 @@
   @media (prefers-reduced-motion: reduce) {
     .stage-stepper__column:has(.stage-stepper__node[data-state="active"]) .stage-stepper__rail {
       animation: none;
+      border-left-style: dashed;
     }
   }
 

@@ -209,6 +209,18 @@ describe('buildStageGraph', () => {
     expect(batch?.counter).toBeUndefined()
   })
 
+  it('omits the counter when decisions_summary totals are all zero (no 0/0)', () => {
+    const graph = buildStageGraph('batch_review', 'waiting', {
+      approved_count: 0,
+      rejected_count: 0,
+      pending_count: 0,
+    })
+    const batch = graph.sub_nodes.assets?.find(
+      (node) => node.stage === 'batch_review',
+    )
+    expect(batch?.counter).toBeUndefined()
+  })
+
   it('marks all sub-nodes completed when run status is completed', () => {
     const graph = buildStageGraph('complete', 'completed')
     expect(
