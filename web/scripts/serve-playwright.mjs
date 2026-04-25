@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
@@ -13,8 +13,20 @@ const binaryPath = path.join(
   tempRoot,
   process.platform === 'win32' ? 'pipeline.exe' : 'pipeline',
 )
+const dbPath = path.join(tempRoot, 'pipeline.db')
+const outputDir = path.join(tempRoot, 'output')
 
-await mkdir(path.join(tempRoot, 'output'), { recursive: true })
+// Wipe per-run state on every server boot so spec runs do not see leftover
+// runs from prior invocations. Without this, the run inventory carries the
+// last session's POSTed runs into the next /api/runs list, which races with
+// new-run-creation.spec.ts and any other spec that asserts on a clean
+// inventory state. The Go binary recreates pipeline.db + applies migrations
+// at startup, so the wipe is safe.
+await rm(dbPath, { force: true })
+await rm(`${dbPath}-wal`, { force: true })
+await rm(`${dbPath}-shm`, { force: true })
+await rm(outputDir, { recursive: true, force: true })
+await mkdir(outputDir, { recursive: true })
 
 async function runToCompletion(command, args, options = {}) {
   const child = spawn(command, args, { stdio: 'inherit', ...options })
