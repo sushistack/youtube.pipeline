@@ -926,6 +926,8 @@
 
   .sidebar__inventory {
     display: grid;
+    grid-template-rows: auto 1fr;
+    align-content: start;
     min-height: 0;
     flex: 1 1 auto;
     gap: var(--space-3);
