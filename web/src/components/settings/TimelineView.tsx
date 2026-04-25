@@ -124,33 +124,71 @@ export function TimelineView() {
   const has_active_filters =
     decision_type !== 'all' || reason_query.trim().length > 0
 
+  // Heading is rendered for every state (loading / error / empty / populated)
+  // so the Settings workspace contract — "Timeline section is always present"
+  // — does not depend on whether decisions exist yet.
+  const header = (
+    <div className='timeline-view__header'>
+      <div>
+        <p className='route-shell__eyebrow'>Decisions history</p>
+        <h2 id='settings-history-title' className='timeline-view__title'>
+          Timeline
+        </h2>
+      </div>
+      <p className='timeline-view__body'>
+        Browse the latest review decisions across every run in one
+        chronological feed.
+      </p>
+    </div>
+  )
+
   if (decisions_query.isPending) {
     return (
-      <div className='timeline-view__loading' aria-busy='true'>
-        Loading decisions history…
-      </div>
+      <section
+        className='timeline-view'
+        aria-labelledby='settings-history-title'
+      >
+        {header}
+        <div className='timeline-view__loading' aria-busy='true'>
+          Loading decisions history…
+        </div>
+      </section>
     )
   }
 
   if (decisions_query.isError) {
     return (
-      <div className='timeline-view__error' role='alert'>
-        <span>Failed to load decisions history.</span>
-        <button
-          type='button'
-          className='timeline-filter-bar__clear'
-          onClick={() => {
-            void decisions_query.refetch()
-          }}
-        >
-          Retry
-        </button>
-      </div>
+      <section
+        className='timeline-view'
+        aria-labelledby='settings-history-title'
+      >
+        {header}
+        <div className='timeline-view__error' role='alert'>
+          <span>Failed to load decisions history.</span>
+          <button
+            type='button'
+            className='timeline-filter-bar__clear'
+            onClick={() => {
+              void decisions_query.refetch()
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </section>
     )
   }
 
   if ((items ?? []).length === 0) {
-    return <div className='timeline-view__empty'>No decisions yet.</div>
+    return (
+      <section
+        className='timeline-view'
+        aria-labelledby='settings-history-title'
+      >
+        {header}
+        <div className='timeline-view__empty'>No decisions yet.</div>
+      </section>
+    )
   }
 
   return (
@@ -158,18 +196,7 @@ export function TimelineView() {
       className='timeline-view'
       aria-labelledby='settings-history-title'
     >
-      <div className='timeline-view__header'>
-        <div>
-          <p className='route-shell__eyebrow'>Decisions history</p>
-          <h2 id='settings-history-title' className='timeline-view__title'>
-            Timeline
-          </h2>
-        </div>
-        <p className='timeline-view__body'>
-          Browse the latest review decisions across every run in one
-          chronological feed.
-        </p>
-      </div>
+      {header}
 
       <div className='timeline-filter-bar'>
         <label className='timeline-filter-bar__field'>
