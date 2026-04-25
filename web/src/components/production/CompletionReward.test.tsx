@@ -79,7 +79,7 @@ describe("CompletionReward", () => {
     renderCompletionReward();
 
     expect(
-      screen.getByText("Upload ready"),
+      screen.getByText("Ready for upload"),
     ).toBeInTheDocument();
 
     // Video element should be present.

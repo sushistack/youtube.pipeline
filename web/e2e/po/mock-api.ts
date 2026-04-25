@@ -92,6 +92,79 @@ export interface MockState {
   characters?: Record<string, CharacterCandidateFixture[]>
   descriptorPrefill?: Record<string, { auto: string; prior: string | null }>
   settings?: SettingsFixture
+  metadata?: Record<string, MetadataBundleFixture>
+  manifest?: Record<string, SourceManifestFixture>
+}
+
+export interface MetadataBundleFixture {
+  version?: number
+  generated_at?: string
+  run_id: string
+  scp_id: string
+  title: string
+  ai_generated?: { narration: boolean; imagery: boolean; tts: boolean }
+  models_used?: Record<string, { provider: string; model: string; voice?: string }>
+}
+
+export interface SourceManifestFixture {
+  version?: number
+  generated_at?: string
+  run_id: string
+  scp_id: string
+  source_url: string
+  author_name?: string
+  license: string
+  license_url?: string
+  license_chain?: Array<{
+    component: string
+    source_url: string
+    author_name: string
+    license: string
+  }>
+}
+
+function fillMetadata(bundle: MetadataBundleFixture) {
+  return {
+    version: bundle.version ?? 1,
+    generated_at: bundle.generated_at ?? '2026-04-25T00:00:00Z',
+    run_id: bundle.run_id,
+    scp_id: bundle.scp_id,
+    title: bundle.title,
+    ai_generated: bundle.ai_generated ?? {
+      narration: true,
+      imagery: true,
+      tts: true,
+    },
+    models_used: bundle.models_used ?? {
+      'qwen-max': { provider: 'dashscope', model: 'qwen-max' },
+      'sambert-zhichu-v1': {
+        provider: 'dashscope',
+        model: 'sambert-zhichu-v1',
+        voice: 'zhichu',
+      },
+    },
+  }
+}
+
+function fillManifest(manifest: SourceManifestFixture) {
+  return {
+    version: manifest.version ?? 1,
+    generated_at: manifest.generated_at ?? '2026-04-25T00:00:00Z',
+    run_id: manifest.run_id,
+    scp_id: manifest.scp_id,
+    source_url: manifest.source_url,
+    author_name: manifest.author_name ?? 'Dr. Example',
+    license: manifest.license,
+    license_url: manifest.license_url ?? 'https://creativecommons.org/licenses/by-sa/3.0/',
+    license_chain: manifest.license_chain ?? [
+      {
+        component: 'SCP article text',
+        source_url: manifest.source_url,
+        author_name: manifest.author_name ?? 'Dr. Example',
+        license: manifest.license,
+      },
+    ],
+  }
 }
 
 export interface ReviewItemFixture {
@@ -439,9 +512,67 @@ export async function installApiMocks(
       return jsonOk(route, envelope(fillRun(run)))
     }
 
-    // /runs/:id/metadata/ack
+    // /runs/:id/metadata  (raw JSON, no envelope — matches server shape)
+    if (method === 'GET' && tail === 'metadata') {
+      const bundle = state.metadata?.[runId]
+      if (!bundle) {
+        return route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: { code: 'NOT_FOUND', message: 'metadata not found' },
+            version: 1,
+          }),
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(fillMetadata(bundle)),
+      })
+    }
+
+    // /runs/:id/manifest  (raw JSON, no envelope)
+    if (method === 'GET' && tail === 'manifest') {
+      const m = state.manifest?.[runId]
+      if (!m) {
+        return route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: { code: 'NOT_FOUND', message: 'manifest not found' },
+            version: 1,
+          }),
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(fillManifest(m)),
+      })
+    }
+
+    // /runs/:id/metadata/ack — enforces the FR23 / NFR-L1 hard gate.
+    // Mirrors the real handler's atomic stage/status guard
+    // (RunStore.MarkComplete): only `metadata_ack + waiting` may transition
+    // to `complete + completed`. Every other state returns 409 so Playwright
+    // specs can observe the blocked-pre-ack regression guard (SMOKE-07 /
+    // UI-E2E-06) without contract drift.
     if (method === 'POST' && tail === 'metadata/ack') {
       if (spies?.ackCount) spies.ackCount.value += 1
+      if (run.stage !== 'metadata_ack' || run.status !== 'waiting') {
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: {
+              code: 'CONFLICT',
+              message: 'run is not awaiting metadata acknowledgment',
+            },
+            version: 1,
+          }),
+        })
+      }
       run.stage = 'complete'
       run.status = 'completed'
       return jsonOk(route, envelope(fillRun(run)))

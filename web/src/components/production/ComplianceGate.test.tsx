@@ -247,6 +247,34 @@ describe("ComplianceGate", () => {
     });
   });
 
+  // FR23 AC2: acknowledgment transitions the run exactly once even if the
+  // operator spam-clicks the Finalize button. The mutation fires once, and
+  // repeat click attempts on the now-disabled button must not issue extra
+  // network calls.
+  it("dispatches acknowledgeMetadata exactly once under repeated clicks", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ComplianceGate run={run} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Title confirmed: SCP-049 Test Video/),
+      ).toBeInTheDocument();
+    });
+
+    for (const cb of screen.getAllByRole("checkbox")) {
+      await user.click(cb);
+    }
+    const btn = screen.getByRole("button", { name: /Acknowledge & Complete/ });
+    await user.click(btn);
+    await user.click(btn);
+    await user.click(btn);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Acknowledged/ })).toBeDisabled();
+    });
+    expect(acknowledgeMetadata).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the video-unavailable banner only when the video element errors", async () => {
     renderWithProviders(<ComplianceGate run={run} />);
 

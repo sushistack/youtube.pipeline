@@ -51,7 +51,7 @@ export function CompletionReward({ run }: CompletionRewardProps) {
   return (
     <section className="production__completion-reward" aria-label="Run complete">
       <h2 className="production-dashboard__section-title">
-        Upload ready
+        Ready for upload
       </h2>
       <p className="route-shell__body">
         The pipeline has finished. The assembled video and compliance metadata
