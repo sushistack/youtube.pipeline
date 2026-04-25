@@ -1,37 +1,45 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
+import { ProductionShellPO } from './po/production-shell.po'
+
+// UI-E2E-01 — FR52-web SPA Smoke (P0)
+// Risk link: R-06 (root e2e todo + continue-on-error). Regression guard on
+// deferred 6-1 (spa.go serving index.html with 200 for /assets/* misses).
+// The fresh-boot onboarding click is part of the assertion — do NOT use the
+// skipOnboarding fixture here.
 
 test('loads the Go-served SPA shell and honors Enter/Escape keyboard actions', async ({
   page,
+  consoleGuard,
 }) => {
-  const consoleErrors: string[] = []
-  const pageErrors: string[] = []
+  const shell = new ProductionShellPO(page)
 
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      consoleErrors.push(message.text())
-    }
-  })
-  page.on('pageerror', (error) => {
-    pageErrors.push(error.message)
-  })
-
-  await page.goto('/production')
+  await shell.goto()
   await page.getByRole('button', { name: 'Continue to workspace' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Production' })).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: 'Create a new pipeline run' }),
-  ).toBeVisible()
+  await shell.expectShellReady()
 
   await page.keyboard.press('Control+N')
-  const panel = page.getByRole('alertdialog', { name: 'Create a new pipeline run' })
-  await expect(panel).toBeVisible()
+  await expect(shell.newRunPanel()).toBeVisible()
 
-  await panel.getByRole('textbox', { name: 'SCP ID' }).press('Escape')
+  await shell.newRunPanel().getByRole('textbox', { name: 'SCP ID' }).press('Escape')
   await expect(page.getByRole('alertdialog')).toHaveCount(0)
 
-  expect(pageErrors).toEqual([])
-  expect(consoleErrors).toEqual([])
+  expect(consoleGuard.pageErrors).toEqual([])
+  expect(consoleGuard.consoleErrors).toEqual([])
+})
+
+test('serves real asset 404s (not index.html) for missing bundles', async ({
+  page,
+}) => {
+  // Regression guard on deferred 6-1: spa.go previously returned 200 + the SPA
+  // HTML for every unmatched path, including /assets/*.js misses, which
+  // hid missing-bundle bugs and stalled Playwright caching.
+  const response = await page.request.get('/assets/does-not-exist.js')
+  expect(response.status()).toBe(404)
+
+  const body = await response.text()
+  expect(body).not.toContain('<!doctype html>')
+  expect(body).not.toContain('<html')
 })
 
 test('loads the settings workspace alongside the timeline', async ({ page }) => {
@@ -71,10 +79,8 @@ test('loads the tuning tab with six sections and Shadow gated behind Golden', as
     await expect(page.getByRole('heading', { name: label, level: 2 })).toBeVisible()
   }
 
-  // The prompt editor loads through the backend and should be fillable.
   await expect(page.getByLabel('Critic prompt body')).toBeVisible()
 
-  // Shadow must start disabled until Golden passes in this session (AC-6).
   const shadowHeading = page.getByRole('heading', { name: 'Shadow Eval' })
   const shadowSection = page
     .locator('section')
