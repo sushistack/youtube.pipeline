@@ -58,7 +58,6 @@ export const createRunRequestSchema = z.object({
 
 export const createRunResponseSchema = z.object({
   data: runDetailSchema,
-  error: z.null(),
   version: z.literal(1),
 });
 

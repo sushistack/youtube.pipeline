@@ -119,19 +119,30 @@ export function ProductionShell() {
     continuity_key != null &&
     dismissed_continuity_key !== continuity_key
 
+  // Fallback selection is bootstrap-only: it runs at most once per shell mount,
+  // when the inventory has loaded and the route does not yet carry an explicit
+  // `?run=`. After it has either seeded a default run or confirmed the URL was
+  // already authoritative, it never re-fires — preventing it from racing an
+  // explicit post-create selection write from `Sidebar.handleNewRunSuccess`.
+  const has_bootstrapped_selection_ref = useRef(false)
   useEffect(() => {
+    if (has_bootstrapped_selection_ref.current) {
+      return
+    }
     if (!runs_query.isSuccess) {
       return
     }
 
     if (selected_run_id) {
+      has_bootstrapped_selection_ref.current = true
       return
     }
 
-    if (!selected_run || selected_run_id === selected_run.id) {
+    if (!selected_run) {
       return
     }
 
+    has_bootstrapped_selection_ref.current = true
     set_search_params((current) => {
       const next = new URLSearchParams(current)
       next.set('run', selected_run.id)
@@ -139,7 +150,6 @@ export function ProductionShell() {
     }, { replace: true })
   }, [
     runs_query.isSuccess,
-    matched_selected_run,
     selected_run,
     selected_run_id,
     set_search_params,
