@@ -29,6 +29,24 @@ export interface StageNodeModel {
   state: StageNodeState
 }
 
+export interface SubStageNodeCounter {
+  done: number
+  total: number
+  suffix: string
+}
+
+export interface SubStageNodeModel {
+  stage: RunStage
+  label: string
+  state: StageNodeState
+  counter?: SubStageNodeCounter
+}
+
+export interface StageGraph {
+  nodes: StageNodeModel[]
+  sub_nodes: Partial<Record<StageNodeKey, SubStageNodeModel[]>>
+}
+
 const STAGE_LABELS: Record<RunStage, string> = {
   assemble: 'Assemble',
   batch_review: 'Asset review',
@@ -91,6 +109,26 @@ const NODE_ORDER: StageNodeKey[] = [
   'assemble',
   'complete',
 ]
+
+export const SCENARIO_SUB_STAGES: RunStage[] = [
+  'research',
+  'structure',
+  'write',
+  'visual_break',
+  'review',
+  'critic',
+  'scenario_review',
+]
+
+export const ASSETS_SUB_STAGES: RunStage[] = ['image', 'tts', 'batch_review']
+
+export const ASSEMBLE_SUB_STAGES: RunStage[] = ['assemble', 'metadata_ack']
+
+const SUB_STAGES_BY_NODE: Partial<Record<StageNodeKey, RunStage[]>> = {
+  scenario: SCENARIO_SUB_STAGES,
+  assets: ASSETS_SUB_STAGES,
+  assemble: ASSEMBLE_SUB_STAGES,
+}
 
 export function mapStageToNode(stage: RunStage): StageNodeKey {
   return STAGE_TO_NODE[stage]
@@ -338,4 +376,76 @@ export function buildStageNodes(
       state,
     }
   })
+}
+
+export interface DecisionsSummary {
+  approved_count: number
+  rejected_count: number
+  pending_count: number
+}
+
+export function buildStageGraph(
+  stage: RunStage,
+  status: RunStatus,
+  decisions_summary?: DecisionsSummary | null,
+): StageGraph {
+  const nodes = buildStageNodes(stage, status)
+  const active_node_key = mapStageToNode(stage)
+  const active_node_index = NODE_ORDER.indexOf(active_node_key)
+
+  const sub_nodes: Partial<Record<StageNodeKey, SubStageNodeModel[]>> = {}
+
+  for (const [parent_key, sub_stages] of Object.entries(SUB_STAGES_BY_NODE) as [
+    StageNodeKey,
+    RunStage[],
+  ][]) {
+    const parent_index = NODE_ORDER.indexOf(parent_key)
+    const is_current_parent = parent_key === active_node_key
+    const is_past_parent = parent_index < active_node_index
+    const sub_active_index = is_current_parent ? sub_stages.indexOf(stage) : -1
+
+    sub_nodes[parent_key] = sub_stages.map((sub_stage, index) => {
+      let sub_state: StageNodeState = 'upcoming'
+
+      if (status === 'completed' || is_past_parent) {
+        sub_state = 'completed'
+      } else if (is_current_parent) {
+        if (
+          (status === 'failed' || status === 'cancelled') &&
+          index === sub_active_index
+        ) {
+          sub_state = 'failed'
+        } else if (index < sub_active_index) {
+          sub_state = 'completed'
+        } else if (index === sub_active_index) {
+          sub_state = 'active'
+        }
+      }
+
+      const node: SubStageNodeModel = {
+        stage: sub_stage,
+        label: STAGE_LABELS[sub_stage],
+        state: sub_state,
+      }
+
+      if (
+        sub_stage === 'batch_review' &&
+        stage === 'batch_review' &&
+        decisions_summary
+      ) {
+        const done =
+          decisions_summary.approved_count + decisions_summary.rejected_count
+        const total = done + decisions_summary.pending_count
+        node.counter = {
+          done,
+          total,
+          suffix: 'reviewed',
+        }
+      }
+
+      return node
+    })
+  }
+
+  return { nodes, sub_nodes }
 }

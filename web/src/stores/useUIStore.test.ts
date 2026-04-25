@@ -17,10 +17,46 @@ describe('useUIStore', () => {
     expect(useUIStore.getState().onboarding_dismissed).toBe(false)
     expect(useUIStore.getState().production_last_seen).toEqual({})
     expect(useUIStore.getState().sidebar_collapsed).toBe(false)
+    expect(useUIStore.getState().stage_stepper_expanded).toBe(false)
 
     useUIStore.getState().toggle_sidebar()
 
     expect(useUIStore.getState().sidebar_collapsed).toBe(true)
+  })
+
+  it('toggles and sets stage_stepper_expanded', async () => {
+    const { useUIStore } = await import('./useUIStore')
+
+    expect(useUIStore.getState().stage_stepper_expanded).toBe(false)
+
+    useUIStore.getState().toggle_stage_stepper_expanded()
+    expect(useUIStore.getState().stage_stepper_expanded).toBe(true)
+
+    useUIStore.getState().toggle_stage_stepper_expanded()
+    expect(useUIStore.getState().stage_stepper_expanded).toBe(false)
+
+    useUIStore.getState().set_stage_stepper_expanded(true)
+    expect(useUIStore.getState().stage_stepper_expanded).toBe(true)
+  })
+
+  it('hydrates stage_stepper_expanded from persisted state', async () => {
+    localStorage.setItem(
+      UI_STORE_PERSIST_KEY,
+      JSON.stringify({
+        state: {
+          onboarding_dismissed: false,
+          production_last_seen: {},
+          sidebar_collapsed: false,
+          stage_stepper_expanded: true,
+        },
+        version: 0,
+      }),
+    )
+
+    const { useUIStore } = await import('./useUIStore')
+    await useUIStore.persist.rehydrate()
+
+    expect(useUIStore.getState().stage_stepper_expanded).toBe(true)
   })
 
   it('hydrates sidebar_collapsed from persisted state', async () => {
@@ -83,6 +119,7 @@ describe('useUIStore', () => {
           },
         },
         sidebar_collapsed: true,
+        stage_stepper_expanded: false,
       },
       version: 0,
     })
@@ -126,6 +163,7 @@ describe('useUIStore', () => {
           },
         },
         sidebar_collapsed: false,
+        stage_stepper_expanded: false,
       },
       version: 0,
     })

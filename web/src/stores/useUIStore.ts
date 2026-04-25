@@ -39,6 +39,9 @@ interface UIState {
   sidebar_collapsed: boolean;
   toggle_sidebar: () => void;
   set_sidebar_collapsed: (next: boolean) => void;
+  stage_stepper_expanded: boolean;
+  toggle_stage_stepper_expanded: () => void;
+  set_stage_stepper_expanded: (next: boolean) => void;
   undo_stacks: Record<string, UndoCommand[]>;
   push_undo_command: (command: UndoCommand) => void;
   pop_undo_command: (run_id: string) => UndoCommand | null;
@@ -69,6 +72,15 @@ export const useUIStore = create<UIState>()(
       set_sidebar_collapsed: (next) =>
         set({
           sidebar_collapsed: next,
+        }),
+      stage_stepper_expanded: false,
+      toggle_stage_stepper_expanded: () =>
+        set((state) => ({
+          stage_stepper_expanded: !state.stage_stepper_expanded,
+        })),
+      set_stage_stepper_expanded: (next) =>
+        set({
+          stage_stepper_expanded: next,
         }),
       undo_stacks: {},
       push_undo_command: (command) =>
@@ -114,6 +126,7 @@ export const useUIStore = create<UIState>()(
         onboarding_dismissed: state.onboarding_dismissed,
         production_last_seen: state.production_last_seen,
         sidebar_collapsed: state.sidebar_collapsed,
+        stage_stepper_expanded: state.stage_stepper_expanded,
         // undo_stacks is intentionally NOT persisted — stacks are
         // session-scoped and stale across page reloads.
       }),
