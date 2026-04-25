@@ -15,7 +15,12 @@ export default defineConfig({
   // specs. Per-worker backend isolation would be the long-term fix; for now
   // a single worker keeps the inventory + run state deterministic.
   workers: 1,
-  retries: 0,
+  // retries=1 per test-design Step 3 §10: UI-E2E-04 batch-review-chord
+  // 'Esc opens reject composer' is a known flake spot when run as part of
+  // the full suite (passes alone, fails ~50% in suite due to Go backend
+  // SQLite state bleed across specs). Drop back to 0 once 50 consecutive
+  // green runs land per Step 3 §10 risk plan.
+  retries: 1,
   use: {
     baseURL,
     browserName: 'chromium',

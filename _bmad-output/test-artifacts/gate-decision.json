@@ -1,0 +1,38 @@
+{
+  "schema_version": "0.1.0",
+  "evaluated_at": "2026-04-25T07:26:02Z",
+  "repo": "youtube.pipeline",
+  "target": {
+    "type": "release",
+    "id": "youtube.pipeline-v1",
+    "label": "youtube.pipeline V1 — Epic 1~11"
+  },
+  "collection_status": "COLLECTED",
+  "gate_basis": "priority_thresholds",
+  "gate_status": "PASS",
+  "rationale": "All 11 P0 + 7 P1 scenarios are implemented and skip-free (100% coverage). 12/12 P0 deferred items closed (Epic 11 stories 11-1/11-3/11-4/11-5/11-6 transitioned review → done per Jay 2026-04-25, single-operator authority; 11-2 already done). CI hygiene (ffmpeg, go-version 1.25, no continue-on-error) all green. Root e2e/ directory removed (CP-3 cleanup complete). 13 P1 deferred items batch-waived with 2026-07-31 (V1.5) expiry per Jay single-operator authority — recorded in deferred-work.md. CI execution evidence: go test ./... green (22s, all packages ok); npx playwright test 19/19 green (retries=1 per Step 3 §10 absorbs known UI-E2E-04 batch-review-chord isolation flake). Decision: PASS — V1 ship cleared.",
+  "p0_status": "MET",
+  "p1_status": "MET",
+  "overall_status": "MET",
+  "critical_open": 0,
+  "blockers_pre_ship": [],
+  "ship_evidence": {
+    "go_test": "all packages green, 22s wall-clock, internal/pipeline 22.4s slowest",
+    "playwright": "19 passed (retries=1 absorbed UI-E2E-04 isolation flake — 1 retry consumed, 0 net failures)",
+    "epic_11_status": "all 6 stories done; epic-11: done",
+    "p1_waiver": "13 items batch-waived 2026-04-25 → 2026-07-31 V1.5 expiry; recorded deferred-work.md L3-L33",
+    "root_e2e_removed": "git rm 4 files + node_modules deleted; directory gone"
+  },
+  "post_ship_followups": [
+    "Drop playwright retries=1 → 0 once 50 consecutive green runs land (Step 3 §10)",
+    "Re-triage 13 P1 waived items by 2026-07-31; do not auto-renew",
+    "Run /bmad-testarch-test-review post Step-4 (Jay decision #4) for tautological-double audit",
+    "V1.5 NFR-R2 anti-progress embedding swap"
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability-matrix.md",
+    "trace_report_url": "",
+    "artifact_url": "",
+    "journey_evidence_url": ""
+  }
+}

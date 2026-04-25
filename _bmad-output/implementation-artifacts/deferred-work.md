@@ -1,5 +1,37 @@
 # Deferred Work
 
+## V1 P1 Batch-Waive (2026-04-25, Jay — single-operator authority)
+
+**Decision.** All P1 deferred items listed in `_bmad-output/test-artifacts/traceability-matrix.md` §"P1 Items OPEN without Owner+Deadline" are batch-waived for V1 ship. Single-operator desktop tool; none of these are correctness blockers for the V1 ship gate.
+
+**Expiry.** 2026-07-31 (V1.5 milestone). Items NOT addressed by 2026-07-31 must be re-triaged — not auto-renewed.
+
+**Re-evaluation trigger.** Any of:
+- Multi-operator usage lands (invalidates "single-operator mitigates" reasoning for `BlockExternalHTTP` mutex, BatchApprove undo aggregate_command_id, concurrent export race).
+- macOS becomes a supported platform (un-waives Cmd+Z mapping).
+- Real production traffic on rate-limited providers (un-waives DeepSeek 429 Retry-After + rate-limiter goroutine lifetime).
+- Web UI gains long-running-session reports (un-waives undo stack GC, localStorage corruption).
+
+**Items waived (13):**
+
+1. `BatchApprove` undo non-normalized `aggregate_command_id` (8-6 deferred)
+2. Undo stack never GC'd on run switch (8-5 deferred)
+3. `Cmd+Z` macOS unmapped (8-5 deferred)
+4. `RunGolden` mutates `testdata/golden/eval/manifest.json` (10-4 deferred — `--dry-run` flag deferred)
+5. `warnings` field nesting drift Go ↔ fixture ↔ Zod (6-5 deferred)
+6. `spa.go` serves `index.html` 200 for `/assets/*` misses — root-cause fix (UI-E2E-01 regression-guards behavior; `spa.go` hardening waived) (6-1 deferred)
+7. FR53 cites cancelled/failed source runs — join stage filter (8-4 deferred)
+8. Rate-limiter `fn` goroutine outlives `Do` on timeout (5-1 deferred)
+9. `AcknowledgeMetadata` no `MaxBytesReader` (9-4 deferred)
+10. `CountRegenAttempts` counts superseded reject rows (8-4/8-5/8-6 deferred)
+11. DeepSeek 429 `Retry-After` header dropped (11-2 deferred)
+12. RuntimeEvaluator rebuilds DeepSeek client per Evaluate call (11-2 deferred)
+13. DeepSeek `finish_reason: "length"` treated as success (11-2 deferred)
+
+**Authority.** Per `feedback_meta_principles.md` ("정직 timeline" + single-operator project), Jay is the gate approver. This waive is recorded; the V1 trace-gate decision flips from CONCERNS → PASS once CI is green and the root `e2e/` cleanup lands.
+
+---
+
 ## Deferred from: code review of 10-5-data-export-to-json (2026-04-24)
 
 - **Empty-string `scene_id` producing `TargetItem = "scene:"`** — `decisions.scene_id` schema allows `TEXT NULL` with no empty-string CHECK; no current writer emits `''`, but a future bug could. Prefer a DB-level `CHECK (scene_id IS NULL OR length(scene_id) > 0)` over a read-path guard in `buildDecisionRows` ([internal/service/export_service.go:154-157](../../internal/service/export_service.go), [migrations/001_init.sql](../../migrations/001_init.sql)).
@@ -424,3 +456,13 @@
 - **SMOKE-02 cannot distinguish TTS-driven vs image-DurationSeconds-driven Phase C duration** — The bundled seed sets image `DurationSeconds=1.0` and `TTSDurationMs=1000`, so a regression that silently switched Phase C from TTS-override to image-driven would produce the same 3.0 s output and the test would still pass. Tightening requires either diverging the two values (Phase C's `applySyncPadding` would mask the difference via tpad/apad anyway) or exposing per-clip pre-sync duration internals. Defer until Phase C exposes intermediate observability that lets a black-box test pin which input drove the clip duration [internal/pipeline/phase_c.go:235-249, internal/pipeline/smoke02_phase_handoff_test.go].
 - **Existing `TestRunHandler_AcknowledgeMetadata_*` tests hardcode `scp-049-run-1` without RowsAffected guard** — `UPDATE runs SET ... WHERE scp_id = '049'` would silently affect 0 rows if `RunService.Create` ever changed its run-id derivation; SMOKE-07 patched its own UPDATEs to assert RowsAffected==1, but the three pre-existing AcknowledgeMetadata tests at [internal/api/handler_run_test.go:359-441] still rely on the hardcoded id. Sweep when refactoring run-id generation or when `Create` becomes non-deterministic [internal/api/handler_run_test.go:359, 416].
 - **`PhaseBRunner` has 4 positional `nil` slots in its constructor** — `NewPhaseBRunner(images, tts, recorder, clk, logger, assemble, runLoader)`. Callers that pass three of these as `nil` (e.g., SMOKE-02) cannot detect a future signature change at compile time. Consider migrating to a struct-literal constructor or option-funcs in the next Phase B refactor [internal/pipeline/phase_b.go:103-127].
+
+
+## Deferred from: code review of 11-2-deepseek-adapter-tuning-surface-full (2026-04-25)
+
+- **DeepSeek 429 `Retry-After` header dropped** — `checkStatus` only reads the response body, never `resp.Header.Get("Retry-After")`. Wrapping as `domain.ErrRateLimited` loses the provider hint, so back-off in `WithRetry` can only use fixed jitter. Fixing properly requires a structured rate-limit error type that all provider adapters (DashScope, DeepSeek, Gemini) emit consistently — out of scope for this story [internal/llmclient/deepseek/text.go:184-199].
+- **`RunShadow(ctx, projectRoot, outputDir, source, evaluator, now, window)` has two adjacent string params** — `cmd/quality-gate/shadow.go:38` already passes `projectRoot, projectRoot` because there is no live-run output dir on the CI host. Wrapping into an options struct would cleanly catch this at compile time but ripples to ~5 callers + tests; defer until the next Shadow API touch [internal/critic/eval/shadow.go:84-92].
+- **RuntimeEvaluator rebuilds DeepSeek client and reloads prompt assets per Evaluate call** — Fast Feedback iterates 10 fixtures; each call re-reads `LoadPromptAssets` and constructs a fresh `deepseek.NewTextClient`. No caching, no consistency guarantee across the batch. Hoist into the constructor when prompt-asset hot-reload requirements are clarified [internal/critic/eval/runtime_evaluator.go:81-154].
+- **CallLimiter.Do races with caller on cancel via `out` closure** — Pre-existing in `internal/llmclient/limiter.go`. The closure in `Generate` writes to `out` after the timeout branch may have already returned the zero `TextResponse{}`. `-race` would flag this on a real cancel-mid-flight test. Outside this story's diff [internal/llmclient/limiter.go:80-89, internal/llmclient/deepseek/text.go:90-105].
+- **Cosmetic quote-style churn in `web/e2e/fixtures.ts` and tuning section components** — `use → doneFixture` rename is positionally equivalent in Playwright, and single-quote → double-quote rewrites are stylistic only. Reverting would itself be more churn than the churn. Sweep into the next deliberate web/* lint/format pass [web/e2e/fixtures.ts, web/src/components/tuning/*.tsx, web/src/contracts/tuningContracts.ts].
+- **DeepSeek `finish_reason: "length"` treated as success** — When DeepSeek truncates output at `max_tokens=1600`, the Critic JSON is incomplete and downstream `agents.Validator` rejects it with a confusing schema error. Surfacing this as a distinct early signal ("raise max_tokens") would be ergonomic but is not a correctness bug today [internal/llmclient/deepseek/text.go:179].

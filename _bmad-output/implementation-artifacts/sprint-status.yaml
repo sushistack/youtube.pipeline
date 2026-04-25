@@ -1,5 +1,5 @@
 # generated: 2026-04-16
-# last_updated: 2026-04-24 # Story 10-5 code review fixes applied — status=done
+# last_updated: 2026-04-25 # Epic 11 closed — Stories 11-1/11-3/11-4/11-5/11-6 review intentionally skipped per Jay (single-operator), all marked done; trace gate CONCERNS → PASS pending CI green + P1 batch-waive
 # project: youtube.pipeline
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-16
-last_updated: 2026-04-24 # Story 10-5 code review fixes applied — status=done
+last_updated: 2026-04-25 # Epic 11 closed — Stories 11-1/11-3/11-4/11-5/11-6 review intentionally skipped per Jay (single-operator), all marked done; trace gate CONCERNS → PASS pending CI green + P1 batch-waive
 project: youtube.pipeline
 project_key: NOKEY
 tracking_system: file-system
@@ -51,7 +51,7 @@ development_status:
   1-5-cli-foundation-init-doctor-commands: done
   1-6-cli-renderer-output-formatting: done
   1-7-ci-pipeline-e2e-smoke-test: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: done # 2026-04-24 — covered by epic-1-10-retro-2026-04-24.md
 
   # ── Epic 2: Pipeline Lifecycle & State Machine ───────────────────────────
   epic-2: done
@@ -62,7 +62,7 @@ development_status:
   2-5-anti-progress-detection: done
   2-6-hitl-session-pause-resume-change-diff: done
   2-7-pipeline-metrics-cli-report: done
-  epic-2-retrospective: optional
+  epic-2-retrospective: done # 2026-04-24 — covered by epic-1-10-retro-2026-04-24.md
 
   # ── Epic 3: Scenario Generation & Basic Quality Gate (Phase A) ───────────
   epic-3: done
@@ -71,7 +71,7 @@ development_status:
   3-3-writer-agent-critic-post-writer-checkpoint: done
   3-4-visualbreakdowner-reviewer-agents: done
   3-5-phase-a-completion-post-reviewer-critic: done
-  epic-3-retrospective: optional
+  epic-3-retrospective: done # 2026-04-24 — covered by epic-1-10-retro-2026-04-24.md
 
   # ── Epic 4: Advanced Quality Infrastructure ──────────────────────────────
   epic-4: done
@@ -79,7 +79,7 @@ development_status:
   4-2-shadow-eval-runner: done
   4-3-cohens-kappa-calibration-tracking: done
   4-4-minor-content-safeguard-auto-approval-thresholds: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done # 2026-04-24 — covered by epic-1-10-retro-2026-04-24.md
 
   # ── Epic 5: Media Generation (Phase B — Image & TTS) ─────────────────────
   epic-5: done
@@ -88,7 +88,7 @@ development_status:
   5-3-character-reference-selection-search-result-cache: done
   5-4-frozen-descriptor-propagation-per-shot-image-generation: done
   5-5-korean-tts-regex-transliteration: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done # 2026-04-24 — covered by epic-1-10-retro-2026-04-24.md
 
   # ── Epic 6: Web UI — Design System & Application Shell ───────────────────
   epic-6: done
@@ -97,7 +97,7 @@ development_status:
   6-3-keyboard-shortcut-engine: done
   6-4-go-embed-static-file-serving: done
   6-5-playwright-smoke-test-ux-testing-infrastructure: done
-  epic-6-retrospective: optional
+  epic-6-retrospective: done # 2026-04-24 — covered by epic-1-10-retro-2026-04-24.md
 
   # ── Epic 7: Production Tab — Scenario Review & Character Selection ────────
   epic-7: done
@@ -106,10 +106,10 @@ development_status:
   7-3-character-selection-interface: done
   7-4-progressive-failure-handling: done
   7-5-onboarding-continuity-experience: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done # 2026-04-24 — covered by epic-1-10-retro-2026-04-24.md
 
   # ── Epic 8: Batch Review & Decision Management ───────────────────────────
-  epic-8: in-progress
+  epic-8: done
   8-1-master-detail-review-layout: done
   8-2-scene-review-actions-audioplayer: done
   8-3-decision-undo-command-pattern: done
@@ -117,21 +117,31 @@ development_status:
   8-5-batch-approve-all-remaining: done
   8-6-decisions-history-timeline-view: done
   8-7-new-run-creation-from-ui: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done # 2026-04-24 — covered by epic-1-10-retro-2026-04-24.md
 
   # ── Epic 9: Video Assembly & Compliance (Phase C) ────────────────────────
-  epic-9: in-progress
+  epic-9: done
   9-1-ffmpeg-two-stage-assembly-engine: done
   9-2-metadata-attribution-bundle: done
   9-3-compliance-audit-logging: done
   9-4-pre-upload-compliance-gate: done
-  epic-9-retrospective: optional
+  epic-9-retrospective: done # 2026-04-24 — covered by epic-1-10-retro-2026-04-24.md
 
   # ── Epic 10: Tuning, Settings & Operational Tooling ──────────────────────
   epic-10: in-progress
   10-1-settings-dashboard-llm-provider-config: done
-  10-2-tuning-surface-prompt-rubric-lab: ready-for-dev
+  10-2-tuning-surface-prompt-rubric-lab: done
   10-3-database-vacuum-data-retention: done
   10-4-golden-shadow-ci-quality-gates: done
   10-5-data-export-to-json: done
   epic-10-retrospective: optional
+
+  # ── Epic 11: Post-Epic Quality Unblock Stories ─────────────────────────
+  epic-11: done
+  11-1-engine-advance: done
+  11-2-deepseek-adapter-tuning-surface-full: done
+  11-3-retry-exhausted-gte-unification: done
+  11-4-fr23-compliance-gate-handler: done
+  11-5-phase-c-hardening: done
+  11-6-productionshell-url-race-fix: done
+  epic-11-retrospective: optional
