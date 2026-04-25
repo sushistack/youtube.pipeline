@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -275,5 +276,69 @@ func TestE2E_FullPipeline(t *testing.T) {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("expected artifact missing: %s", artifact)
 		}
+	}
+
+	// ── SMOKE-01 assertions (test-design §4) ──────────────────────────────────
+	// Frozen descriptor is the Phase A→B handoff invariant; it must survive
+	// dispatch through Phase C without mutation. The fake stores hold the
+	// segments by reference — re-read via the engine seam to mirror real
+	// production (DB roundtrip).
+	postSegs, err := segStore.ListByRunID(ctx, runID)
+	if err != nil {
+		t.Fatalf("post-Advance ListByRunID: %v", err)
+	}
+	if len(postSegs) != 3 {
+		t.Fatalf("post-Advance segments: got %d, want 3", len(postSegs))
+	}
+	for i, ep := range postSegs {
+		if len(ep.Shots) != 1 {
+			t.Fatalf("scene %d: shot count = %d, want 1", i, len(ep.Shots))
+		}
+		want := scp049FrozenDescriptor(i)
+		if ep.Shots[0].VisualDescriptor != want {
+			t.Errorf("scene %d frozen descriptor: got %q, want %q",
+				i, ep.Shots[0].VisualDescriptor, want)
+		}
+	}
+
+	// Probe output.mp4: duration ≈ Σ(scene tts durations), codec h264 + aac.
+	// The 0.2 s tolerance matches SMOKE-02; xfade overlap subtracts a small
+	// constant from the raw sum on Linux x86-64 ffmpeg ≥6.
+	mp4Path := filepath.Join(runDir, "output.mp4")
+	expectedDur := 0.0
+	for _, ep := range postSegs {
+		expectedDur += float64(*ep.TTSDurationMs) / 1000.0
+	}
+	gotDur := probeFileDuration(t, mp4Path)
+	if math.Abs(gotDur-expectedDur) > 0.2 {
+		t.Errorf("output.mp4 duration = %.3fs, want %.3fs ±0.2", gotDur, expectedDur)
+	}
+	codecs := probeCodecs(t, mp4Path)
+	if codecs.video != "h264" {
+		t.Errorf("output.mp4 video codec = %q, want h264", codecs.video)
+	}
+	if codecs.audio != "aac" {
+		t.Errorf("output.mp4 audio codec = %q, want aac", codecs.audio)
+	}
+
+	// metadata.json ↔ manifest.json must agree on run_id (cross-file pair-write
+	// invariant — Story 11-5 Phase C hardening codifies the atomicity).
+	type runIDEnvelope struct {
+		RunID string `json:"run_id"`
+	}
+	var meta, mani runIDEnvelope
+	if raw, err := os.ReadFile(filepath.Join(runDir, "metadata.json")); err != nil {
+		t.Fatalf("read metadata.json: %v", err)
+	} else if err := json.Unmarshal(raw, &meta); err != nil {
+		t.Fatalf("parse metadata.json: %v", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(runDir, "manifest.json")); err != nil {
+		t.Fatalf("read manifest.json: %v", err)
+	} else if err := json.Unmarshal(raw, &mani); err != nil {
+		t.Fatalf("parse manifest.json: %v", err)
+	}
+	if meta.RunID != runID || mani.RunID != runID {
+		t.Errorf("metadata/manifest run_id mismatch: meta=%q, mani=%q, want %q",
+			meta.RunID, mani.RunID, runID)
 	}
 }
