@@ -110,6 +110,7 @@ describe('App', () => {
         onboarding_dismissed: true,
         production_last_seen: {},
         sidebar_collapsed: false,
+        stage_stepper_expanded: false,
       },
       version: 0,
     })

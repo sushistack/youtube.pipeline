@@ -69,15 +69,15 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `web/src/lib/formatters.ts` -- Add sub-stage constants + `SubStageNodeModel` + `buildStageGraph` helper.
-- [ ] `web/src/stores/useUIStore.ts` -- Add `stage_stepper_expanded` + `toggle_stage_stepper_expanded`; include in partialize.
-- [ ] `web/src/stores/useUIStore.test.ts` -- Cover default + toggle + persistence.
-- [ ] `web/src/components/shared/StageStepper.tsx` -- Add expanded variant rendering parent row + sub-rails; accept optional decisions_summary.
-- [ ] `web/src/components/shared/StageStepper.test.tsx` -- Add 4 expanded-variant tests; preserve existing 2.
-- [ ] `web/src/components/shared/ProductionAppHeader.tsx` -- Wire toggle + store; pass variant + decisions_summary down.
-- [ ] `web/src/components/shared/ProductionAppHeader.test.tsx` -- Add toggle/click/persist coverage.
-- [ ] `web/src/index.css` -- Add expanded styles + reduced-motion guard + toggle button.
-- [ ] `web/src/components/shells/ProductionShell.tsx` -- (Conditional) pass status_payload to header.
+- [x] `web/src/lib/formatters.ts` -- Add sub-stage constants + `SubStageNodeModel` + `buildStageGraph` helper.
+- [x] `web/src/stores/useUIStore.ts` -- Add `stage_stepper_expanded` + `toggle_stage_stepper_expanded`; include in partialize.
+- [x] `web/src/stores/useUIStore.test.ts` -- Cover default + toggle + persistence.
+- [x] `web/src/components/shared/StageStepper.tsx` -- Add expanded variant rendering parent row + sub-rails; accept optional decisions_summary.
+- [x] `web/src/components/shared/StageStepper.test.tsx` -- Add 4 expanded-variant tests; preserve existing 2.
+- [x] `web/src/components/shared/ProductionAppHeader.tsx` -- Wire toggle + store; pass variant + decisions_summary down.
+- [x] `web/src/components/shared/ProductionAppHeader.test.tsx` -- Add toggle/click/persist coverage.
+- [x] `web/src/index.css` -- Add expanded styles + reduced-motion guard + toggle button.
+- [x] `web/src/components/shells/ProductionShell.tsx` -- (Conditional) pass status_payload to header.
 
 **Acceptance Criteria:**
 - Given empty `useUIStore`, when Production loads, then thin stepper renders unchanged and chevron-down is visible.

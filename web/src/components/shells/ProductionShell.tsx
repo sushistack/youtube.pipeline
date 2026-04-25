@@ -322,7 +322,7 @@ export function ProductionShell() {
         Production
       </h1>
 
-      <ProductionAppHeader run={current_run ?? null} />
+      <ProductionAppHeader run={current_run ?? null} status_payload={status_payload} />
 
       {current_run && current_run.status === 'failed' && !is_failure_banner_dismissed ? (
         <FailureBanner

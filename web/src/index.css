@@ -1186,6 +1186,143 @@
     padding: 0.35rem;
   }
 
+  .stage-stepper[data-variant="expanded"] {
+    display: block;
+  }
+
+  .stage-stepper[data-variant="expanded"] .stage-stepper__nodes {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    align-items: start;
+    gap: 0.5rem;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  .stage-stepper__column {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  .stage-stepper__rail {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 0.25rem 0 0 0.4rem;
+    padding: 0.35rem 0 0.35rem 0.85rem;
+    border-left: 1px dashed rgba(var(--border), 0.55);
+    list-style: none;
+  }
+
+  .stage-stepper__column:has(.stage-stepper__node[data-state="active"]) .stage-stepper__rail {
+    border-left-style: solid;
+    border-left-color: rgba(var(--accent), 0.55);
+    animation: stage-stepper-pulse 1.4s ease-in-out infinite;
+  }
+
+  .stage-stepper__sub-node {
+    position: relative;
+    display: grid;
+    grid-template-columns: 0.55rem 1fr auto;
+    align-items: center;
+    gap: 0.45rem;
+    color: rgb(var(--muted));
+    font-size: var(--type-caption-size);
+    line-height: 1.25;
+  }
+
+  .stage-stepper__sub-node[data-state="completed"] {
+    color: rgb(var(--success));
+  }
+
+  .stage-stepper__sub-node[data-state="active"] {
+    color: rgb(var(--accent));
+    font-weight: 600;
+  }
+
+  .stage-stepper__sub-node[data-state="failed"] {
+    color: rgb(var(--warning));
+    font-weight: 600;
+  }
+
+  .stage-stepper__sub-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    background: rgba(var(--muted), 0.32);
+  }
+
+  .stage-stepper__sub-node[data-state="completed"] .stage-stepper__sub-dot {
+    background: rgb(var(--success));
+  }
+
+  .stage-stepper__sub-node[data-state="active"] .stage-stepper__sub-dot {
+    background: rgb(var(--accent));
+    box-shadow: 0 0 0 3px rgba(var(--accent), 0.18);
+  }
+
+  .stage-stepper__sub-node[data-state="failed"] .stage-stepper__sub-dot {
+    background: rgb(var(--warning));
+  }
+
+  .stage-stepper__sub-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stage-stepper__sub-counter {
+    font-family: var(--font-mono-stack);
+    font-size: calc(var(--type-caption-size) * 0.92);
+    color: rgb(var(--muted));
+  }
+
+  .stage-stepper__sub-node[data-state="active"] .stage-stepper__sub-counter {
+    color: rgb(var(--accent));
+  }
+
+  @keyframes stage-stepper-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stage-stepper__column:has(.stage-stepper__node[data-state="active"]) .stage-stepper__rail {
+      animation: none;
+    }
+  }
+
+  .production-app-header__toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid rgb(var(--border));
+    border-radius: 999px;
+    background: rgba(var(--bg-input), 0.66);
+    color: rgb(var(--muted));
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+
+  .production-app-header__toggle:hover,
+  .production-app-header__toggle:focus-visible {
+    color: rgb(var(--accent));
+    border-color: rgba(var(--accent), 0.55);
+    background: rgba(var(--accent), 0.08);
+  }
+
+  .production-app-header__toggle[aria-pressed="true"] {
+    color: rgb(var(--accent));
+    border-color: rgba(var(--accent), 0.55);
+    background: rgba(var(--accent), 0.12);
+  }
+
   .status-bar {
     height: 0;
     overflow: clip;
@@ -1266,7 +1403,7 @@
 
   .production-app-header {
     display: grid;
-    grid-template-columns: minmax(12rem, auto) 1fr;
+    grid-template-columns: minmax(12rem, auto) 1fr auto;
     align-items: center;
     gap: var(--space-3);
     border: 1px solid rgb(var(--border));
@@ -1277,6 +1414,10 @@
 
   .production-app-header[data-empty="true"] {
     grid-template-columns: auto;
+  }
+
+  .production-app-header[data-stepper-expanded="true"] {
+    align-items: start;
   }
 
   .production-app-header__identity {
