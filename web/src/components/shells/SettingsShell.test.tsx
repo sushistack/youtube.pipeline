@@ -12,7 +12,12 @@ function installFetchMock(overrides?: {
   put_error?: Record<string, string>
 }) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-    const url = typeof input === 'string' ? input : input.url
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
     if (url.endsWith('/api/settings') && (!init?.method || init.method === 'GET')) {
       return new Response(
         JSON.stringify({
@@ -231,7 +236,12 @@ describe('SettingsShell', () => {
 
   it('renders corruption recovery UI when config.yaml is unreadable', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
       if (url.endsWith('/api/settings')) {
         return new Response(
           JSON.stringify({

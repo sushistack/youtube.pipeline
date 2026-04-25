@@ -128,7 +128,12 @@ describe('App', () => {
     cleanup()
     window.history.pushState({}, '', '/settings')
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = typeof input === 'string' ? input : input.url
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
       if (url.endsWith('/api/settings')) {
         return new Response(
           JSON.stringify({
