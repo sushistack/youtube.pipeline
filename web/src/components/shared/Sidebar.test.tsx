@@ -98,6 +98,52 @@ describe('Sidebar', () => {
     vi.restoreAllMocks()
   })
 
+  it('renders the single Recent-runs section with compact dot+title rows on production route', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(runListResponse(initial_runs)), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      }),
+    )
+
+    renderSidebar('/production')
+
+    expect(
+      await screen.findByRole('heading', { name: 'Recent runs' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Search runs')).not.toBeInTheDocument()
+    expect(screen.queryByText(/active runs/i)).not.toBeInTheDocument()
+
+    const run_button = await screen.findByRole('button', { name: /scp-173 run #1/i })
+    expect(run_button.querySelector('.run-card__dot')).toHaveAttribute(
+      'data-tone',
+      'subtle',
+    )
+    expect(run_button.querySelector('.run-card__title')).toHaveTextContent(
+      'SCP-173 Run #1',
+    )
+  })
+
+  it('renders SVG icons (not letter abbreviations) for the workflow nav links', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(runListResponse(initial_runs)), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      }),
+    )
+
+    renderSidebar('/production')
+
+    for (const label of ['Production', 'Tuning', 'Settings']) {
+      const link = await screen.findByRole('link', { name: label })
+      // lucide-react renders inline <svg>; assert the SVG presence and the
+      // absence of the legacy two-letter abbreviation that this redesign replaced.
+      expect(link.querySelector('svg')).toBeInTheDocument()
+      const abbreviation = label.slice(0, 2).toUpperCase()
+      expect(link).not.toHaveTextContent(new RegExp(`^${abbreviation}\\s*${label}$`))
+    }
+  })
+
   it('renders the New Run button on production only, with expanded and collapsed affordances', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(runListResponse(initial_runs)), {
@@ -112,7 +158,6 @@ describe('Sidebar', () => {
       await screen.findByRole('button', { name: 'Create a new pipeline run' }),
     ).toBeInTheDocument()
     expect(screen.getByText('New Run')).toBeInTheDocument()
-    expect(screen.getByText('Ctrl+N')).toBeInTheDocument()
 
     first_render.unmount()
 
@@ -137,10 +182,10 @@ describe('Sidebar', () => {
     renderSidebar('/production', { collapsed: true })
     expect(
       await screen.findByRole('button', { name: 'Create a new pipeline run' }),
-    ).toHaveAttribute('title', 'Create a new pipeline run (Ctrl+N)')
+    ).toHaveAttribute('title', 'Create a new pipeline run')
   })
 
-  it('opens the inline panel from Ctrl+N only while production is mounted', async () => {
+  it('does not register a Ctrl+N / Cmd+N keyboard shortcut (browser conflict)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(runListResponse(initial_runs)), {
         headers: { 'Content-Type': 'application/json' },
@@ -148,35 +193,29 @@ describe('Sidebar', () => {
       }),
     )
 
-    const production_render = renderSidebar('/production')
+    renderSidebar('/production')
     await screen.findByRole('button', { name: 'Create a new pipeline run' })
 
-    const production_shortcut = new KeyboardEvent('keydown', {
+    const ctrl_shortcut = new KeyboardEvent('keydown', {
       bubbles: true,
       cancelable: true,
       ctrlKey: true,
       key: 'n',
     })
-    window.dispatchEvent(production_shortcut)
+    window.dispatchEvent(ctrl_shortcut)
 
-    expect(production_shortcut.defaultPrevented).toBe(true)
-    expect(
-      await screen.findByRole('alertdialog', { name: 'Create a new pipeline run' }),
-    ).toBeInTheDocument()
+    expect(ctrl_shortcut.defaultPrevented).toBe(false)
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
 
-    production_render.unmount()
-
-    renderSidebar('/settings')
-
-    const settings_shortcut = new KeyboardEvent('keydown', {
+    const meta_shortcut = new KeyboardEvent('keydown', {
       bubbles: true,
       cancelable: true,
-      ctrlKey: true,
       key: 'n',
+      metaKey: true,
     })
-    window.dispatchEvent(settings_shortcut)
+    window.dispatchEvent(meta_shortcut)
 
-    expect(settings_shortcut.defaultPrevented).toBe(false)
+    expect(meta_shortcut.defaultPrevented).toBe(false)
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
   })
 

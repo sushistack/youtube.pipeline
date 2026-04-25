@@ -35,13 +35,6 @@ function scoreTone(score: number | null | undefined) {
   return 'low'
 }
 
-function scoreLabel(score: number | null | undefined) {
-  if (score == null) {
-    return 'N/A'
-  }
-  return `${Math.round(score)}`
-}
-
 export function DetailPanel({ is_regenerating = false, item }: DetailPanelProps) {
   const [version, setVersion] = useState<'current' | 'previous'>('current')
   const activeVersion = version === 'previous' && item.previous_version ? item.previous_version : item
@@ -79,7 +72,32 @@ export function DetailPanel({ is_regenerating = false, item }: DetailPanelProps)
       <header className="detail-panel__header">
         <div>
           <p className="detail-panel__eyebrow">Focused review</p>
-          <h2 className="detail-panel__title">Scene {item.scene_index + 1}</h2>
+          <div className="detail-panel__title-row">
+            <h2 className="detail-panel__title">Scene {item.scene_index + 1}</h2>
+            {(() => {
+              const aggregate =
+                item.critic_breakdown?.aggregate_score ?? item.critic_score ?? null
+              if (aggregate == null) {
+                return null
+              }
+              return (
+                <span
+                  className="detail-panel__aggregate-score"
+                  data-tone={scoreTone(aggregate)}
+                  aria-label={`Aggregate critic score ${Math.round(aggregate)}`}
+                >
+                  {Math.round(aggregate)}
+                </span>
+              )
+            })()}
+            <span
+              className="detail-panel__status-badge"
+              data-status={item.review_status}
+              aria-label={`Review status ${item.review_status}`}
+            >
+              {item.review_status.replace(/_/g, ' ')}
+            </span>
+          </div>
           {item.high_leverage_reason ? (
             <p className="detail-panel__reason">Why high-leverage: {item.high_leverage_reason}</p>
           ) : null}
@@ -138,25 +156,73 @@ export function DetailPanel({ is_regenerating = false, item }: DetailPanelProps)
           <p className="detail-panel__narration">{activeVersion.narration}</p>
         </div>
 
-        {item.critic_breakdown ? (
-          <div className="detail-panel__content">
-            <h3 className="detail-panel__section-title">Critic breakdown</h3>
-            <ul className="detail-panel__scores">
-              {[
-                ['Aggregate', item.critic_breakdown.aggregate_score ?? item.critic_score ?? null],
-                ['Hook strength', item.critic_breakdown.hook_strength ?? null],
-                ['Fact accuracy', item.critic_breakdown.fact_accuracy ?? null],
-                ['Emotional variation', item.critic_breakdown.emotional_variation ?? null],
-                ['Immersion', item.critic_breakdown.immersion ?? null],
-              ].map(([label, score]) => (
-                <li key={String(label)} className="detail-panel__score-row">
-                  <span>{label}</span>
-                  <strong data-tone={scoreTone(score as number | null)}>{scoreLabel(score as number | null)}</strong>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+        <div className="detail-panel__content">
+          <h3 className="detail-panel__section-title">Critic metrics</h3>
+          <ul className="detail-panel__metrics-grid">
+            {[
+              { key: 'visual', label: 'Visual', score: null, missing: true },
+              {
+                key: 'narration',
+                label: 'Narration',
+                score: item.critic_breakdown?.hook_strength ?? null,
+                missing: false,
+              },
+              {
+                key: 'coherence',
+                label: 'Coherence',
+                score: item.critic_breakdown?.immersion ?? null,
+                missing: false,
+              },
+              {
+                key: 'pacing',
+                label: 'Pacing',
+                score: item.critic_breakdown?.emotional_variation ?? null,
+                missing: false,
+              },
+              {
+                key: 'scp_accuracy',
+                label: 'SCP Accuracy',
+                score: item.critic_breakdown?.fact_accuracy ?? null,
+                missing: false,
+              },
+              { key: 'audio', label: 'Audio', score: null, missing: true },
+            ].map((metric) => (
+              <li
+                key={metric.key}
+                className="detail-panel__metric-card"
+                data-metric={metric.key}
+                title={
+                  metric.missing
+                    ? 'metric not yet emitted by critic'
+                    : undefined
+                }
+                aria-label={
+                  metric.missing
+                    ? `${metric.label}: metric not yet emitted by critic`
+                    : metric.score == null
+                      ? `${metric.label}: score unavailable`
+                      : `${metric.label}: ${Math.round(metric.score)}`
+                }
+              >
+                <span className="detail-panel__metric-label">
+                  {metric.label}
+                </span>
+                <strong
+                  className="detail-panel__metric-score"
+                  data-tone={
+                    metric.missing || metric.score == null
+                      ? 'muted'
+                      : scoreTone(metric.score)
+                  }
+                >
+                  {metric.missing || metric.score == null
+                    ? '—'
+                    : `${Math.round(metric.score)}`}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        </div>
       </section>
 
       {item.previous_version ? (

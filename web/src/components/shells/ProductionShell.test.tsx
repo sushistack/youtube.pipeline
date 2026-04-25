@@ -8,7 +8,6 @@ import { ProductionShell } from './ProductionShell'
 import { renderWithProviders } from '../../test/renderWithProviders'
 import { KeyboardShortcutsProvider } from '../../hooks/useKeyboardShortcuts'
 import { useUIStore } from '../../stores/useUIStore'
-import * as clipboard from '../../lib/clipboard'
 
 function SelectedRunProbe() {
   const [search_params] = useSearchParams()
@@ -92,15 +91,28 @@ describe('ProductionShell integration', () => {
       production_last_seen: {},
       sidebar_collapsed: false,
     })
+    // useRunStatus opens an SSE EventSource on mount; jsdom does not provide
+    // EventSource, so stub a no-op constructor so the hook's effect is inert
+    // for these tests (they exercise REST-driven flows, not the SSE stream).
+    vi.stubGlobal(
+      'EventSource',
+      vi.fn().mockImplementation(function FakeEventSource(
+        this: { close: () => void; onmessage: null; onerror: null; addEventListener: () => void },
+      ) {
+        this.close = vi.fn()
+        this.onmessage = null
+        this.onerror = null
+        this.addEventListener = vi.fn()
+      }),
+    )
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
-  it('renders the dashboard inside the shell and filters run inventory search', async () => {
-    const user = userEvent.setup()
-
+  it('renders the Master-Detail shell with app header, sidebar Recent runs, and live status bar', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = requestUrl(input)
 
@@ -135,18 +147,19 @@ describe('ProductionShell integration', () => {
     )
 
     expect(await screen.findByRole('heading', { name: 'Production' })).toBeInTheDocument()
-    expect((await screen.findAllByText('scp-049-run-2')).length).toBeGreaterThan(0)
+    expect(
+      await screen.findByRole('heading', { name: 'SCP-049 Run #2' }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Tuning' })).toBeInTheDocument()
     expect(screen.getByTestId('status-bar')).toHaveAttribute('data-visible', 'true')
-    expect(screen.getByRole('button', { name: /scp-049/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /scp-173/i })).toBeInTheDocument()
-
-    await user.type(screen.getByPlaceholderText('Search runs'), '173')
-
-    await waitFor(() => {
-      expect(screen.queryByRole('button', { name: /scp-049/i })).not.toBeInTheDocument()
-    })
-    expect(screen.getByRole('button', { name: /scp-173/i })).toBeInTheDocument()
+    expect(
+      screen.getAllByRole('list', { name: /pipeline progress/i }).length,
+    ).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /scp-049 run #2/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /scp-173 run #1/i })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Search runs')).not.toBeInTheDocument()
+    expect(screen.queryByText(/six-node pipeline map/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Decision state')).not.toBeInTheDocument()
   }, 10_000)
 
   it('does not render a continuity banner on the first production visit for a run', async () => {
@@ -469,12 +482,10 @@ describe('ProductionShell integration', () => {
     expect(screen.getAllByText('Scene 0 review copy')).toHaveLength(2)
   })
 
-  it('renders the pending run guidance card and copies the resume command', async () => {
-    const clipboard_write_text = vi
-      .spyOn(clipboard, 'copyText')
-      .mockResolvedValue(true)
+  it('renders the pending run guidance card and starts the run via Start run button', async () => {
+    const advance_calls: string[] = []
 
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = requestUrl(input)
 
       if (url.endsWith('/api/runs')) {
@@ -497,6 +508,24 @@ describe('ProductionShell integration', () => {
         })
       }
 
+      if (
+        url.endsWith('/api/runs/scp-173-run-1/advance') &&
+        init?.method === 'POST'
+      ) {
+        advance_calls.push(url)
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...run_list_response.data.items[0],
+              stage: 'scenario_review',
+              status: 'waiting',
+            },
+            version: 1,
+          }),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 },
+        )
+      }
+
       throw new Error(`Unexpected fetch in test: ${url}`)
     })
 
@@ -517,20 +546,23 @@ describe('ProductionShell integration', () => {
 
     const pending_guidance = await screen.findByLabelText('Pending run guidance')
     expect(pending_guidance).toBeInTheDocument()
+    expect(
+      within(pending_guidance).getByRole('heading', { name: 'SCP-173 Run #1' }),
+    ).toBeInTheDocument()
     expect(within(pending_guidance).getByText('scp-173-run-1')).toBeInTheDocument()
-    expect(within(pending_guidance).getByText('SCP-173')).toBeInTheDocument()
     expect(
       screen.getByText(/Run created\. It has not started yet\./i),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Copy command' }))
+    expect(
+      screen.queryByRole('button', { name: 'Copy command' }),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Start run' }))
 
     await waitFor(() => {
-      expect(clipboard_write_text).toHaveBeenCalledWith(
-        'pipeline resume scp-173-run-1',
-      )
+      expect(advance_calls).toHaveLength(1)
     })
-    expect(await screen.findByRole('status')).toHaveTextContent('Copied.')
   })
 
   it('renders the empty-state New Run CTA when no runs exist', async () => {
@@ -664,6 +696,9 @@ describe('ProductionShell integration', () => {
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     })
     const guidance = await screen.findByLabelText('Pending run guidance')
+    expect(
+      within(guidance).getByRole('heading', { name: 'SCP-049 Run #1' }),
+    ).toBeInTheDocument()
     expect(within(guidance).getByText('scp-049-run-1')).toBeInTheDocument()
 
     // URL must remain stable through the refetch — the inventory now lists the

@@ -67,6 +67,18 @@ export function StatusBar({ run, status_payload }: StatusBarProps) {
                 <BadgeDollarSign aria-hidden="true" size={14} />
                 {formatCurrency(run.cost_usd)}
               </span>
+              {status_payload?.decisions_summary ? (
+                <span
+                  className="status-bar__metric status-bar__decisions"
+                  aria-label="Decisions summary"
+                >
+                  {status_payload.decisions_summary.approved_count} approved
+                  {' · '}
+                  {status_payload.decisions_summary.pending_count} pending
+                  {' · '}
+                  {status_payload.decisions_summary.rejected_count} rejected
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -75,12 +87,6 @@ export function StatusBar({ run, status_payload }: StatusBarProps) {
             <span>
               In {formatTokenCount(run.token_in)} / Out {formatTokenCount(run.token_out)}
             </span>
-            {status_payload?.decisions_summary ? (
-              <span>
-                {status_payload.decisions_summary.approved_count} approved /{' '}
-                {status_payload.decisions_summary.pending_count} pending
-              </span>
-            ) : null}
           </div>
 
           <div className="status-bar__stepper">

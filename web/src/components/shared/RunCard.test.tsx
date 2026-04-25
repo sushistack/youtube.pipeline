@@ -21,33 +21,37 @@ const base_run = {
 }
 
 describe('RunCard', () => {
-  it('renders the required card anatomy', () => {
-    render(
-      <RunCard run={base_run} selected={false} on_select={vi.fn()} />,
-    )
+  it('renders the compact one-line layout with dot tone matching the run status', () => {
+    render(<RunCard run={base_run} selected={false} on_select={vi.fn()} />)
 
-    expect(screen.getByText('SCP-173')).toBeInTheDocument()
-    expect(screen.getByText('Run 4')).toBeInTheDocument()
-    expect(screen.getByText('Critic pass is waiting for review')).toBeInTheDocument()
-    expect(screen.getByText('Waiting')).toBeInTheDocument()
-    expect(screen.getByText('$1.80')).toBeInTheDocument()
-    expect(screen.getByText('Critic')).toBeInTheDocument()
-    expect(screen.getByText('84')).toBeInTheDocument()
+    expect(screen.getByText('SCP-173 Run #4')).toBeInTheDocument()
+    const card = screen.getByRole('button', { name: /scp-173 run #4/i })
+    expect(card).toHaveAttribute('data-tone', 'muted')
+    expect(card).toHaveAttribute('data-selected', 'false')
   })
 
-  it('applies the critic threshold tone and selection callback', async () => {
+  it('marks selection state on the card and triggers on_select on click', async () => {
     const user = userEvent.setup()
     const on_select = vi.fn()
 
-    render(<RunCard run={base_run} selected={true} on_select={on_select} />)
+    render(<RunCard run={base_run} selected on_select={on_select} />)
 
-    expect(screen.getByText('84').closest('.run-card__critic')).toHaveAttribute(
-      'data-tone',
-      'high',
+    const card = screen.getByRole('button', { name: /scp-173 run #4/i })
+    expect(card).toHaveAttribute('data-selected', 'true')
+
+    await user.click(card)
+    expect(on_select).toHaveBeenCalledWith('scp-173-run-4')
+  })
+
+  it('falls back to scp-only label when the run id has no parseable sequence', () => {
+    render(
+      <RunCard
+        run={{ ...base_run, id: 'legacy-id' }}
+        selected={false}
+        on_select={vi.fn()}
+      />,
     )
 
-    await user.click(screen.getByRole('button', { name: /scp-173/i }))
-
-    expect(on_select).toHaveBeenCalledWith('scp-173-run-4')
+    expect(screen.getByText('SCP-173')).toBeInTheDocument()
   })
 })

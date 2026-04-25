@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
-import { fetchRunList } from '../../lib/apiClient'
-import { copyText } from '../../lib/clipboard'
+import { advanceRun, fetchRunList } from '../../lib/apiClient'
 import {
   compareRunsForInventory,
   formatContinuityMessage,
-  formatCurrency,
-  formatElapsed,
-  formatRunSummary,
+  getRunSequence,
   getStageLabel,
   getStatusLabel,
   getStatusTone,
@@ -24,8 +21,8 @@ import { useNewRunCoordinator } from '../production/useNewRunCoordinator'
 import { ScenarioInspector } from '../production/ScenarioInspector'
 import { ContinuityBanner } from '../shared/ContinuityBanner'
 import { FailureBanner } from '../shared/FailureBanner'
-import { ProductionShortcutPanel } from '../shared/ProductionShortcutPanel'
-import { StageStepper } from '../shared/StageStepper'
+import { ProductionAppHeader } from '../shared/ProductionAppHeader'
+import { ProductionMasterDetail } from '../shared/ProductionMasterDetail'
 import { StatusBar } from '../shared/StatusBar'
 
 function toLastSeenSnapshot(
@@ -74,16 +71,27 @@ export function ProductionShell() {
   const set_production_last_seen = useUIStore((state) => state.set_production_last_seen)
   const [dismissed_run_id, set_dismissed_run_id] = useState<string | null>(null)
   const [dismissed_continuity_key, set_dismissed_continuity_key] = useState<string | null>(null)
-  const [copied_command, set_copied_command] = useState(false)
   const latest_snapshot_ref = useRef<ProductionLastSeenSnapshot | null>(null)
   const banner_active_ref = useRef(false)
   const empty_state_button_ref = useRef<HTMLButtonElement | null>(null)
-  const copy_feedback_timeout_ref = useRef<number | null>(null)
   const selected_run_id = search_params.get('run')
+  const query_client = useQueryClient()
   const runs_query = useQuery({
     queryFn: fetchRunList,
     queryKey: queryKeys.runs.list(),
     staleTime: 5_000,
+  })
+  // pending → Phase A entry. Server's POST /api/runs/{id}/resume rejects
+  // pending status with 409 by design — only failed/waiting are resumable.
+  // The Start-run button calls /advance instead, which dispatches Engine.Advance.
+  const advance_mutation = useMutation({
+    mutationFn: (run_id: string) => advanceRun(run_id),
+    onSuccess: (_data, run_id) => {
+      void query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
+      void query_client.invalidateQueries({
+        queryKey: queryKeys.runs.status(run_id),
+      })
+    },
   })
   const runs = (runs_query.data ?? []).slice().sort(compareRunsForInventory)
   const fallback_run = runs[0] ?? null
@@ -167,14 +175,6 @@ export function ProductionShell() {
 
   useEffect(() => {
     return () => {
-      if (copy_feedback_timeout_ref.current != null) {
-        window.clearTimeout(copy_feedback_timeout_ref.current)
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    return () => {
       if (banner_active_ref.current) {
         return
       }
@@ -211,188 +211,171 @@ export function ProductionShell() {
     set_dismissed_continuity_key(continuity_key)
   }
 
-  async function handleCopyResumeCommand(run_id: string) {
-    const success = await copyText(`pipeline resume ${run_id}`)
-    if (!success) {
-      return
+  function renderPendingDetail() {
+    if (!current_run) {
+      return null
     }
-    set_copied_command(true)
-    if (copy_feedback_timeout_ref.current != null) {
-      window.clearTimeout(copy_feedback_timeout_ref.current)
+    const seq = getRunSequence(current_run.id)
+    const display_title =
+      seq != null ? `SCP-${current_run.scp_id} Run #${seq}` : current_run.id
+    return (
+      <section className="production__pending-state" aria-label="Pending run guidance">
+        <div className="production__pending-state-copy">
+          <p className="production-dashboard__eyebrow">Run created</p>
+          <h2 className="production-dashboard__section-title">{display_title}</h2>
+          <p className="production-dashboard__summary">{current_run.id}</p>
+        </div>
+
+        <div className="production__pending-state-meta">
+          <span
+            className="run-card__badge"
+            data-tone={getStatusTone(current_run.status)}
+          >
+            {getStatusLabel(current_run.status)}
+          </span>
+        </div>
+
+        <p className="route-shell__body">
+          Run created. It has not started yet. Click <strong>Start run</strong>
+          {' '}to begin Phase A.
+        </p>
+
+        <div className="production__pending-state-actions">
+          <button
+            type="button"
+            className="production__pending-resume-btn"
+            disabled={
+              advance_mutation.isPending &&
+              advance_mutation.variables === current_run.id
+            }
+            onClick={() => {
+              advance_mutation.mutate(current_run.id)
+            }}
+          >
+            {advance_mutation.isPending &&
+            advance_mutation.variables === current_run.id
+              ? 'Starting…'
+              : 'Start run'}
+          </button>
+          {advance_mutation.isError &&
+          advance_mutation.variables === current_run.id ? (
+            <span className="production__pending-resume-error" role="status">
+              Start failed: {advance_mutation.error instanceof Error
+                ? advance_mutation.error.message
+                : 'Unknown error — check the run log and retry.'}
+            </span>
+          ) : null}
+        </div>
+      </section>
+    )
+  }
+
+  function renderStageDetail() {
+    if (!current_run) {
+      return null
     }
-    copy_feedback_timeout_ref.current = window.setTimeout(() => {
-      set_copied_command(false)
-    }, 2_000)
+    if (current_run.stage === 'pending' && current_run.status === 'pending') {
+      return renderPendingDetail()
+    }
+    if (current_run.stage === 'scenario_review' && current_run.status === 'waiting') {
+      // key on run.id matches sibling stage branches: switching runs while in
+      // scenario_review must remount the inspector to flush its
+      // active_index/draft state instead of leaking it across runs.
+      return <ScenarioInspector key={current_run.id} run_id={current_run.id} />
+    }
+    if (current_run.stage === 'character_pick' && current_run.status === 'waiting') {
+      return <CharacterPick key={current_run.id} run={current_run} />
+    }
+    if (current_run.stage === 'metadata_ack' && current_run.status === 'waiting') {
+      return <ComplianceGate key={current_run.id} run={current_run} />
+    }
+    if (current_run.stage === 'complete' && current_run.status === 'completed') {
+      return <CompletionReward key={current_run.id} run={current_run} />
+    }
+    return (
+      <section className="production__stage-placeholder" aria-label="Stage in progress">
+        <p className="production-dashboard__eyebrow">Stage in progress</p>
+        <p className="route-shell__body">
+          Pipeline is working through this stage. Scene-level review surfaces
+          will appear once the run reaches a review checkpoint.
+        </p>
+      </section>
+    )
+  }
+
+  const is_batch_review_surface =
+    current_run?.stage === 'batch_review' && current_run.status === 'waiting'
+
+  function getMasterEmptyMessage() {
+    if (!current_run) {
+      return 'Scenes will appear once a run is selected.'
+    }
+    if (current_run.stage === 'pending') {
+      return 'Scenes will appear once Phase A finishes.'
+    }
+    return `Scenes are not yet available — ${getStageLabel(current_run.stage).toLowerCase()} in progress.`
   }
 
   return (
-    <section className="route-shell" aria-labelledby="production-shell-title">
-      <p className="route-shell__eyebrow">Production workflow</p>
-      <h1 id="production-shell-title" className="route-shell__title">
+    <section className="route-shell production-shell" aria-labelledby="production-shell-title">
+      <h1 id="production-shell-title" className="stage-stepper__sr-only">
         Production
       </h1>
-      <p className="route-shell__body">
-        Monitor live pipeline telemetry, inspect the selected run, and keep the
-        operator shell ready for the next review surface.
-      </p>
 
-      <StatusBar run={current_run} status_payload={status_payload} />
+      <ProductionAppHeader run={current_run ?? null} />
 
-      {current_run ? (
-        <div className="production-dashboard">
-          {current_run.status === 'failed' && !is_failure_banner_dismissed ? (
-            <FailureBanner
-              on_dismiss={() => set_dismissed_run_id(current_run.id)}
-              run={current_run}
+      {current_run && current_run.status === 'failed' && !is_failure_banner_dismissed ? (
+        <FailureBanner
+          on_dismiss={() => set_dismissed_run_id(current_run.id)}
+          run={current_run}
+        />
+      ) : null}
+
+      {show_continuity_banner ? (
+        <ContinuityBanner
+          message={continuity_message}
+          on_dismiss={dismissContinuityBanner}
+        />
+      ) : null}
+
+      <div className="production-shell__layout">
+        {current_run ? (
+          is_batch_review_surface ? (
+            <BatchReview key={current_run.id} run={current_run} />
+          ) : (
+            <ProductionMasterDetail
+              detail={renderStageDetail()}
+              master_empty_message={getMasterEmptyMessage()}
             />
-          ) : null}
-
-          {show_continuity_banner ? (
-            <ContinuityBanner
-              message={continuity_message}
-              on_dismiss={dismissContinuityBanner}
-            />
-          ) : null}
-
-          <section className="production-dashboard__hero">
-            <div className="production-dashboard__hero-copy">
-              <p className="production-dashboard__eyebrow">Selected run</p>
-              <h2 className="production-dashboard__title">{current_run.id}</h2>
-              <p className="production-dashboard__summary">
-                {formatRunSummary(current_run, status_payload)}
-              </p>
-            </div>
-
-            <div className="production-dashboard__hero-meta">
-              <span className="production-dashboard__badge">
-                {getStatusLabel(current_run.status)}
-              </span>
-              <span className="production-dashboard__meta">
-                {getStageLabel(current_run.stage)}
-              </span>
-            </div>
-          </section>
-
-          <section className="production-dashboard__panel">
-            <header className="production-dashboard__panel-header">
-              <div>
-                <p className="production-dashboard__eyebrow">Stage progress</p>
-                <h2 className="production-dashboard__section-title">
-                  Six-node pipeline map
-                </h2>
-              </div>
-            </header>
-            <StageStepper
-              stage={current_run.stage}
-              status={current_run.status}
-              variant="full"
-            />
-          </section>
-
-          <section className="production-dashboard__metrics">
-            <article className="production-dashboard__metric-card">
-              <p className="production-dashboard__eyebrow">Elapsed</p>
-              <strong>{formatElapsed(current_run.duration_ms)}</strong>
-            </article>
-            <article className="production-dashboard__metric-card">
-              <p className="production-dashboard__eyebrow">Spend</p>
-              <strong>{formatCurrency(current_run.cost_usd)}</strong>
-            </article>
-            <article className="production-dashboard__metric-card">
-              <p className="production-dashboard__eyebrow">Decision state</p>
-              <strong>
-                {status_payload?.decisions_summary
-                  ? `${status_payload.decisions_summary.approved_count} approved`
-                  : 'No review summary yet'}
-              </strong>
-            </article>
-          </section>
-
-          {current_run.stage === 'pending' && current_run.status === 'pending' ? (
-            <section className="production__pending-state" aria-label="Pending run guidance">
-              <div className="production__pending-state-copy">
-                <p className="production-dashboard__eyebrow">Run created</p>
-                <h2 className="production-dashboard__section-title">{current_run.id}</h2>
-                <p className="production-dashboard__summary">
-                  SCP-{current_run.scp_id}
+          )
+        ) : (
+          <ProductionMasterDetail
+            master_empty_message="Scenes will appear once a run is selected."
+            detail={
+              <div className="production-empty-state">
+                <h2 className="production-dashboard__section-title">No runs yet</h2>
+                <p className="route-shell__body">
+                  Start or resume a pipeline run to populate the Production dashboard.
                 </p>
-              </div>
-
-              <div className="production__pending-state-meta">
-                <span
-                  className="run-card__badge"
-                  data-tone={getStatusTone(current_run.status)}
-                >
-                  {getStatusLabel(current_run.status)}
-                </span>
-                <code className="production__pending-state-command">
-                  pipeline resume {current_run.id}
-                </code>
-              </div>
-
-              <p className="route-shell__body">
-                Run created. It has not started yet. To begin Phase A, run
-                {' '}
-                <code>pipeline resume {current_run.id}</code>
-                {' '}
-                in your terminal.
-              </p>
-
-              <div className="production__pending-state-actions">
                 <button
+                  ref={empty_state_button_ref}
                   type="button"
-                  className="production__pending-copy-btn"
+                  className="production-empty-state__action"
                   onClick={() => {
-                    void handleCopyResumeCommand(current_run.id)
+                    open_new_run_panel({
+                      restore_focus_to: empty_state_button_ref.current,
+                    })
                   }}
                 >
-                  Copy command
+                  New Run
                 </button>
-                {copied_command ? (
-                  <span className="production__pending-copy-confirmation" role="status">
-                    Copied.
-                  </span>
-                ) : null}
               </div>
-            </section>
-          ) : current_run.stage === 'scenario_review' && current_run.status === 'waiting' ? (
-            <ScenarioInspector run_id={current_run.id} />
-          ) : current_run.stage === 'batch_review' && current_run.status === 'waiting' ? (
-            <BatchReview key={current_run.id} run={current_run} />
-          ) : current_run.stage === 'character_pick' && current_run.status === 'waiting' ? (
-            // key on run.id so switching between runs remounts the component
-            // and resets phase/selection/refs — preserving the same instance
-            // across runs would leak phase='descriptor' and a selected
-            // candidate from a previously-viewed run into the new one.
-            <CharacterPick key={current_run.id} run={current_run} />
-          ) : current_run.stage === 'metadata_ack' && current_run.status === 'waiting' ? (
-            <ComplianceGate key={current_run.id} run={current_run} />
-          ) : current_run.stage === 'complete' && current_run.status === 'completed' ? (
-            <CompletionReward key={current_run.id} run={current_run} />
-          ) : (
-            <ProductionShortcutPanel />
-          )}
-        </div>
-      ) : (
-        <div className="production-empty-state">
-          <h2 className="production-dashboard__section-title">No runs yet</h2>
-          <p className="route-shell__body">
-            Start or resume a pipeline run to populate the Production dashboard.
-          </p>
-          <button
-            ref={empty_state_button_ref}
-            type="button"
-            className="production-empty-state__action"
-            onClick={() => {
-              open_new_run_panel({
-                restore_focus_to: empty_state_button_ref.current,
-              })
-            }}
-          >
-            New Run
-          </button>
-        </div>
-      )}
+            }
+          />
+        )}
+      </div>
+
+      <StatusBar run={current_run ?? null} status_payload={status_payload} />
     </section>
   )
 }

@@ -50,8 +50,8 @@ const baseItem: ReviewItem = {
 }
 
 describe('DetailPanel', () => {
-  it('renders critic breakdown and why-high-leverage annotation', () => {
-    renderWithProviders(
+  it('renders the 6-metric grid with mapped critic fields and why-high-leverage annotation', () => {
+    const { container } = renderWithProviders(
       <KeyboardShortcutsProvider>
         <DetailPanel item={baseItem} />
       </KeyboardShortcutsProvider>,
@@ -59,11 +59,51 @@ describe('DetailPanel', () => {
 
     expect(screen.getByText(/why high-leverage/i)).toHaveTextContent('First appearance of SCP-049')
     expect(screen.getByLabelText(/narration audio/i)).toBeInTheDocument()
-    expect(screen.getByText('Aggregate')).toBeInTheDocument()
-    expect(screen.getByText('Hook strength')).toBeInTheDocument()
-    expect(screen.getByText('Fact accuracy')).toBeInTheDocument()
-    expect(screen.getByText('Emotional variation')).toBeInTheDocument()
-    expect(screen.getByText('Immersion')).toBeInTheDocument()
+
+    const grid = container.querySelector('.detail-panel__metrics-grid')!
+    const cardFor = (key: string) =>
+      grid.querySelector(`[data-metric="${key}"]`)! as HTMLElement
+
+    expect(cardFor('visual')).toHaveTextContent('Visual')
+    expect(cardFor('narration')).toHaveTextContent('Narration')
+    expect(cardFor('coherence')).toHaveTextContent('Coherence')
+    expect(cardFor('pacing')).toHaveTextContent('Pacing')
+    expect(cardFor('scp_accuracy')).toHaveTextContent('SCP Accuracy')
+    expect(cardFor('audio')).toHaveTextContent('Audio')
+
+    expect(
+      cardFor('narration').querySelector('.detail-panel__metric-score'),
+    ).toHaveTextContent('91')
+    expect(
+      cardFor('scp_accuracy').querySelector('.detail-panel__metric-score'),
+    ).toHaveTextContent('88')
+    expect(
+      cardFor('coherence').querySelector('.detail-panel__metric-score'),
+    ).toHaveTextContent('45')
+
+    expect(
+      cardFor('visual').querySelector('.detail-panel__metric-score'),
+    ).toHaveTextContent('—')
+    expect(cardFor('visual')).toHaveAttribute('title', 'metric not yet emitted by critic')
+    expect(
+      cardFor('audio').querySelector('.detail-panel__metric-score'),
+    ).toHaveTextContent('—')
+    expect(cardFor('audio')).toHaveAttribute('title', 'metric not yet emitted by critic')
+  })
+
+  it('renders all 6 metrics as `—` placeholders when no critic breakdown is provided', () => {
+    const { container } = renderWithProviders(
+      <KeyboardShortcutsProvider>
+        <DetailPanel item={{ ...baseItem, critic_breakdown: null }} />
+      </KeyboardShortcutsProvider>,
+    )
+
+    const grid = container.querySelector('.detail-panel__metrics-grid')!
+    const metric_keys = ['visual', 'narration', 'coherence', 'pacing', 'scp_accuracy', 'audio']
+    for (const key of metric_keys) {
+      const card = grid.querySelector(`[data-metric="${key}"]`)!
+      expect(card.querySelector('.detail-panel__metric-score')).toHaveTextContent('—')
+    }
   })
 
   it('shows version toggle and switches narration when previous version exists', async () => {

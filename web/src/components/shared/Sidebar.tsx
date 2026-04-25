@@ -1,11 +1,15 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { NavLink } from 'react-router'
 import { useLocation, useSearchParams } from 'react-router'
+import {
+  LayoutGrid,
+  Plus,
+  Settings as SettingsIcon,
+  SlidersHorizontal,
+} from 'lucide-react'
 import { fetchRunList } from '../../lib/apiClient'
-import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { compareRunsForInventory } from '../../lib/formatters'
-import { formatShortcutHint } from '../../lib/keyboardShortcuts'
 import { queryKeys } from '../../lib/queryKeys'
 import { NewRunPanel } from '../production/NewRunPanel'
 import { useNewRunCoordinator } from '../production/useNewRunCoordinator'
@@ -18,9 +22,9 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS = [
-  { to: '/production', label: 'Production', icon: 'PR' },
-  { to: '/tuning', label: 'Tuning', icon: 'TU' },
-  { to: '/settings', label: 'Settings', icon: 'SE' },
+  { to: '/production', label: 'Production', Icon: LayoutGrid },
+  { to: '/tuning', label: 'Tuning', Icon: SlidersHorizontal },
+  { to: '/settings', label: 'Settings', Icon: SettingsIcon },
 ] as const
 
 export function Sidebar({
@@ -29,7 +33,6 @@ export function Sidebar({
   on_toggle,
 }: SidebarProps) {
   const query_client = useQueryClient()
-  const [inventory_query, set_inventory_query] = useState('')
   const [search_params, set_search_params] = useSearchParams()
   const location = useLocation()
   const new_run_button_ref = useRef<HTMLButtonElement | null>(null)
@@ -48,37 +51,7 @@ export function Sidebar({
     queryKey: queryKeys.runs.list(),
     staleTime: 5_000,
   })
-  const filtered_runs = (runs_query.data ?? [])
-    .slice()
-    .sort(compareRunsForInventory)
-    .filter((run) => {
-      if (inventory_query.trim().length === 0) {
-        return true
-      }
-
-      const query = inventory_query.trim().toLowerCase()
-      return (
-        run.id.toLowerCase().includes(query) ||
-        run.scp_id.toLowerCase().includes(query) ||
-        run.stage.toLowerCase().includes(query) ||
-        run.status.toLowerCase().includes(query)
-      )
-    })
-
-  useKeyboardShortcuts(
-    [
-      {
-        enabled: is_production_route,
-        handler: () => {
-          openNewRunPanel()
-        },
-        key: 'mod+n',
-        prevent_default: true,
-        scope: 'context',
-      },
-    ],
-    { enabled: is_production_route },
-  )
+  const runs = (runs_query.data ?? []).slice().sort(compareRunsForInventory)
 
   function openNewRunPanel() {
     open_new_run_panel({
@@ -109,7 +82,18 @@ export function Sidebar({
         <div className="sidebar__header-row">
           <div className="sidebar__brand" aria-label="youtube.pipeline">
             <span className="sidebar__brand-mark" aria-hidden="true">
-              YP
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
             </span>
             <span className="sidebar__brand-label">youtube.pipeline</span>
           </div>
@@ -148,19 +132,12 @@ export function Sidebar({
               aria-label="Create a new pipeline run"
               aria-expanded={new_run_open}
               onClick={openNewRunPanel}
-              title={
-                collapsed
-                  ? `Create a new pipeline run (${formatShortcutHint('mod+n')})`
-                  : undefined
-              }
+              title={collapsed ? 'Create a new pipeline run' : undefined}
             >
               <span aria-hidden="true" className="sidebar__new-run-icon">
-                +
+                <Plus size={14} aria-hidden="true" />
               </span>
               <span className="sidebar__new-run-label">New Run</span>
-              <span className="sidebar__new-run-hint">
-                {formatShortcutHint('mod+n')}
-              </span>
             </button>
 
             {new_run_open ? (
@@ -193,7 +170,7 @@ export function Sidebar({
             title={collapsed ? item.label : undefined}
           >
             <span className="sidebar__icon" aria-hidden="true">
-              {item.icon}
+              <item.Icon size={16} strokeWidth={2} />
             </span>
             <span className="sidebar__link-label">{item.label}</span>
           </NavLink>
@@ -203,28 +180,14 @@ export function Sidebar({
       {show_inventory ? (
         <section className="sidebar__inventory" aria-labelledby="sidebar-runs-title">
           <div className="sidebar__inventory-header">
-            <p className="sidebar__inventory-eyebrow">Run inventory</p>
             <h2 id="sidebar-runs-title" className="sidebar__inventory-title">
-              Active runs
+              Recent runs
             </h2>
           </div>
 
-          <label className="sidebar__search">
-            <span className="stage-stepper__sr-only">Search runs</span>
-            <input
-              type="search"
-              className="sidebar__search-input"
-              placeholder="Search runs"
-              value={inventory_query}
-              onChange={(event) => {
-                set_inventory_query(event.target.value)
-              }}
-            />
-          </label>
-
           <div className="sidebar__inventory-list">
-            {filtered_runs.length > 0 ? (
-              filtered_runs.map((run) => (
+            {runs.length > 0 ? (
+              runs.map((run) => (
                 <RunCard
                   key={run.id}
                   run={run}
@@ -239,11 +202,7 @@ export function Sidebar({
                 />
               ))
             ) : (
-              <p className="sidebar__inventory-empty">
-                {(runs_query.data ?? []).length === 0
-                  ? 'No runs yet.'
-                  : 'No runs match the current search.'}
-              </p>
+              <p className="sidebar__inventory-empty">No runs yet.</p>
             )}
           </div>
         </section>
