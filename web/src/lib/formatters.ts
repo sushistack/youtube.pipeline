@@ -29,22 +29,32 @@ export interface StageNodeModel {
   state: StageNodeState
 }
 
-export interface SubStageNodeCounter {
+export interface StageNodeCounter {
   done: number
   total: number
   suffix: string
 }
 
-export interface SubStageNodeModel {
-  stage: RunStage
+export interface StageDagNodeModel {
+  id: RunStage
   label: string
   state: StageNodeState
-  counter?: SubStageNodeCounter
+  parent: StageNodeKey
+  counter?: StageNodeCounter
 }
 
-export interface StageGraph {
-  nodes: StageNodeModel[]
-  sub_nodes: Partial<Record<StageNodeKey, SubStageNodeModel[]>>
+export type StageDagEdgeState = 'completed' | 'active' | 'upcoming' | 'failed'
+
+export interface StageDagEdgeModel {
+  id: string
+  source: RunStage
+  target: RunStage
+  state: StageDagEdgeState
+}
+
+export interface StageDag {
+  nodes: StageDagNodeModel[]
+  edges: StageDagEdgeModel[]
 }
 
 const STAGE_LABELS: Record<RunStage, string> = {
@@ -109,26 +119,6 @@ const NODE_ORDER: StageNodeKey[] = [
   'assemble',
   'complete',
 ]
-
-export const SCENARIO_SUB_STAGES: RunStage[] = [
-  'research',
-  'structure',
-  'write',
-  'visual_break',
-  'review',
-  'critic',
-  'scenario_review',
-]
-
-export const ASSETS_SUB_STAGES: RunStage[] = ['image', 'tts', 'batch_review']
-
-export const ASSEMBLE_SUB_STAGES: RunStage[] = ['assemble', 'metadata_ack']
-
-const SUB_STAGES_BY_NODE: Partial<Record<StageNodeKey, RunStage[]>> = {
-  scenario: SCENARIO_SUB_STAGES,
-  assets: ASSETS_SUB_STAGES,
-  assemble: ASSEMBLE_SUB_STAGES,
-}
 
 export function mapStageToNode(stage: RunStage): StageNodeKey {
   return STAGE_TO_NODE[stage]
@@ -384,70 +374,159 @@ export interface DecisionsSummary {
   pending_count: number
 }
 
-export function buildStageGraph(
+const DAG_LINEAR_HEAD: RunStage[] = [
+  'pending',
+  'research',
+  'structure',
+  'write',
+  'visual_break',
+  'review',
+  'critic',
+  'scenario_review',
+  'character_pick',
+]
+
+const DAG_LINEAR_TAIL: RunStage[] = [
+  'batch_review',
+  'assemble',
+  'metadata_ack',
+  'complete',
+]
+
+const DAG_PARALLEL_BRANCH: RunStage[] = ['image', 'tts']
+
+const STAGE_TO_PARENT_NODE: Record<RunStage, StageNodeKey> = STAGE_TO_NODE
+
+function progressIndex(stage: RunStage): number {
+  if (stage === 'image' || stage === 'tts') {
+    return DAG_LINEAR_HEAD.length
+  }
+  const head = DAG_LINEAR_HEAD.indexOf(stage)
+  if (head !== -1) {
+    return head
+  }
+  const tail = DAG_LINEAR_TAIL.indexOf(stage)
+  if (tail !== -1) {
+    return DAG_LINEAR_HEAD.length + 1 + tail
+  }
+  return -1
+}
+
+export function buildStageDagTopology(
   stage: RunStage,
   status: RunStatus,
   decisions_summary?: DecisionsSummary | null,
-): StageGraph {
-  const nodes = buildStageNodes(stage, status)
-  const active_node_key = mapStageToNode(stage)
-  const active_node_index = NODE_ORDER.indexOf(active_node_key)
+): StageDag {
+  const current_index = progressIndex(stage)
+  const is_terminal_failed = status === 'failed' || status === 'cancelled'
+  const is_completed = status === 'completed'
 
-  const sub_nodes: Partial<Record<StageNodeKey, SubStageNodeModel[]>> = {}
-
-  for (const [parent_key, sub_stages] of Object.entries(SUB_STAGES_BY_NODE) as [
-    StageNodeKey,
-    RunStage[],
-  ][]) {
-    const parent_index = NODE_ORDER.indexOf(parent_key)
-    const is_current_parent = parent_key === active_node_key
-    const is_past_parent = parent_index < active_node_index
-    const sub_active_index = is_current_parent ? sub_stages.indexOf(stage) : -1
-
-    sub_nodes[parent_key] = sub_stages.map((sub_stage, index) => {
-      let sub_state: StageNodeState = 'upcoming'
-
-      if (status === 'completed' || is_past_parent) {
-        sub_state = 'completed'
-      } else if (is_current_parent) {
-        if (
-          (status === 'failed' || status === 'cancelled') &&
-          index === sub_active_index
-        ) {
-          sub_state = 'failed'
-        } else if (index < sub_active_index) {
-          sub_state = 'completed'
-        } else if (index === sub_active_index) {
-          sub_state = 'active'
-        }
+  function deriveState(node_stage: RunStage): StageNodeState {
+    const idx = progressIndex(node_stage)
+    if (is_completed) {
+      return 'completed'
+    }
+    if (idx < current_index) {
+      return 'completed'
+    }
+    if (idx === current_index) {
+      const is_current_node =
+        node_stage === stage ||
+        (DAG_PARALLEL_BRANCH.includes(stage) &&
+          DAG_PARALLEL_BRANCH.includes(node_stage))
+      if (!is_current_node) {
+        return 'upcoming'
       }
+      return is_terminal_failed ? 'failed' : 'active'
+    }
+    return 'upcoming'
+  }
 
-      const node: SubStageNodeModel = {
-        stage: sub_stage,
-        label: STAGE_LABELS[sub_stage],
-        state: sub_state,
+  const all_nodes: RunStage[] = [
+    ...DAG_LINEAR_HEAD,
+    ...DAG_PARALLEL_BRANCH,
+    ...DAG_LINEAR_TAIL,
+  ]
+
+  const nodes: StageDagNodeModel[] = all_nodes.map((node_stage) => {
+    const node: StageDagNodeModel = {
+      id: node_stage,
+      label: STAGE_LABELS[node_stage],
+      state: deriveState(node_stage),
+      parent: STAGE_TO_PARENT_NODE[node_stage],
+    }
+    if (
+      node_stage === 'batch_review' &&
+      stage === 'batch_review' &&
+      decisions_summary
+    ) {
+      const done =
+        decisions_summary.approved_count + decisions_summary.rejected_count
+      const total = done + decisions_summary.pending_count
+      if (total > 0) {
+        node.counter = { done, total, suffix: 'reviewed' }
       }
+    }
+    return node
+  })
 
-      if (
-        sub_stage === 'batch_review' &&
-        stage === 'batch_review' &&
-        decisions_summary
-      ) {
-        const done =
-          decisions_summary.approved_count + decisions_summary.rejected_count
-        const total = done + decisions_summary.pending_count
-        if (total > 0) {
-          node.counter = {
-            done,
-            total,
-            suffix: 'reviewed',
-          }
-        }
-      }
+  const node_state = new Map(nodes.map((n) => [n.id, n.state]))
 
-      return node
+  function deriveEdgeState(source: RunStage, target: RunStage): StageDagEdgeState {
+    const s = node_state.get(source)
+    const t = node_state.get(target)
+    if (s === 'completed' && t === 'completed') {
+      return 'completed'
+    }
+    if (t === 'failed' || s === 'failed') {
+      return 'failed'
+    }
+    if (t === 'active' || s === 'active') {
+      return 'active'
+    }
+    return 'upcoming'
+  }
+
+  const edges: StageDagEdgeModel[] = []
+
+  for (let i = 0; i < DAG_LINEAR_HEAD.length - 1; i += 1) {
+    const source = DAG_LINEAR_HEAD[i]
+    const target = DAG_LINEAR_HEAD[i + 1]
+    edges.push({
+      id: `${source}__${target}`,
+      source,
+      target,
+      state: deriveEdgeState(source, target),
     })
   }
 
-  return { nodes, sub_nodes }
+  const fork_source = DAG_LINEAR_HEAD[DAG_LINEAR_HEAD.length - 1]
+  const merge_target = DAG_LINEAR_TAIL[0]
+  for (const branch of DAG_PARALLEL_BRANCH) {
+    edges.push({
+      id: `${fork_source}__${branch}`,
+      source: fork_source,
+      target: branch,
+      state: deriveEdgeState(fork_source, branch),
+    })
+    edges.push({
+      id: `${branch}__${merge_target}`,
+      source: branch,
+      target: merge_target,
+      state: deriveEdgeState(branch, merge_target),
+    })
+  }
+
+  for (let i = 0; i < DAG_LINEAR_TAIL.length - 1; i += 1) {
+    const source = DAG_LINEAR_TAIL[i]
+    const target = DAG_LINEAR_TAIL[i + 1]
+    edges.push({
+      id: `${source}__${target}`,
+      source,
+      target,
+      state: deriveEdgeState(source, target),
+    })
+  }
+
+  return { nodes, edges }
 }

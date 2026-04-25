@@ -1,15 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  ASSEMBLE_SUB_STAGES,
-  ASSETS_SUB_STAGES,
-  buildStageGraph,
+  buildStageDagTopology,
   buildStageNodes,
   compareRunsForInventory,
   formatContinuityMessage,
   formatFreshness,
   getCriticTone,
   mapStageToNode,
-  SCENARIO_SUB_STAGES,
 } from './formatters'
 
 describe('formatters', () => {
@@ -131,9 +128,11 @@ describe('formatters', () => {
   })
 })
 
-describe('buildStageGraph', () => {
-  it('exposes the engine-verified sub-stage order', () => {
-    expect(SCENARIO_SUB_STAGES).toEqual([
+describe('buildStageDagTopology', () => {
+  it('emits 15 nodes spanning the full pipeline', () => {
+    const dag = buildStageDagTopology('pending', 'pending')
+    expect(dag.nodes.map((n) => n.id)).toEqual([
+      'pending',
       'research',
       'structure',
       'write',
@@ -141,96 +140,79 @@ describe('buildStageGraph', () => {
       'review',
       'critic',
       'scenario_review',
+      'character_pick',
+      'image',
+      'tts',
+      'batch_review',
+      'assemble',
+      'metadata_ack',
+      'complete',
     ])
-    expect(ASSETS_SUB_STAGES).toEqual(['image', 'tts', 'batch_review'])
-    expect(ASSEMBLE_SUB_STAGES).toEqual(['assemble', 'metadata_ack'])
   })
 
-  it('marks scenario sub-states correctly when run is on critic', () => {
-    const graph = buildStageGraph('critic', 'running')
-    const scenario = graph.sub_nodes.scenario ?? []
-    const states = Object.fromEntries(
-      scenario.map((node) => [node.stage, node.state]),
-    )
-    expect(states).toEqual({
-      research: 'completed',
-      structure: 'completed',
-      write: 'completed',
-      visual_break: 'completed',
-      review: 'completed',
-      critic: 'active',
-      scenario_review: 'upcoming',
-    })
+  it('forks character_pick into image+tts and merges them at batch_review', () => {
+    const dag = buildStageDagTopology('character_pick', 'waiting')
+    const fork_edges = dag.edges.filter((e) => e.source === 'character_pick')
+    expect(fork_edges.map((e) => e.target).sort()).toEqual(['image', 'tts'])
+    const merge_edges = dag.edges.filter((e) => e.target === 'batch_review')
+    expect(merge_edges.map((e) => e.source).sort()).toEqual(['image', 'tts'])
   })
 
-  it('treats earlier parent groups as completed and later as upcoming', () => {
-    const graph = buildStageGraph('image', 'running')
-    expect(
-      graph.sub_nodes.scenario?.every((node) => node.state === 'completed'),
-    ).toBe(true)
-    const assets = graph.sub_nodes.assets ?? []
-    expect(assets.find((node) => node.stage === 'image')?.state).toBe('active')
-    expect(assets.find((node) => node.stage === 'tts')?.state).toBe('upcoming')
-    expect(
-      graph.sub_nodes.assemble?.every((node) => node.state === 'upcoming'),
-    ).toBe(true)
+  it('renders both image and tts as active when stage=image (parallel branch invariant)', () => {
+    const dag = buildStageDagTopology('image', 'running')
+    const by_id = Object.fromEntries(dag.nodes.map((n) => [n.id, n.state]))
+    expect(by_id.image).toBe('active')
+    expect(by_id.tts).toBe('active')
+    expect(by_id.character_pick).toBe('completed')
+    expect(by_id.batch_review).toBe('upcoming')
   })
 
-  it('marks the active sub-node failed when status=failed', () => {
-    const graph = buildStageGraph('write', 'failed')
-    const scenario = graph.sub_nodes.scenario ?? []
-    expect(scenario.find((node) => node.stage === 'write')?.state).toBe('failed')
-    expect(scenario.find((node) => node.stage === 'structure')?.state).toBe(
-      'completed',
-    )
-    expect(scenario.find((node) => node.stage === 'visual_break')?.state).toBe(
-      'upcoming',
-    )
+  it('keeps both image and tts active when stage=tts', () => {
+    const dag = buildStageDagTopology('tts', 'running')
+    const by_id = Object.fromEntries(dag.nodes.map((n) => [n.id, n.state]))
+    expect(by_id.image).toBe('active')
+    expect(by_id.tts).toBe('active')
   })
 
-  it('attaches a counter to batch_review when decisions_summary is present', () => {
-    const graph = buildStageGraph('batch_review', 'waiting', {
+  it('attaches the decisions counter on batch_review when stage=batch_review', () => {
+    const dag = buildStageDagTopology('batch_review', 'waiting', {
       approved_count: 8,
       rejected_count: 2,
       pending_count: 22,
     })
-    const batch = graph.sub_nodes.assets?.find(
-      (node) => node.stage === 'batch_review',
-    )
-    expect(batch?.state).toBe('active')
+    const batch = dag.nodes.find((n) => n.id === 'batch_review')
     expect(batch?.counter).toEqual({ done: 10, total: 32, suffix: 'reviewed' })
   })
 
-  it('omits the counter when decisions_summary is absent', () => {
-    const graph = buildStageGraph('batch_review', 'waiting')
-    const batch = graph.sub_nodes.assets?.find(
-      (node) => node.stage === 'batch_review',
-    )
-    expect(batch?.counter).toBeUndefined()
-  })
-
-  it('omits the counter when decisions_summary totals are all zero (no 0/0)', () => {
-    const graph = buildStageGraph('batch_review', 'waiting', {
+  it('omits the counter when totals are zero (no 0/0)', () => {
+    const dag = buildStageDagTopology('batch_review', 'waiting', {
       approved_count: 0,
       rejected_count: 0,
       pending_count: 0,
     })
-    const batch = graph.sub_nodes.assets?.find(
-      (node) => node.stage === 'batch_review',
-    )
+    const batch = dag.nodes.find((n) => n.id === 'batch_review')
     expect(batch?.counter).toBeUndefined()
   })
 
-  it('marks all sub-nodes completed when run status is completed', () => {
-    const graph = buildStageGraph('complete', 'completed')
-    expect(
-      graph.sub_nodes.scenario?.every((node) => node.state === 'completed'),
-    ).toBe(true)
-    expect(
-      graph.sub_nodes.assets?.every((node) => node.state === 'completed'),
-    ).toBe(true)
-    expect(
-      graph.sub_nodes.assemble?.every((node) => node.state === 'completed'),
-    ).toBe(true)
+  it('marks the active node failed and propagates upstream completed / downstream upcoming', () => {
+    const dag = buildStageDagTopology('write', 'failed')
+    const by_id = Object.fromEntries(dag.nodes.map((n) => [n.id, n.state]))
+    expect(by_id.write).toBe('failed')
+    expect(by_id.structure).toBe('completed')
+    expect(by_id.research).toBe('completed')
+    expect(by_id.visual_break).toBe('upcoming')
+    expect(by_id.image).toBe('upcoming')
+  })
+
+  it('derives edge state — completed-to-completed is completed; entering an active node is active', () => {
+    const dag = buildStageDagTopology('critic', 'running')
+    const completed_edge = dag.edges.find(
+      (e) => e.source === 'research' && e.target === 'structure',
+    )
+    expect(completed_edge?.state).toBe('completed')
+    const active_edge = dag.edges.find(
+      (e) => e.source === 'review' && e.target === 'critic',
+    )
+    expect(active_edge?.state).toBe('active')
   })
 })

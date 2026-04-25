@@ -1,6 +1,20 @@
 // External fetch blocking — rejects any non-localhost fetch in Vitest tests.
 const originalFetch = globalThis.fetch;
 
+// xyflow needs ResizeObserver + DOMRect; jsdom provides neither.
+if (!("ResizeObserver" in globalThis)) {
+  class ResizeObserverShim {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: ResizeObserverShim,
+    writable: true,
+  });
+}
+
 function createStorageShim(): Storage {
   const store = new Map<string, string>();
 

@@ -79,7 +79,7 @@ describe('ProductionAppHeader', () => {
 
     expect(useUIStore.getState().stage_stepper_expanded).toBe(false)
     expect(
-      screen.queryByRole('list', { name: /scenario sub-stages/i }),
+      screen.queryByRole('img', { name: /pipeline dag/i }),
     ).not.toBeInTheDocument()
 
     await user.click(
@@ -88,7 +88,7 @@ describe('ProductionAppHeader', () => {
 
     expect(useUIStore.getState().stage_stepper_expanded).toBe(true)
     expect(
-      screen.getByRole('list', { name: /scenario sub-stages/i }),
+      screen.getByRole('img', { name: /pipeline dag/i }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /collapse pipeline view/i }),
