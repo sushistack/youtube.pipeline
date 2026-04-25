@@ -63,9 +63,10 @@ type ResumeOptions struct {
 	Force bool
 }
 
-// Engine orchestrates pipeline lifecycle operations. In V1 it implements
-// Resume only; Advance remains a stub (automated stage execution lands in
-// Epic 3). The Engine satisfies pipeline.Runner.
+// Engine orchestrates pipeline lifecycle operations. Advance dispatches
+// automated stage execution (Phase A, Phase B, Phase C) and rejects HITL
+// boundaries; Resume re-enters a failed/waiting stage with cleanup and
+// consistency-check semantics. The Engine satisfies pipeline.Runner.
 type Engine struct {
 	runs           RunStore
 	segments       SegmentStore
@@ -143,24 +144,65 @@ func (e *Engine) promoteSettingsAtBoundary(ctx context.Context, runID string, fr
 	}
 }
 
-// Advance executes or re-executes the full Phase A chain for any run whose
-// current stage is pending through critic.
+// Advance dispatches automated execution for runID based on the run's current
+// stage. Phase A (pending→critic), Phase B (image/tts), and Phase C (assemble)
+// are each forwarded to their configured executor. HITL stages
+// (scenario_review, character_pick, batch_review, metadata_ack) return
+// ErrConflict — Advance must never silently auto-approve an operator boundary.
 func (e *Engine) Advance(ctx context.Context, runID string) error {
-	if e.phaseA == nil {
-		return fmt.Errorf("advance %s: %w: phase a executor is nil", runID, domain.ErrValidation)
-	}
-
 	run, err := e.runs.Get(ctx, runID)
 	if err != nil {
 		return fmt.Errorf("advance %s: %w", runID, err)
 	}
-	if !isPhaseAEntryStage(run.Stage) {
-		return fmt.Errorf("advance %s: %w: stage %s is not a Phase A entry point", runID, domain.ErrConflict, run.Stage)
+
+	// HITL stages are operator-gated boundaries; Advance must not bypass them.
+	if IsHITLStage(run.Stage) {
+		return fmt.Errorf("advance %s: %w: stage %s is a HITL boundary", runID, domain.ErrConflict, run.Stage)
 	}
 
-	// Promote queued settings BEFORE Phase A begins so the full Phase A
-	// chain runs against a coherent snapshot. Mid-chain promotion would
-	// violate the invariant that each stage sees exactly one config.
+	switch {
+	case isPhaseAEntryStage(run.Stage):
+		return e.advancePhaseA(ctx, runID, run)
+	case isPhaseB(run.Stage):
+		if e.phaseB == nil {
+			return fmt.Errorf("advance %s: %w: phase b executor is nil", runID, domain.ErrValidation)
+		}
+		segs, err := e.segments.ListByRunID(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("advance %s: load segments: %w", runID, err)
+		}
+		e.promoteSettingsAtBoundary(ctx, runID, run.Stage, run.Stage)
+		if err := e.runPhaseB(ctx, runID, run, segs); err != nil {
+			return fmt.Errorf("advance %s: %w", runID, err)
+		}
+		return nil
+	case run.Stage == domain.StageAssemble:
+		if e.phaseC == nil {
+			return fmt.Errorf("advance %s: %w: phase c runner is nil", runID, domain.ErrValidation)
+		}
+		segs, err := e.segments.ListByRunID(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("advance %s: load segments: %w", runID, err)
+		}
+		e.promoteSettingsAtBoundary(ctx, runID, run.Stage, run.Stage)
+		if err := e.runPhaseC(ctx, runID, run, segs); err != nil {
+			return fmt.Errorf("advance %s: %w", runID, err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("advance %s: %w: stage %s has no automated dispatch", runID, domain.ErrConflict, run.Stage)
+	}
+}
+
+// advancePhaseA runs the Phase A chain from any entry stage (pending→critic).
+func (e *Engine) advancePhaseA(ctx context.Context, runID string, run *domain.Run) error {
+	if e.phaseA == nil {
+		return fmt.Errorf("advance %s: %w: phase a executor is nil", runID, domain.ErrValidation)
+	}
+
+	// Promote queued settings BEFORE Phase A begins so the full chain runs
+	// against a coherent snapshot. Mid-chain promotion would violate the
+	// invariant that each stage sees exactly one config.
 	e.promoteSettingsAtBoundary(ctx, runID, run.Stage, domain.StageResearch)
 
 	state := &agents.PipelineState{
@@ -210,6 +252,117 @@ func (e *Engine) Advance(ctx context.Context, runID string) error {
 	}
 	if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
 		return fmt.Errorf("advance %s: apply phase a success result: %w", runID, err)
+	}
+	return nil
+}
+
+// runPhaseB executes Phase B for a run whose stage is image or tts.
+// On success: advances the run to StageBatchReview/StatusWaiting.
+// On Phase B error: rolls back to run.Stage/StatusFailed (preserving existing
+// meta fields so retry context survives the failure).
+// Callers are responsible for promoting settings and loading segments before
+// calling this method.
+func (e *Engine) runPhaseB(ctx context.Context, runID string, run *domain.Run, segments []*domain.Episode) error {
+	req := PhaseBRequest{
+		RunID:        runID,
+		Stage:        run.Stage,
+		ScenarioPath: ScenarioPath(e.outputDir, runID),
+		Segments:     segments,
+	}
+	if _, err := e.phaseB.Run(ctx, req); err != nil {
+		res := domain.PhaseAAdvanceResult{
+			Stage:        run.Stage,
+			Status:       domain.StatusFailed,
+			RetryReason:  run.RetryReason,
+			CriticScore:  run.CriticScore,
+			ScenarioPath: run.ScenarioPath,
+		}
+		if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, res); fixErr != nil {
+			e.logger.Warn("failed to reset status after phase b error",
+				"run_id", runID, "error", fixErr)
+		}
+		return fmt.Errorf("phase b run: %w", err)
+	}
+	res := domain.PhaseAAdvanceResult{
+		Stage:        domain.StageBatchReview,
+		Status:       domain.StatusWaiting,
+		RetryReason:  nil,
+		CriticScore:  run.CriticScore,
+		ScenarioPath: run.ScenarioPath,
+	}
+	if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
+		return fmt.Errorf("apply phase b success result: %w", err)
+	}
+	return nil
+}
+
+// runPhaseC executes Phase C assembly and metadata entry for a run at
+// StageAssemble. On success: advances to StageMetadataAck/StatusWaiting.
+// On assembly error: rolls back to StageAssemble/StatusFailed.
+// On metadata error: rolls back to StageMetadataAck/StatusFailed so a
+// targeted retry can regenerate compliance files without re-running assembly.
+// All rollback paths preserve Phase A meta fields (CriticScore, ScenarioPath,
+// RetryReason) — ApplyPhaseAResult writes a full row, so omitting them would
+// silently wipe Phase A artifacts visible to the UI.
+// Callers are responsible for promoting settings and loading segments before
+// calling this method.
+func (e *Engine) runPhaseC(ctx context.Context, runID string, run *domain.Run, segments []*domain.Episode) error {
+	runDir := filepath.Join(e.outputDir, runID)
+	req := PhaseCRequest{
+		RunID:    runID,
+		RunDir:   runDir,
+		Segments: segments,
+	}
+	if _, err := e.phaseC.Run(ctx, req); err != nil {
+		if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
+			Stage:        run.Stage,
+			Status:       domain.StatusFailed,
+			RetryReason:  run.RetryReason,
+			CriticScore:  run.CriticScore,
+			ScenarioPath: run.ScenarioPath,
+		}); fixErr != nil {
+			e.logger.Warn("failed to reset status after phase c error",
+				"run_id", runID, "error", fixErr)
+		}
+		return fmt.Errorf("phase c assembly: %w", err)
+	}
+
+	nextStage, err := NextStage(run.Stage, domain.EventComplete)
+	if err != nil {
+		return fmt.Errorf("compute next stage: %w", err)
+	}
+	// Stage boundary — promote queued settings so metadata entry runs
+	// against the newly-approved config.
+	e.promoteSettingsAtBoundary(ctx, runID, run.Stage, nextStage)
+	res := domain.PhaseAAdvanceResult{
+		Stage:        nextStage,
+		Status:       StatusForStage(nextStage),
+		CriticScore:  run.CriticScore,
+		ScenarioPath: run.ScenarioPath,
+	}
+	if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
+		return fmt.Errorf("apply stage advance: %w", err)
+	}
+
+	// Build and write metadata bundles after DB stage advance (spec: entry
+	// action for metadata_ack). A failure here rolls back to metadata_ack/failed
+	// so the operator can retry metadata generation without re-assembling.
+	if e.phaseCMetadata != nil {
+		if err := PhaseCMetadataEntry(ctx, e.phaseCMetadata, runID); err != nil {
+			if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
+				Stage:        nextStage,
+				Status:       domain.StatusFailed,
+				CriticScore:  run.CriticScore,
+				ScenarioPath: run.ScenarioPath,
+			}); fixErr != nil {
+				e.logger.Warn("failed to reset status after metadata error",
+					"run_id", runID, "error", fixErr)
+			}
+			return fmt.Errorf("phase c metadata entry: %w", err)
+		}
+	} else {
+		e.logger.Warn("phase c metadata builder not configured — compliance files skipped",
+			"run_id", runID)
 	}
 	return nil
 }
@@ -331,92 +484,15 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 	e.promoteSettingsAtBoundary(ctx, runID, run.Stage, run.Stage)
 
 	if isPhaseB(run.Stage) && e.phaseB != nil {
-		req := PhaseBRequest{
-			RunID:        runID,
-			Stage:        run.Stage,
-			ScenarioPath: ScenarioPath(e.outputDir, runID),
-			Segments:     segments,
-		}
-		if _, err := e.phaseB.Run(ctx, req); err != nil {
-			res := domain.PhaseAAdvanceResult{
-				Stage:        run.Stage,
-				Status:       domain.StatusFailed,
-				RetryReason:  run.RetryReason,
-				CriticScore:  run.CriticScore,
-				ScenarioPath: run.ScenarioPath,
-			}
-			if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, res); fixErr != nil {
-				e.logger.Warn("failed to reset status after phase b error",
-					"run_id", runID, "error", fixErr)
-			}
-			return report, fmt.Errorf("resume %s: phase b run: %w", runID, err)
-		}
-
-		res := domain.PhaseAAdvanceResult{
-			Stage:        domain.StageBatchReview,
-			Status:       domain.StatusWaiting,
-			RetryReason:  nil,
-			CriticScore:  run.CriticScore,
-			ScenarioPath: run.ScenarioPath,
-		}
-		if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
-			return report, fmt.Errorf("resume %s: apply phase b success result: %w", runID, err)
+		if err := e.runPhaseB(ctx, runID, run, segments); err != nil {
+			return report, fmt.Errorf("resume %s: %w", runID, err)
 		}
 	}
 
 	// Execute StageAssemble if Phase C runner is configured.
 	if run.Stage == domain.StageAssemble && e.phaseC != nil {
-		req := PhaseCRequest{
-			RunID:    runID,
-			RunDir:   runDir,
-			Segments: segments,
-		}
-		if _, err := e.phaseC.Run(ctx, req); err != nil {
-			// ResetForResume already set status=running. Roll back to failed so
-			// the run is resumable again rather than permanently stuck.
-			if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
-				Stage:  run.Stage,
-				Status: domain.StatusFailed,
-			}); fixErr != nil {
-				e.logger.Warn("failed to reset status after phase c error",
-					"run_id", runID, "error", fixErr)
-			}
-			return report, fmt.Errorf("resume %s: phase c assembly: %w", runID, err)
-		}
-
-		// Advance stage to StageMetadataAck before running metadata entry so that
-		// a PhaseCMetadataEntry failure leaves the run at metadata_ack (not assemble),
-		// enabling targeted retry without re-running assembly.
-		nextStage, err := NextStage(run.Stage, domain.EventComplete)
-		if err != nil {
-			return report, fmt.Errorf("resume %s: compute next stage: %w", runID, err)
-		}
-		// Stage boundary — promote queued settings so metadata entry runs
-		// against the newly-approved config.
-		e.promoteSettingsAtBoundary(ctx, runID, run.Stage, nextStage)
-		res := domain.PhaseAAdvanceResult{
-			Stage:  nextStage,
-			Status: StatusForStage(nextStage),
-		}
-		if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
-			return report, fmt.Errorf("resume %s: apply stage advance: %w", runID, err)
-		}
-
-		// Build and write metadata bundles after DB stage advance (spec: entry action for metadata_ack).
-		if e.phaseCMetadata != nil {
-			if err := PhaseCMetadataEntry(ctx, e.phaseCMetadata, runID); err != nil {
-				if fixErr := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
-					Stage:  nextStage,
-					Status: domain.StatusFailed,
-				}); fixErr != nil {
-					e.logger.Warn("failed to reset status after metadata error",
-						"run_id", runID, "error", fixErr)
-				}
-				return report, fmt.Errorf("resume %s: phase c metadata entry: %w", runID, err)
-			}
-		} else {
-			e.logger.Warn("phase c metadata builder not configured — compliance files skipped",
-				"run_id", runID)
+		if err := e.runPhaseC(ctx, runID, run, segments); err != nil {
+			return report, fmt.Errorf("resume %s: %w", runID, err)
 		}
 	}
 

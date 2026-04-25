@@ -70,6 +70,17 @@ func runResume(cmd *cobra.Command, runID string, force bool) error {
 	} else {
 		logger.Warn("phase b runner unavailable (resume retries disabled for phase b)", "error", err.Error())
 	}
+
+	// Phase C has no LLM dependency, so wiring is unconditional. A resume at
+	// StageAssemble or StageMetadataAck must be able to re-run assembly and
+	// regenerate compliance files; without these the engine would reject the
+	// retry with a validation error.
+	if phaseCRunner, metaBuilder, err := buildPhaseCRuntime(cfg, store, segStore, logger); err == nil {
+		engine.SetPhaseCRunner(phaseCRunner)
+		engine.SetPhaseCMetadataBuilder(metaBuilder)
+	} else {
+		logger.Warn("phase c runtime unavailable (resume retries disabled for phase c)", "error", err.Error())
+	}
 	svc := service.NewRunService(store, engine)
 	hitlSvc := service.NewHITLService(store, decisionStore, logger)
 

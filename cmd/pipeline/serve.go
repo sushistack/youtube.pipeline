@@ -24,6 +24,7 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/llmclient"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient/dashscope"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline"
+	"github.com/sushistack/youtube.pipeline/internal/pipeline/agents"
 	"github.com/sushistack/youtube.pipeline/internal/service"
 	"github.com/sushistack/youtube.pipeline/internal/web"
 
@@ -98,6 +99,46 @@ func buildPhaseBRunner(
 	// load-bearing at the Phase B entry point — no future wiring can forget
 	// to thread the operator's edited descriptor.
 	return pipeline.NewPhaseBRunner(imageTrackStub, ttsTrack, nil, clock.RealClock{}, logger, nil, runStore), nil
+}
+
+// buildPhaseCRuntime constructs the Phase C assembly runner and metadata
+// builder used at StageAssemble. Phase C produces the final video and
+// compliance bundle; it has no LLM dependency, so the runtime is wired
+// directly from config without needing the settings service.
+//
+// Both Engine.Advance (fresh assembly entry from batch_review) and
+// Engine.Resume (retry of failed assembly) call the same runner — wiring
+// it once here keeps cmd/serve.go and cmd/resume.go behavior identical.
+func buildPhaseCRuntime(
+	cfg domain.PipelineConfig,
+	runStore *db.RunStore,
+	segStore *db.SegmentStore,
+	logger *slog.Logger,
+) (*pipeline.PhaseCRunner, pipeline.MetadataBuilder, error) {
+	phaseC := pipeline.NewPhaseCRunner(segStore, runStore, nil, clock.RealClock{}, logger)
+
+	// Metadata builder writes metadata.json + manifest.json under
+	// {OutputDir}/{runID}/ as the entry action for StageMetadataAck.
+	corpus := agents.NewFilesystemCorpus(cfg.DataDir)
+	metaBuilder, err := pipeline.NewMetadataBuilder(pipeline.MetadataBuilderConfig{
+		OutputDir:      cfg.OutputDir,
+		WriterModel:    cfg.WriterModel,
+		WriterProvider: cfg.WriterProvider,
+		CriticModel:    cfg.CriticModel,
+		CriticProvider: cfg.CriticProvider,
+		ImageModel:     cfg.ImageModel,
+		ImageProvider:  cfg.ImageProvider,
+		TTSModel:       cfg.TTSModel,
+		TTSProvider:    cfg.TTSProvider,
+		TTSVoice:       cfg.TTSVoice,
+		Corpus:         corpus,
+		Clock:          clock.RealClock{},
+		Logger:         logger,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("build metadata builder: %w", err)
+	}
+	return phaseC, metaBuilder, nil
 }
 
 type dynamicPhaseBExecutor struct {
@@ -199,6 +240,17 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 		logger:         logger,
 		limiterFactory: limiterFactory,
 	})
+
+	// Phase C runs assembly + metadata entry. Wiring it here makes
+	// Engine.Advance(StageAssemble) and Engine.Resume(StageAssemble) both
+	// use the same runner — without this, the engine would reject Phase C
+	// dispatch with a validation error.
+	phaseCRunner, metaBuilder, err := buildPhaseCRuntime(cfg, store, segStore, logger)
+	if err != nil {
+		return fmt.Errorf("build phase c runtime: %w", err)
+	}
+	engine.SetPhaseCRunner(phaseCRunner)
+	engine.SetPhaseCMetadataBuilder(metaBuilder)
 	hitlSvc := service.NewHITLService(store, decisionStore, logger)
 	characterCache := db.NewCharacterCacheStore(database)
 	characterClient := service.NewDuckDuckGoClient(nil)

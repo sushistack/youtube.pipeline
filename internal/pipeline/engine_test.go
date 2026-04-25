@@ -139,7 +139,11 @@ func TestStatusForStage_AllStages(t *testing.T) {
 func TestEngine_AdvanceRequiresPhaseAExecutor(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	engine := NewEngine(nil, nil, nil, clock.RealClock{}, t.TempDir(), slog.Default())
+	// Run at a Phase A entry stage — no Phase A executor configured.
+	runs := &engineTestRunStore{
+		run: &domain.Run{ID: "run-anything", Stage: domain.StagePending, Status: domain.StatusPending},
+	}
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, t.TempDir(), slog.Default())
 	err := engine.Advance(context.Background(), "run-anything")
 	if err == nil {
 		t.Fatal("expected validation error, got nil")
@@ -294,5 +298,163 @@ func TestIsHITLStage(t *testing.T) {
 		t.Run(string(s), func(t *testing.T) {
 			testutil.AssertEqual(t, IsHITLStage(s), hitl[s])
 		})
+	}
+}
+
+// ── Advance multi-phase dispatch tests ───────────────────────────────────────
+
+type fakePhaseBExecutor struct {
+	run func(ctx context.Context, req PhaseBRequest) (PhaseBResult, error)
+}
+
+func (f *fakePhaseBExecutor) Run(ctx context.Context, req PhaseBRequest) (PhaseBResult, error) {
+	return f.run(ctx, req)
+}
+
+func TestEngineAdvance_HITLStages_ReturnConflict(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	hitlStages := []domain.Stage{
+		domain.StageScenarioReview,
+		domain.StageCharacterPick,
+		domain.StageBatchReview,
+		domain.StageMetadataAck,
+	}
+
+	for _, stage := range hitlStages {
+		t.Run(string(stage), func(t *testing.T) {
+			runs := &engineTestRunStore{
+				run: &domain.Run{ID: "run-1", Stage: stage, Status: domain.StatusWaiting},
+			}
+			engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, t.TempDir(), slog.Default())
+			err := engine.Advance(context.Background(), "run-1")
+			if !errors.Is(err, domain.ErrConflict) {
+				t.Errorf("stage %s: expected ErrConflict, got %v", stage, err)
+			}
+		})
+	}
+}
+
+func TestEngineAdvance_PhaseBExecutorNil_ReturnsValidation(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	runs := &engineTestRunStore{
+		run: &domain.Run{ID: "run-1", Stage: domain.StageImage, Status: domain.StatusRunning},
+	}
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, t.TempDir(), slog.Default())
+	// No Phase B executor configured.
+	err := engine.Advance(context.Background(), "run-1")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestEngineAdvance_PhaseCRunnerNil_ReturnsValidation(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	runs := &engineTestRunStore{
+		run: &domain.Run{ID: "run-1", Stage: domain.StageAssemble, Status: domain.StatusRunning},
+	}
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, t.TempDir(), slog.Default())
+	// No Phase C runner configured.
+	err := engine.Advance(context.Background(), "run-1")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestEngineAdvance_PhaseB_MovesToBatchReview(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	score := 0.88
+	scenarioPathVal := "scenario.json"
+	runs := &engineTestRunStore{
+		run: &domain.Run{
+			ID:           "run-1",
+			Stage:        domain.StageImage,
+			Status:       domain.StatusRunning,
+			CriticScore:  &score,
+			ScenarioPath: &scenarioPathVal,
+		},
+	}
+	var capturedReq PhaseBRequest
+	phaseBExec := &fakePhaseBExecutor{
+		run: func(_ context.Context, req PhaseBRequest) (PhaseBResult, error) {
+			capturedReq = req
+			return PhaseBResult{}, nil
+		},
+	}
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, t.TempDir(), slog.Default())
+	engine.SetPhaseBExecutor(phaseBExec)
+
+	if err := engine.Advance(context.Background(), "run-1"); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+
+	testutil.AssertEqual(t, runs.run.Stage, domain.StageBatchReview)
+	testutil.AssertEqual(t, runs.run.Status, domain.StatusWaiting)
+	testutil.AssertEqual(t, capturedReq.RunID, "run-1")
+	testutil.AssertEqual(t, capturedReq.Stage, domain.StageImage)
+	// CriticScore and ScenarioPath must be preserved across Phase B.
+	if runs.run.CriticScore == nil || *runs.run.CriticScore != score {
+		t.Errorf("expected critic_score %.2f preserved, got %v", score, runs.run.CriticScore)
+	}
+	if runs.run.ScenarioPath == nil || *runs.run.ScenarioPath != scenarioPathVal {
+		t.Errorf("expected scenario_path preserved, got %v", runs.run.ScenarioPath)
+	}
+}
+
+func TestEngineAdvance_PhaseB_FailureRollsBackToFailed(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	score := 0.91
+	scenarioPathVal := "scenario.json"
+	retryReasonVal := "earlier phase a retry context"
+	runs := &engineTestRunStore{
+		run: &domain.Run{
+			ID:           "run-1",
+			Stage:        domain.StageImage,
+			Status:       domain.StatusRunning,
+			CriticScore:  &score,
+			ScenarioPath: &scenarioPathVal,
+			RetryReason:  &retryReasonVal,
+		},
+	}
+	phaseBExec := &fakePhaseBExecutor{
+		run: func(_ context.Context, _ PhaseBRequest) (PhaseBResult, error) {
+			return PhaseBResult{}, errors.New("image generation failed")
+		},
+	}
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, t.TempDir(), slog.Default())
+	engine.SetPhaseBExecutor(phaseBExec)
+
+	err := engine.Advance(context.Background(), "run-1")
+	if err == nil {
+		t.Fatal("expected error from Phase B failure, got nil")
+	}
+	testutil.AssertEqual(t, runs.run.Stage, domain.StageImage)
+	testutil.AssertEqual(t, runs.run.Status, domain.StatusFailed)
+	// Phase A meta must survive the rollback so retry context (and UI) is intact.
+	if runs.run.CriticScore == nil || *runs.run.CriticScore != score {
+		t.Errorf("expected critic_score %.2f preserved after rollback, got %v", score, runs.run.CriticScore)
+	}
+	if runs.run.ScenarioPath == nil || *runs.run.ScenarioPath != scenarioPathVal {
+		t.Errorf("expected scenario_path preserved after rollback, got %v", runs.run.ScenarioPath)
+	}
+	if runs.run.RetryReason == nil || *runs.run.RetryReason != retryReasonVal {
+		t.Errorf("expected retry_reason preserved after rollback, got %v", runs.run.RetryReason)
+	}
+}
+
+func TestEngineAdvance_CompleteStage_ReturnsConflict(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	runs := &engineTestRunStore{
+		run: &domain.Run{ID: "run-1", Stage: domain.StageComplete, Status: domain.StatusCompleted},
+	}
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, t.TempDir(), slog.Default())
+	err := engine.Advance(context.Background(), "run-1")
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected ErrConflict for complete stage, got %v", err)
 	}
 }

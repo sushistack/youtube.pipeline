@@ -2,79 +2,276 @@ package pipeline_test
 
 import (
 	"context"
+	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
+	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
+	"github.com/sushistack/youtube.pipeline/internal/pipeline"
+	"github.com/sushistack/youtube.pipeline/internal/pipeline/agents"
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
-// mockTextGenerator implements domain.TextGenerator for E2E testing.
-type mockTextGenerator struct{}
+// ── fake stores ──────────────────────────────────────────────────────────────
 
-func (m *mockTextGenerator) Generate(_ context.Context, _ domain.TextRequest) (domain.TextResponse, error) {
-	return domain.TextResponse{
-		NormalizedResponse: domain.NormalizedResponse{
-			Content:  `{"scenes": [{"narration": "test narration", "shots": [{"visual_descriptor": "test shot"}]}]}`,
-			Model:    "mock-model",
-			Provider: "mock",
+type e2eRunStore struct {
+	mu  sync.Mutex
+	run *domain.Run
+}
+
+func (s *e2eRunStore) Get(_ context.Context, id string) (*domain.Run, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.run == nil || s.run.ID != id {
+		return nil, domain.ErrNotFound
+	}
+	cp := *s.run
+	return &cp, nil
+}
+
+func (s *e2eRunStore) ResetForResume(_ context.Context, id string, status domain.Status) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.run != nil && s.run.ID == id {
+		s.run.Status = status
+	}
+	return nil
+}
+
+func (s *e2eRunStore) ApplyPhaseAResult(_ context.Context, id string, res domain.PhaseAAdvanceResult) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.run == nil || s.run.ID != id {
+		return domain.ErrNotFound
+	}
+	s.run.Stage = res.Stage
+	s.run.Status = res.Status
+	s.run.RetryReason = res.RetryReason
+	s.run.CriticScore = res.CriticScore
+	s.run.ScenarioPath = res.ScenarioPath
+	return nil
+}
+
+func (s *e2eRunStore) setStageStatus(stage domain.Stage, status domain.Status) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.run.Stage = stage
+	s.run.Status = status
+}
+
+type e2eSegmentStore struct {
+	mu       sync.Mutex
+	segments []*domain.Episode
+}
+
+func (s *e2eSegmentStore) ListByRunID(_ context.Context, _ string) ([]*domain.Episode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.segments, nil
+}
+
+func (s *e2eSegmentStore) DeleteByRunID(_ context.Context, _ string) (int64, error) { return 0, nil }
+func (s *e2eSegmentStore) ClearClipPathsByRunID(_ context.Context, _ string) (int64, error) {
+	return 0, nil
+}
+func (s *e2eSegmentStore) ClearImageArtifactsByRunID(_ context.Context, _ string) (int64, error) {
+	return 0, nil
+}
+func (s *e2eSegmentStore) ClearTTSArtifactsByRunID(_ context.Context, _ string) (int64, error) {
+	return 0, nil
+}
+
+func (s *e2eSegmentStore) setSegments(segs []*domain.Episode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.segments = segs
+}
+
+// ── fake executors ────────────────────────────────────────────────────────────
+
+// e2ePhaseAExecutor writes a minimal scenario.json and populates the
+// PipelineState fields that Engine.Advance validates after Phase A.
+type e2ePhaseAExecutor struct {
+	outDir string
+}
+
+func (e *e2ePhaseAExecutor) Run(_ context.Context, state *agents.PipelineState) error {
+	runDir := filepath.Join(e.outDir, state.RunID)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		return err
+	}
+	scenario := map[string]any{
+		"run_id": state.RunID,
+		"scp_id": state.SCPID,
+		"scenes": []any{},
+	}
+	raw, err := json.Marshal(scenario)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "scenario.json"), raw, 0o644); err != nil {
+		return err
+	}
+	state.Quality = &agents.PhaseAQualitySummary{
+		PostWriterScore:   85,
+		PostReviewerScore: 90,
+		CumulativeScore:   87,
+		FinalVerdict:      domain.CriticVerdictPass,
+	}
+	state.Contracts = &agents.PhaseAContractManifest{}
+	state.Critic = &domain.CriticOutput{
+		PostReviewer: &domain.CriticCheckpointReport{
+			Checkpoint:   domain.CriticCheckpointPostReviewer,
+			Verdict:      domain.CriticVerdictPass,
+			OverallScore: 90,
 		},
-	}, nil
+	}
+	return nil
 }
 
-// mockImageGenerator implements domain.ImageGenerator for E2E testing.
-type mockImageGenerator struct{}
+// e2ePhaseBExecutor is a no-op stub. Segments are pre-loaded into the
+// segment store before Advance is called at Phase B, matching the real
+// flow where scene/character services populate segments during HITL review.
+type e2ePhaseBExecutor struct{}
 
-func (m *mockImageGenerator) Generate(_ context.Context, _ domain.ImageRequest) (domain.ImageResponse, error) {
-	return domain.ImageResponse{ImagePath: "/tmp/mock.png"}, nil
+func (e *e2ePhaseBExecutor) Run(_ context.Context, _ pipeline.PhaseBRequest) (pipeline.PhaseBResult, error) {
+	return pipeline.PhaseBResult{}, nil
 }
 
-func (m *mockImageGenerator) Edit(_ context.Context, _ domain.ImageEditRequest) (domain.ImageResponse, error) {
-	return domain.ImageResponse{ImagePath: "/tmp/mock-edit.png"}, nil
+// e2eMetadataBuilder writes minimal metadata.json and manifest.json files.
+type e2eMetadataBuilder struct {
+	outDir string
 }
 
-// mockTTSSynthesizer implements domain.TTSSynthesizer for E2E testing.
-type mockTTSSynthesizer struct{}
-
-func (m *mockTTSSynthesizer) Synthesize(_ context.Context, _ domain.TTSRequest) (domain.TTSResponse, error) {
-	return domain.TTSResponse{AudioPath: "/tmp/mock.wav"}, nil
+func (b *e2eMetadataBuilder) Build(_ context.Context, runID string) (domain.MetadataBundle, domain.SourceManifest, error) {
+	return domain.MetadataBundle{RunID: runID}, domain.SourceManifest{RunID: runID}, nil
 }
 
-// Compile-time interface satisfaction checks
+func (b *e2eMetadataBuilder) Write(_ context.Context, runID string, bundle domain.MetadataBundle, manifest domain.SourceManifest) error {
+	runDir := filepath.Join(b.outDir, runID)
+	metaRaw, err := json.Marshal(bundle)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "metadata.json"), metaRaw, 0o644); err != nil {
+		return err
+	}
+	maniRaw, err := json.Marshal(manifest)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(runDir, "manifest.json"), maniRaw, 0o644)
+}
+
+// ── compile-time interface checks ─────────────────────────────────────────────
+
 var (
-	_ domain.TextGenerator  = (*mockTextGenerator)(nil)
-	_ domain.ImageGenerator = (*mockImageGenerator)(nil)
-	_ domain.TTSSynthesizer = (*mockTTSSynthesizer)(nil)
+	_ pipeline.PhaseAExecutor  = (*e2ePhaseAExecutor)(nil)
+	_ pipeline.PhaseBExecutor  = (*e2ePhaseBExecutor)(nil)
+	_ pipeline.MetadataBuilder = (*e2eMetadataBuilder)(nil)
 )
 
+// ── TestE2E_FullPipeline ──────────────────────────────────────────────────────
+
+// TestE2E_FullPipeline validates that Engine.Advance dispatches Phase A, Phase B,
+// and Phase C end-to-end using injected mock/stub providers. Real ffmpeg is
+// required for Phase C assembly; the test is skipped if ffmpeg is absent.
+//
+// The test drives the pipeline through all automated stages and verifies:
+//   - Stage transitions after each Advance call
+//   - Required artifacts written to the run directory
 func TestE2E_FullPipeline(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
+	skipIfNoFFmpeg(t)
 
-	// Expected output artifacts after full pipeline execution
-	outputDir := t.TempDir()
-	expectedArtifacts := []string{
+	const runID = "run-e2e"
+	outDir := t.TempDir()
+
+	runStore := &e2eRunStore{
+		run: &domain.Run{
+			ID:     runID,
+			SCPID:  "SCP-049",
+			Stage:  domain.StagePending,
+			Status: domain.StatusPending,
+		},
+	}
+	segStore := &e2eSegmentStore{}
+
+	engine := pipeline.NewEngine(runStore, segStore, nil, clock.RealClock{}, outDir, slog.Default())
+	engine.SetPhaseAExecutor(&e2ePhaseAExecutor{outDir: outDir})
+	engine.SetPhaseBExecutor(&e2ePhaseBExecutor{})
+	engine.SetPhaseCRunner(pipeline.NewPhaseCRunner(
+		&fakeSegmentUpdater{},
+		&fakeRunUpdater{},
+		nil,
+		clock.RealClock{},
+		slog.Default(),
+	))
+	engine.SetPhaseCMetadataBuilder(&e2eMetadataBuilder{outDir: outDir})
+
+	ctx := context.Background()
+
+	// ── Phase A ───────────────────────────────────────────────────────────────
+	if err := engine.Advance(ctx, runID); err != nil {
+		t.Fatalf("Phase A Advance: %v", err)
+	}
+	if runStore.run.Stage != domain.StageScenarioReview {
+		t.Fatalf("after Phase A: expected stage=%s, got %s", domain.StageScenarioReview, runStore.run.Stage)
+	}
+	if runStore.run.Status != domain.StatusWaiting {
+		t.Fatalf("after Phase A: expected status=%s, got %s", domain.StatusWaiting, runStore.run.Status)
+	}
+
+	// ── Simulate HITL: scenario_review → character_pick → image/running ───────
+	// In production these transitions happen via CharacterService.Pick; here
+	// we directly advance the state to the Phase B entry point.
+	_, seedSegs := loadSCP049Seed(t)
+	// Assign the run-e2e runID to segments so PhaseCRunner can match them.
+	for _, seg := range seedSegs {
+		seg.RunID = runID
+	}
+	segStore.setSegments(seedSegs)
+	runStore.setStageStatus(domain.StageImage, domain.StatusRunning)
+
+	// ── Phase B ───────────────────────────────────────────────────────────────
+	if err := engine.Advance(ctx, runID); err != nil {
+		t.Fatalf("Phase B Advance: %v", err)
+	}
+	if runStore.run.Stage != domain.StageBatchReview {
+		t.Fatalf("after Phase B: expected stage=%s, got %s", domain.StageBatchReview, runStore.run.Stage)
+	}
+	if runStore.run.Status != domain.StatusWaiting {
+		t.Fatalf("after Phase B: expected status=%s, got %s", domain.StatusWaiting, runStore.run.Status)
+	}
+
+	// ── Simulate HITL: batch_review approval → assemble/running ──────────────
+	runStore.setStageStatus(domain.StageAssemble, domain.StatusRunning)
+
+	// ── Phase C ───────────────────────────────────────────────────────────────
+	if err := engine.Advance(ctx, runID); err != nil {
+		t.Fatalf("Phase C Advance: %v", err)
+	}
+	if runStore.run.Stage != domain.StageMetadataAck {
+		t.Fatalf("after Phase C: expected stage=%s, got %s", domain.StageMetadataAck, runStore.run.Stage)
+	}
+	if runStore.run.Status != domain.StatusWaiting {
+		t.Fatalf("after Phase C: expected status=%s, got %s", domain.StatusWaiting, runStore.run.Status)
+	}
+
+	// ── Artifact verification ─────────────────────────────────────────────────
+	runDir := filepath.Join(outDir, runID)
+	requiredArtifacts := []string{
 		"scenario.json",
-		"images",
-		"tts",
 		"output.mp4",
 		"metadata.json",
 		"manifest.json",
 	}
-
-	// TODO: Wire up pipeline runner when Phase A/B/C are implemented (Epic 2, 5, 9)
-	// The pipeline runner will accept injected mock providers:
-	//   textGen := &mockTextGenerator{}
-	//   imageGen := &mockImageGenerator{}
-	//   ttsSynth := &mockTTSSynthesizer{}
-	//   runner := pipeline.NewRunner(textGen, imageGen, ttsSynth, ...)
-	//   err := runner.Execute(ctx, "scp-049", outputDir)
-
-	t.Skip("Phase A/B/C pipeline runner not yet implemented — see Epic 2 (state machine), Epic 3 (Phase A agents), Epic 5 (Phase B media), Epic 9 (Phase C assembly)")
-
-	// These assertions will be enabled when the pipeline runner exists:
-	for _, artifact := range expectedArtifacts {
-		path := filepath.Join(outputDir, artifact)
+	for _, artifact := range requiredArtifacts {
+		path := filepath.Join(runDir, artifact)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("expected artifact missing: %s", artifact)
 		}
