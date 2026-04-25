@@ -1,0 +1,16 @@
+{
+  "scp_id": "049",
+  "scene_count": 3,
+  "shots_per_scene": [1, 1, 1],
+  "scene_durations_seconds": [1.0, 1.0, 1.0],
+  "expected_total_duration_seconds": 3.0,
+  "expected_video_codec": "h264",
+  "expected_audio_codec": "aac",
+  "expected_container": "mov,mp4,m4a,3gp,3g2,mj2",
+  "duration_tolerance_seconds": 0.2,
+  "frozen_descriptors": [
+    "scene_00 fixture solid red 1920x1080",
+    "scene_01 fixture solid green 1920x1080",
+    "scene_02 fixture solid blue 1920x1080"
+  ]
+}

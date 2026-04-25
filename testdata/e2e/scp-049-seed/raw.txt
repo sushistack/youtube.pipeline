@@ -1,0 +1,11 @@
+SCP-049 — The Plague Doctor
+
+Object Class: Euclid
+
+Special Containment Procedures: SCP-049 is to be contained in a humanoid containment chamber within Site-19. Personnel entering its chamber must wear full Class III hazmat suits.
+
+Description: SCP-049 is a humanoid entity, roughly 1.9 meters in height, that bears the appearance of a medieval plague doctor. SCP-049 claims to be a doctor and asserts that it is treating "the Pestilence" — a perceived condition that no other medical authority has been able to detect or define.
+
+Subjects touched by SCP-049 expire within minutes from causes that defy medical explanation. SCP-049 then performs a crude surgical procedure on the corpse, after which the subject reanimates as SCP-049-2, an aggressive instance hostile to all non-049 humanoids.
+
+Note: This raw corpus is a stub used by Phase A research/structurer agents in pipeline E2E tests. It is intentionally short — Phase A agents are mocked in tests; the real corpus shape and length are not exercised here.

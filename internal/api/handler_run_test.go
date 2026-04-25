@@ -439,3 +439,130 @@ func TestRunHandler_AcknowledgeMetadata_WrongStage(t *testing.T) {
 	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
 	testutil.AssertEqual(t, env.Error.Code, "CONFLICT")
 }
+
+// TestRunHandler_SMOKE_07_ComplianceGate exercises the FR23 / NFR-L1
+// compliance gate end-to-end at the handler boundary as three coupled
+// sub-tests sharing one DB+handler instance: gate-closed → 409,
+// gate-open → 200 + complete/completed, and replay-on-completed → 409
+// (the gate is one-shot).
+//
+// Step 3 §4 SMOKE-07's literal `POST /api/runs/{id}/upload → 409` step
+// is mapped onto the actual route surface: no `/upload` endpoint exists
+// in routes.go, and the compliance gate is enforced at
+// `metadata/ack` itself (RunStore.MarkComplete is the atomic check).
+// Calling ack at the wrong stage returns the same 409 the upload
+// endpoint would have, so the regression guard is preserved.
+//
+// Runtime budget: ≤ 3 s.
+func TestRunHandler_SMOKE_07_ComplianceGate(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	logger, _ := testutil.CaptureLog(t)
+	outDir := t.TempDir()
+	decisionStore := db.NewDecisionStore(database)
+	hitl := service.NewHITLService(store, decisionStore, logger)
+	h := api.NewRunHandler(svc, hitl, outDir, logger)
+
+	ctx := context.Background()
+	created, err := svc.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("seed create run: %v", err)
+	}
+	runID := created.ID
+
+	// requireAffectedOne fails the test if the given UPDATE did not affect
+	// exactly one row, defending against silent-no-op regressions if
+	// run-id derivation drifts from the hardcoded fixture id.
+	requireAffectedOne := func(t *testing.T, query string, args ...any) {
+		t.Helper()
+		res, err := database.ExecContext(ctx, query, args...)
+		if err != nil {
+			t.Fatalf("UPDATE %q: %v", query, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			t.Fatalf("RowsAffected: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("UPDATE %q affected %d rows, want 1", query, n)
+		}
+	}
+
+	postAck := func(t *testing.T, body []byte) *httptest.ResponseRecorder {
+		t.Helper()
+		var req *http.Request
+		if body == nil {
+			req = httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/metadata/ack", nil)
+		} else {
+			req = httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/metadata/ack", bytes.NewBuffer(body))
+		}
+		req.SetPathValue("id", runID)
+		rec := httptest.NewRecorder()
+		h.AcknowledgeMetadata(rec, req)
+		return rec
+	}
+
+	t.Run("gate_closed_returns_409", func(t *testing.T) {
+		// Park the run at a Phase B sub-stage so the gate is closed.
+		// Step 3 §4 wording said "phase_b"; the closest real stage is
+		// `image`, a Phase B sub-stage per domain/types.go.
+		requireAffectedOne(t,
+			`UPDATE runs SET stage = 'image', status = 'running' WHERE id = ?`, runID)
+
+		rec := postAck(t, nil)
+		testutil.AssertEqual(t, rec.Code, http.StatusConflict)
+		env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+		testutil.AssertEqual(t, env.Error.Code, "CONFLICT")
+
+		// Failed gate must NOT have advanced the row.
+		var stage, status string
+		if err := database.QueryRowContext(ctx,
+			`SELECT stage, status FROM runs WHERE id = ?`, runID).
+			Scan(&stage, &status); err != nil {
+			t.Fatalf("read state: %v", err)
+		}
+		if stage != "image" || status != "running" {
+			t.Errorf("DB state mutated by failed gate: stage=%q status=%q, want image/running",
+				stage, status)
+		}
+	})
+
+	t.Run("gate_open_succeeds_and_ignores_body", func(t *testing.T) {
+		requireAffectedOne(t,
+			`UPDATE runs SET stage = 'metadata_ack', status = 'waiting' WHERE id = ?`, runID)
+
+		// Send a deliberately malformed JSON body. AcknowledgeMetadata's
+		// contract is that it consumes no request body. If the handler
+		// ever started parsing the body, json.Unmarshal would reject this
+		// payload with 400 — a 200 here positively pins the body-ignored
+		// invariant as the strongest regression guard available given
+		// this endpoint has no MaxBytesReader (see Design Notes table).
+		rec := postAck(t, []byte(`{not-json{`))
+		testutil.AssertEqual(t, rec.Code, http.StatusOK)
+		env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+		if env.Data == nil {
+			t.Fatal("ack response data is nil")
+		}
+		testutil.AssertEqual(t, env.Data.Stage, "complete")
+		testutil.AssertEqual(t, env.Data.Status, "completed")
+
+		// Atomic transition is visible immediately.
+		var stage, status string
+		if err := database.QueryRowContext(ctx,
+			`SELECT stage, status FROM runs WHERE id = ?`, runID).
+			Scan(&stage, &status); err != nil {
+			t.Fatalf("read state: %v", err)
+		}
+		if stage != "complete" || status != "completed" {
+			t.Errorf("post-ack DB state: stage=%q status=%q, want complete/completed",
+				stage, status)
+		}
+	})
+
+	t.Run("replay_on_completed_run_returns_409", func(t *testing.T) {
+		rec := postAck(t, nil)
+		testutil.AssertEqual(t, rec.Code, http.StatusConflict)
+	})
+}
