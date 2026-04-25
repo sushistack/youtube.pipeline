@@ -40,7 +40,18 @@ export interface StageDagNodeModel {
   label: string
   state: StageNodeState
   parent: StageNodeKey
+  rel_x: number
+  rel_y: number
   counter?: StageNodeCounter
+}
+
+export interface StageDagLaneModel {
+  id: StageNodeKey
+  label: string
+  state: StageNodeState
+  x: number
+  width: number
+  height: number
 }
 
 export type StageDagEdgeState = 'completed' | 'active' | 'upcoming' | 'failed'
@@ -53,8 +64,11 @@ export interface StageDagEdgeModel {
 }
 
 export interface StageDag {
+  lanes: StageDagLaneModel[]
   nodes: StageDagNodeModel[]
   edges: StageDagEdgeModel[]
+  canvas_width: number
+  canvas_height: number
 }
 
 const STAGE_LABELS: Record<RunStage, string> = {
@@ -374,42 +388,96 @@ export interface DecisionsSummary {
   pending_count: number
 }
 
-const DAG_LINEAR_HEAD: RunStage[] = [
-  'pending',
-  'research',
-  'structure',
-  'write',
-  'visual_break',
-  'review',
-  'critic',
-  'scenario_review',
-  'character_pick',
-]
 
-const DAG_LINEAR_TAIL: RunStage[] = [
-  'batch_review',
+const LANE_ORDER: StageNodeKey[] = [
+  'pending',
+  'scenario',
+  'character',
+  'assets',
   'assemble',
-  'metadata_ack',
   'complete',
 ]
 
-const DAG_PARALLEL_BRANCH: RunStage[] = ['image', 'tts']
+const LANE_NODES: Record<StageNodeKey, RunStage[]> = {
+  pending: ['pending'],
+  scenario: [
+    'research',
+    'structure',
+    'write',
+    'visual_break',
+    'review',
+    'critic',
+    'scenario_review',
+  ],
+  character: ['character_pick'],
+  assets: ['image', 'tts', 'batch_review'],
+  assemble: ['assemble', 'metadata_ack'],
+  complete: ['complete'],
+}
 
-const STAGE_TO_PARENT_NODE: Record<RunStage, StageNodeKey> = STAGE_TO_NODE
+const STAGE_PROGRESS_LEVEL: Record<RunStage, number> = (() => {
+  const level: Partial<Record<RunStage, number>> = {}
+  let counter = 0
+  for (const lane_key of LANE_ORDER) {
+    for (const stage of LANE_NODES[lane_key]) {
+      if (stage === 'tts') {
+        level.tts = level.image
+        continue
+      }
+      level[stage] = counter
+      counter += 1
+    }
+  }
+  return level as Record<RunStage, number>
+})()
 
-function progressIndex(stage: RunStage): number {
-  if (stage === 'image' || stage === 'tts') {
-    return DAG_LINEAR_HEAD.length
+const NODE_WIDTH = 110
+const NODE_HEIGHT = 32
+const NODE_VGAP = 8
+const LANE_PADDING_X = 12
+const LANE_HEADER_HEIGHT = 28
+const LANE_GAP = 16
+
+function computeLaneWidth(lane_key: StageNodeKey): number {
+  if (lane_key === 'assets') {
+    return LANE_PADDING_X * 2 + NODE_WIDTH * 2 + LANE_GAP
   }
-  const head = DAG_LINEAR_HEAD.indexOf(stage)
-  if (head !== -1) {
-    return head
+  return LANE_PADDING_X * 2 + NODE_WIDTH
+}
+
+function computeChildrenLayout(
+  lane_key: StageNodeKey,
+): Map<RunStage, { rel_x: number; rel_y: number }> {
+  const layout = new Map<RunStage, { rel_x: number; rel_y: number }>()
+  const stages = LANE_NODES[lane_key]
+
+  if (lane_key === 'assets') {
+    // image and tts as parallel rails in the LEFT column (vertically stacked,
+    // both fed from character_pick); batch_review in the RIGHT column,
+    // vertically centered between them as the merge target. This avoids the
+    // character_pick→tts edge slicing through the image node.
+    layout.set('image', {
+      rel_x: LANE_PADDING_X,
+      rel_y: LANE_HEADER_HEIGHT,
+    })
+    layout.set('tts', {
+      rel_x: LANE_PADDING_X,
+      rel_y: LANE_HEADER_HEIGHT + NODE_HEIGHT + NODE_VGAP,
+    })
+    layout.set('batch_review', {
+      rel_x: LANE_PADDING_X + NODE_WIDTH + LANE_GAP,
+      rel_y: LANE_HEADER_HEIGHT + (NODE_HEIGHT + NODE_VGAP) / 2,
+    })
+    return layout
   }
-  const tail = DAG_LINEAR_TAIL.indexOf(stage)
-  if (tail !== -1) {
-    return DAG_LINEAR_HEAD.length + 1 + tail
-  }
-  return -1
+
+  stages.forEach((stage, idx) => {
+    layout.set(stage, {
+      rel_x: LANE_PADDING_X,
+      rel_y: LANE_HEADER_HEIGHT + idx * (NODE_HEIGHT + NODE_VGAP),
+    })
+  })
+  return layout
 }
 
 export function buildStageDagTopology(
@@ -417,24 +485,24 @@ export function buildStageDagTopology(
   status: RunStatus,
   decisions_summary?: DecisionsSummary | null,
 ): StageDag {
-  const current_index = progressIndex(stage)
+  const current_level = STAGE_PROGRESS_LEVEL[stage]
   const is_terminal_failed = status === 'failed' || status === 'cancelled'
   const is_completed = status === 'completed'
+  const parallel_branch: ReadonlySet<RunStage> = new Set(['image', 'tts'])
 
-  function deriveState(node_stage: RunStage): StageNodeState {
-    const idx = progressIndex(node_stage)
+  function deriveStageState(node_stage: RunStage): StageNodeState {
+    const level = STAGE_PROGRESS_LEVEL[node_stage]
     if (is_completed) {
       return 'completed'
     }
-    if (idx < current_index) {
+    if (level < current_level) {
       return 'completed'
     }
-    if (idx === current_index) {
-      const is_current_node =
+    if (level === current_level) {
+      const is_current =
         node_stage === stage ||
-        (DAG_PARALLEL_BRANCH.includes(stage) &&
-          DAG_PARALLEL_BRANCH.includes(node_stage))
-      if (!is_current_node) {
+        (parallel_branch.has(stage) && parallel_branch.has(node_stage))
+      if (!is_current) {
         return 'upcoming'
       }
       return is_terminal_failed ? 'failed' : 'active'
@@ -442,91 +510,121 @@ export function buildStageDagTopology(
     return 'upcoming'
   }
 
-  const all_nodes: RunStage[] = [
-    ...DAG_LINEAR_HEAD,
-    ...DAG_PARALLEL_BRANCH,
-    ...DAG_LINEAR_TAIL,
-  ]
-
-  const nodes: StageDagNodeModel[] = all_nodes.map((node_stage) => {
-    const node: StageDagNodeModel = {
-      id: node_stage,
-      label: STAGE_LABELS[node_stage],
-      state: deriveState(node_stage),
-      parent: STAGE_TO_PARENT_NODE[node_stage],
-    }
-    if (
-      node_stage === 'batch_review' &&
-      stage === 'batch_review' &&
-      decisions_summary
-    ) {
-      const done =
-        decisions_summary.approved_count + decisions_summary.rejected_count
-      const total = done + decisions_summary.pending_count
-      if (total > 0) {
-        node.counter = { done, total, suffix: 'reviewed' }
-      }
-    }
-    return node
-  })
-
-  const node_state = new Map(nodes.map((n) => [n.id, n.state]))
-
-  function deriveEdgeState(source: RunStage, target: RunStage): StageDagEdgeState {
-    const s = node_state.get(source)
-    const t = node_state.get(target)
-    if (s === 'completed' && t === 'completed') {
-      return 'completed'
-    }
-    if (t === 'failed' || s === 'failed') {
-      return 'failed'
-    }
-    if (t === 'active' || s === 'active') {
-      return 'active'
-    }
+  function deriveLaneState(lane_key: StageNodeKey): StageNodeState {
+    const stages = LANE_NODES[lane_key]
+    const states = stages.map(deriveStageState)
+    if (states.includes('failed')) return 'failed'
+    if (states.includes('active')) return 'active'
+    if (states.every((s) => s === 'completed')) return 'completed'
     return 'upcoming'
   }
 
-  const edges: StageDagEdgeModel[] = []
+  // Lane positions (LR)
+  let cursor_x = 0
+  const lane_widths: Record<StageNodeKey, number> = {} as Record<
+    StageNodeKey,
+    number
+  >
+  const lane_positions: Record<StageNodeKey, number> = {} as Record<
+    StageNodeKey,
+    number
+  >
+  for (const lane_key of LANE_ORDER) {
+    const w = computeLaneWidth(lane_key)
+    lane_widths[lane_key] = w
+    lane_positions[lane_key] = cursor_x
+    cursor_x += w + LANE_GAP
+  }
+  const canvas_width = cursor_x - LANE_GAP
 
-  for (let i = 0; i < DAG_LINEAR_HEAD.length - 1; i += 1) {
-    const source = DAG_LINEAR_HEAD[i]
-    const target = DAG_LINEAR_HEAD[i + 1]
-    edges.push({
-      id: `${source}__${target}`,
-      source,
-      target,
-      state: deriveEdgeState(source, target),
-    })
+  // Lane height = max content height, applied uniformly for visual alignment
+  const lane_content_heights: number[] = LANE_ORDER.map((key) => {
+    const child_count = LANE_NODES[key].length
+    const rows = key === 'assets' ? 2 : child_count
+    return (
+      LANE_HEADER_HEIGHT + rows * NODE_HEIGHT + (rows - 1) * NODE_VGAP + 12
+    )
+  })
+  const lane_height = Math.max(...lane_content_heights)
+  const canvas_height = lane_height
+
+  const lanes: StageDagLaneModel[] = LANE_ORDER.map((lane_key) => ({
+    id: lane_key,
+    label: STAGE_NODE_LABELS[lane_key],
+    state: deriveLaneState(lane_key),
+    x: lane_positions[lane_key],
+    width: lane_widths[lane_key],
+    height: lane_height,
+  }))
+
+  const nodes: StageDagNodeModel[] = []
+  for (const lane_key of LANE_ORDER) {
+    const child_layout = computeChildrenLayout(lane_key)
+    for (const stage_id of LANE_NODES[lane_key]) {
+      const pos = child_layout.get(stage_id)
+      if (!pos) continue
+      const node: StageDagNodeModel = {
+        id: stage_id,
+        label: STAGE_LABELS[stage_id],
+        state: deriveStageState(stage_id),
+        parent: lane_key,
+        rel_x: pos.rel_x,
+        rel_y: pos.rel_y,
+      }
+      if (
+        stage_id === 'batch_review' &&
+        stage === 'batch_review' &&
+        decisions_summary
+      ) {
+        const done =
+          decisions_summary.approved_count + decisions_summary.rejected_count
+        const total = done + decisions_summary.pending_count
+        if (total > 0) {
+          node.counter = { done, total, suffix: 'reviewed' }
+        }
+      }
+      nodes.push(node)
+    }
   }
 
-  const fork_source = DAG_LINEAR_HEAD[DAG_LINEAR_HEAD.length - 1]
-  const merge_target = DAG_LINEAR_TAIL[0]
-  for (const branch of DAG_PARALLEL_BRANCH) {
-    edges.push({
-      id: `${fork_source}__${branch}`,
-      source: fork_source,
-      target: branch,
-      state: deriveEdgeState(fork_source, branch),
-    })
-    edges.push({
-      id: `${branch}__${merge_target}`,
-      source: branch,
-      target: merge_target,
-      state: deriveEdgeState(branch, merge_target),
-    })
+  const node_state = new Map(nodes.map((n) => [n.id, n.state]))
+
+  function deriveEdgeState(
+    source: RunStage,
+    target: RunStage,
+  ): StageDagEdgeState {
+    const s = node_state.get(source)
+    const t = node_state.get(target)
+    if (s === 'completed' && t === 'completed') return 'completed'
+    if (s === 'failed' || t === 'failed') return 'failed'
+    if (s === 'active' || t === 'active') return 'active'
+    return 'upcoming'
   }
 
-  for (let i = 0; i < DAG_LINEAR_TAIL.length - 1; i += 1) {
-    const source = DAG_LINEAR_TAIL[i]
-    const target = DAG_LINEAR_TAIL[i + 1]
-    edges.push({
-      id: `${source}__${target}`,
-      source,
-      target,
-      state: deriveEdgeState(source, target),
-    })
-  }
+  const edge_pairs: Array<[RunStage, RunStage]> = [
+    ['pending', 'research'],
+    ['research', 'structure'],
+    ['structure', 'write'],
+    ['write', 'visual_break'],
+    ['visual_break', 'review'],
+    ['review', 'critic'],
+    ['critic', 'scenario_review'],
+    ['scenario_review', 'character_pick'],
+    ['character_pick', 'image'],
+    ['character_pick', 'tts'],
+    ['image', 'batch_review'],
+    ['tts', 'batch_review'],
+    ['batch_review', 'assemble'],
+    ['assemble', 'metadata_ack'],
+    ['metadata_ack', 'complete'],
+  ]
 
-  return { nodes, edges }
+  const edges: StageDagEdgeModel[] = edge_pairs.map(([source, target]) => ({
+    id: `${source}__${target}`,
+    source,
+    target,
+    state: deriveEdgeState(source, target),
+  }))
+
+  return { lanes, nodes, edges, canvas_width, canvas_height }
 }

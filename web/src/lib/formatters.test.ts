@@ -150,6 +150,47 @@ describe('buildStageDagTopology', () => {
     ])
   })
 
+  it('emits 6 swim-lanes matching the thin stepper grouping', () => {
+    const dag = buildStageDagTopology('write', 'running')
+    expect(dag.lanes.map((l) => l.id)).toEqual([
+      'pending',
+      'scenario',
+      'character',
+      'assets',
+      'assemble',
+      'complete',
+    ])
+    const scenario_lane = dag.lanes.find((l) => l.id === 'scenario')
+    expect(scenario_lane?.state).toBe('active')
+    expect(dag.lanes.find((l) => l.id === 'pending')?.state).toBe('completed')
+    expect(dag.lanes.find((l) => l.id === 'character')?.state).toBe('upcoming')
+  })
+
+  it('marks the scenario lane failed when an inner stage fails', () => {
+    const dag = buildStageDagTopology('write', 'failed')
+    expect(dag.lanes.find((l) => l.id === 'scenario')?.state).toBe('failed')
+  })
+
+  it('assigns each node to its parent lane with relative coordinates', () => {
+    const dag = buildStageDagTopology('research', 'running')
+    const research = dag.nodes.find((n) => n.id === 'research')
+    expect(research?.parent).toBe('scenario')
+    expect(research?.rel_x).toBeGreaterThan(0)
+    expect(research?.rel_y).toBeGreaterThan(0)
+  })
+
+  it('places image+tts in the left column with batch_review to the right (avoids edge collisions)', () => {
+    const dag = buildStageDagTopology('image', 'running')
+    const image = dag.nodes.find((n) => n.id === 'image')
+    const tts = dag.nodes.find((n) => n.id === 'tts')
+    const batch = dag.nodes.find((n) => n.id === 'batch_review')
+    expect(image?.rel_x).toBe(tts?.rel_x)
+    expect((tts?.rel_y ?? 0)).toBeGreaterThan(image?.rel_y ?? 0)
+    expect((batch?.rel_x ?? 0)).toBeGreaterThan(image?.rel_x ?? 0)
+    expect((batch?.rel_y ?? 0)).toBeGreaterThan(image?.rel_y ?? 0)
+    expect((batch?.rel_y ?? 0)).toBeLessThan(tts?.rel_y ?? 0)
+  })
+
   it('forks character_pick into image+tts and merges them at batch_review', () => {
     const dag = buildStageDagTopology('character_pick', 'waiting')
     const fork_edges = dag.edges.filter((e) => e.source === 'character_pick')

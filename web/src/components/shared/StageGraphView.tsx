@@ -6,18 +6,21 @@ import {
   type Node,
   type NodeTypes,
 } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
 import {
   buildStageDagTopology,
   type DecisionsSummary,
   type RunStage,
   type RunStatus,
+  type StageDagEdgeState,
 } from '../../lib/formatters'
-import { layoutStageDag } from '../../lib/dagLayout'
 import {
   StageGraphNode,
   type StageGraphNodeData,
 } from './StageGraphNode'
+import {
+  StageGraphLane,
+  type StageGraphLaneData,
+} from './StageGraphLane'
 
 interface StageGraphViewProps {
   stage: RunStage
@@ -27,6 +30,7 @@ interface StageGraphViewProps {
 
 const NODE_TYPES: NodeTypes = {
   stage: StageGraphNode,
+  lane: StageGraphLane,
 }
 
 function usePrefersReducedMotion() {
@@ -54,6 +58,16 @@ function usePrefersReducedMotion() {
   return reduced
 }
 
+const VERTICAL_EDGES: ReadonlySet<string> = new Set([
+  'research__structure',
+  'structure__write',
+  'write__visual_break',
+  'visual_break__review',
+  'review__critic',
+  'critic__scenario_review',
+  'assemble__metadata_ack',
+])
+
 export function StageGraphView({
   stage,
   status,
@@ -63,12 +77,25 @@ export function StageGraphView({
 
   const { rf_nodes, rf_edges } = useMemo(() => {
     const dag = buildStageDagTopology(stage, status, decisions_summary)
-    const positioned = layoutStageDag(dag.nodes, dag.edges)
 
-    const nodes: Node<StageGraphNodeData>[] = positioned.map((node) => ({
+    const lane_nodes: Node<StageGraphLaneData>[] = dag.lanes.map((lane) => ({
+      id: `lane-${lane.id}`,
+      type: 'lane',
+      position: { x: lane.x, y: 0 },
+      data: { label: lane.label, state: lane.state },
+      style: { width: lane.width, height: lane.height },
+      draggable: false,
+      selectable: false,
+      connectable: false,
+      zIndex: 0,
+    }))
+
+    const stage_nodes: Node<StageGraphNodeData>[] = dag.nodes.map((node) => ({
       id: node.id,
       type: 'stage',
-      position: { x: node.x, y: node.y },
+      parentId: `lane-${node.parent}`,
+      extent: 'parent',
+      position: { x: node.rel_x, y: node.rel_y },
       data: {
         label: node.label,
         state: node.state,
@@ -77,19 +104,29 @@ export function StageGraphView({
       draggable: false,
       selectable: false,
       connectable: false,
+      zIndex: 1,
     }))
 
-    const edges: Edge[] = dag.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      animated: !reduced_motion && edge.state === 'active',
-      data: { state: edge.state },
-      className: `stage-graph__edge stage-graph__edge--${edge.state}`,
-      selectable: false,
-    }))
+    const edges: Edge[] = dag.edges.map((edge) => {
+      const is_vertical = VERTICAL_EDGES.has(edge.id)
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: is_vertical ? 'bottom' : 'right',
+        targetHandle: is_vertical ? 'top' : 'left',
+        animated:
+          !reduced_motion &&
+          (edge.state as StageDagEdgeState) === 'active',
+        className: `stage-graph__edge stage-graph__edge--${edge.state}`,
+        selectable: false,
+      }
+    })
 
-    return { rf_nodes: nodes, rf_edges: edges }
+    return {
+      rf_nodes: [...lane_nodes, ...stage_nodes],
+      rf_edges: edges,
+    }
   }, [stage, status, decisions_summary, reduced_motion])
 
   return (
@@ -104,7 +141,7 @@ export function StageGraphView({
         edges={rf_edges}
         nodeTypes={NODE_TYPES}
         fitView
-        fitViewOptions={{ padding: 0.15 }}
+        fitViewOptions={{ padding: 0.1 }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
@@ -113,9 +150,11 @@ export function StageGraphView({
         zoomOnDoubleClick={false}
         panOnScroll={false}
         panOnDrag={false}
+        minZoom={0.1}
+        maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={24} size={1} />
+        <Background gap={20} size={1} />
       </ReactFlow>
     </div>
   )

@@ -17,7 +17,15 @@ export function StageGraphNode({ data }: NodeProps) {
     >
       <Handle
         type="target"
+        id="left"
         position={Position.Left}
+        className="stage-graph__handle"
+        isConnectable={false}
+      />
+      <Handle
+        type="target"
+        id="top"
+        position={Position.Top}
         className="stage-graph__handle"
         isConnectable={false}
       />
@@ -33,7 +41,15 @@ export function StageGraphNode({ data }: NodeProps) {
       </div>
       <Handle
         type="source"
+        id="right"
         position={Position.Right}
+        className="stage-graph__handle"
+        isConnectable={false}
+      />
+      <Handle
+        type="source"
+        id="bottom"
+        position={Position.Bottom}
         className="stage-graph__handle"
         isConnectable={false}
       />

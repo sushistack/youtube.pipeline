@@ -1189,7 +1189,7 @@
   .stage-graph {
     position: relative;
     width: 100%;
-    height: 22rem;
+    height: 24rem;
     border: 1px solid rgb(var(--border));
     border-radius: 1rem;
     background: rgba(var(--bg-input), 0.32);
@@ -1205,20 +1205,68 @@
     display: none;
   }
 
+  .stage-graph__lane {
+    width: 100%;
+    height: 100%;
+    border: 1px dashed rgba(var(--border), 0.7);
+    border-radius: 0.75rem;
+    background: rgba(var(--bg-raised), 0.42);
+    padding: 0.45rem 0.55rem 0.55rem;
+    box-sizing: border-box;
+  }
+
+  .stage-graph__lane[data-state="active"] {
+    border-style: solid;
+    border-color: rgba(var(--accent), 0.45);
+    background: rgba(var(--accent), 0.06);
+  }
+
+  .stage-graph__lane[data-state="completed"] {
+    border-color: rgba(var(--success), 0.4);
+    background: rgba(var(--success), 0.05);
+  }
+
+  .stage-graph__lane[data-state="failed"] {
+    border-color: rgba(var(--warning), 0.55);
+    background: rgba(var(--warning), 0.06);
+  }
+
+  .stage-graph__lane-label {
+    display: block;
+    font-size: calc(var(--type-caption-size) * 0.92);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgb(var(--muted));
+    font-weight: 600;
+  }
+
+  .stage-graph__lane[data-state="active"] .stage-graph__lane-label {
+    color: rgb(var(--accent));
+  }
+
+  .stage-graph__lane[data-state="completed"] .stage-graph__lane-label {
+    color: rgb(var(--success));
+  }
+
+  .stage-graph__lane[data-state="failed"] .stage-graph__lane-label {
+    color: rgb(var(--warning));
+  }
+
   .stage-graph__node {
     display: inline-flex;
     align-items: center;
-    gap: 0.55rem;
-    width: 10.5rem;
-    min-height: 3rem;
+    gap: 0.4rem;
+    width: 6.875rem;
+    height: 2rem;
     border: 1px solid rgb(var(--border));
     border-radius: 999px;
-    background: rgba(var(--bg-raised), 0.92);
+    background: rgba(var(--bg-raised), 0.96);
     color: rgb(var(--muted));
-    padding: 0.55rem 0.85rem;
+    padding: 0 0.6rem;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-    font-size: var(--type-caption-size);
-    line-height: 1.2;
+    font-size: calc(var(--type-caption-size) * 0.92);
+    line-height: 1;
+    box-sizing: border-box;
   }
 
   .stage-graph__node[data-state="completed"] {
@@ -1262,8 +1310,9 @@
   .stage-graph__node-body {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
+    gap: 0.05rem;
     min-width: 0;
+    flex: 1;
   }
 
   .stage-graph__node-label {
@@ -1275,9 +1324,9 @@
 
   .stage-graph__node-counter {
     font-family: var(--font-mono-stack);
-    font-size: calc(var(--type-caption-size) * 0.9);
+    font-size: calc(var(--type-caption-size) * 0.78);
     color: inherit;
-    opacity: 0.85;
+    opacity: 0.9;
   }
 
   .stage-graph__handle {
