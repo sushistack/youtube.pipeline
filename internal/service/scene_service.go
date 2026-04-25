@@ -56,6 +56,17 @@ type SceneRegenerator interface {
 // fall back to manual edit / skip & flag.
 const MaxSceneRegenAttempts = 2
 
+// retryExhausted is the single source of truth for the read-model
+// `retry_exhausted` flag exposed by ListReviewItems, RecordSceneDecision, and
+// DispatchSceneRegeneration. The threshold is `>=` (cap-inclusive): once the
+// attempts count reaches MaxSceneRegenAttempts the UI must swap the action
+// bar for the manual-edit / skip-and-flag CTAs, even though the dispatch
+// path (DispatchSceneRegeneration) still blocks only the overflow attempt
+// (`attempts > MaxSceneRegenAttempts`).
+func retryExhausted(attempts int) bool {
+	return attempts >= MaxSceneRegenAttempts
+}
+
 type sceneDecisionSessionAdapter struct {
 	store SceneDecisionRecorder
 }
@@ -377,7 +388,7 @@ func (s *SceneService) ListReviewItems(ctx context.Context, runID string) ([]*Re
 			HighLeverageReason:     classification.Reason,
 			PreviousVersion:        parsePreviousVersion(segment.SafeguardFlags),
 			RegenAttempts:          attempts,
-			RetryExhausted:         attempts >= MaxSceneRegenAttempts,
+			RetryExhausted:         retryExhausted(attempts),
 			PriorRejection:         priorWarning,
 		})
 	}
@@ -549,7 +560,7 @@ func (s *SceneService) RecordSceneDecision(ctx context.Context, input SceneDecis
 			return nil, fmt.Errorf("record scene decision: count regen attempts: %w", err)
 		}
 		result.RegenAttempts = attempts
-		result.RetryExhausted = attempts > MaxSceneRegenAttempts
+		result.RetryExhausted = retryExhausted(attempts)
 		prior, err := s.decisions.PriorRejectionForScene(ctx, input.RunID, input.SceneIndex)
 		if err != nil {
 			return nil, fmt.Errorf("record scene decision: prior rejection lookup: %w", err)
@@ -622,7 +633,7 @@ func (s *SceneService) DispatchSceneRegeneration(ctx context.Context, runID stri
 	return &RegenResult{
 		SceneIndex:     sceneIndex,
 		RegenAttempts:  attempts,
-		RetryExhausted: attempts >= MaxSceneRegenAttempts,
+		RetryExhausted: retryExhausted(attempts),
 	}, nil
 }
 
