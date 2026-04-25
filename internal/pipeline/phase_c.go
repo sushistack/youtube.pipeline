@@ -351,6 +351,26 @@ func (r *PhaseCRunner) applySyncPadding(videoStream *ffmpeg.Stream, audioStream 
 	}
 }
 
+// crossDissolveDurationSec is the xfade window applied when two shots are
+// joined with a cross_dissolve transition. When the composed pre-transition
+// stream is shorter than this window the offset is clamped to zero so the
+// generated filter graph never relies on FFmpeg undefined behavior triggered
+// by a negative offset (R-09 / Story 11-5 AC-3).
+const crossDissolveDurationSec = 0.5
+
+// computeCrossDissolveOffset returns the xfade offset for a transition between
+// a composed stream of streamDur seconds and the next shot, using a
+// dissolveSec-wide dissolve window. The offset is clamped to >= 0 so a
+// pre-transition stream shorter than the dissolve window can never produce
+// a negative xfade offset (R-09). Pure function: extracted so the boundary
+// contract is unit-testable independent of FFmpeg.
+func computeCrossDissolveOffset(streamDur, dissolveSec float64) float64 {
+	if streamDur < dissolveSec {
+		return 0
+	}
+	return streamDur - dissolveSec
+}
+
 // buildMultiShotClip assembles a scene with two or more shots using per-pair
 // transition dispatch. Each shot boundary is handled independently:
 // cross_dissolve → xfade filter; hard_cut or ken_burns → concat filter.
@@ -373,18 +393,26 @@ func (r *PhaseCRunner) buildMultiShotClip(ctx context.Context, ep *domain.Episod
 	for i := 1; i < len(streams); i++ {
 		switch ep.Shots[i].Transition {
 		case domain.TransitionCrossDissolve:
-			// xfade offset = current stream duration − 0.5s, clamped to ≥ 0
-			// to guard against shots shorter than the dissolve window.
-			offset := math.Max(0, streamDur-0.5)
+			offset := computeCrossDissolveOffset(streamDur, crossDissolveDurationSec)
+			if streamDur < crossDissolveDurationSec {
+				// The clamp above keeps the offset non-negative; surface the
+				// degraded boundary so operators can see it in run logs.
+				r.logger.Warn("cross_dissolve offset clamped to zero: pre-transition stream shorter than dissolve window",
+					"scene_index", ep.SceneIndex,
+					"shot_index", i,
+					"pre_transition_dur_sec", streamDur,
+					"dissolve_dur_sec", crossDissolveDurationSec,
+				)
+			}
 			videoStream = ffmpeg.Filter([]*ffmpeg.Stream{videoStream, streams[i]}, "xfade",
 				ffmpeg.Args{},
 				ffmpeg.KwArgs{
 					"transition": "fade",
-					"duration":   "0.5",
+					"duration":   fmt.Sprintf("%.3f", crossDissolveDurationSec),
 					"offset":     fmt.Sprintf("%.3f", offset),
 				})
-			// xfade overlaps 0.5 s between the two streams.
-			streamDur += ep.Shots[i].DurationSeconds - 0.5
+			// xfade overlaps crossDissolveDurationSec between the two streams.
+			streamDur += ep.Shots[i].DurationSeconds - crossDissolveDurationSec
 		default: // hard_cut, ken_burns (no inter-shot filter), or unknown
 			videoStream = ffmpeg.Concat([]*ffmpeg.Stream{videoStream, streams[i]}, ffmpeg.KwArgs{"v": 1, "a": 0})
 			streamDur += ep.Shots[i].DurationSeconds
@@ -424,7 +452,20 @@ func (r *PhaseCRunner) buildMultiShotClip(ctx context.Context, ep *domain.Episod
 	return clipPath, nil
 }
 
-// probeDuration returns the duration in seconds of a media file by invoking ffprobe.
+// validateProbedDuration rejects non-positive ffprobe results so a corrupt
+// or zero-byte clip cannot fake-pass downstream tolerance checks. Extracted
+// for unit-level regression coverage of R-10 (Story 11-5 AC-4).
+func validateProbedDuration(path string, dur float64) error {
+	if dur <= 0 {
+		return fmt.Errorf("ffprobe returned non-positive duration %.3fs for %q: %w", dur, path, domain.ErrValidation)
+	}
+	return nil
+}
+
+// probeDuration returns the duration in seconds of a media file by invoking
+// ffprobe. Returns an error wrapping domain.ErrValidation when the probe
+// yields a non-positive duration so callers cannot silently accept a
+// zero-duration artifact (R-10).
 func (r *PhaseCRunner) probeDuration(ctx context.Context, path string) (float64, error) {
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "quiet",
@@ -449,6 +490,9 @@ func (r *PhaseCRunner) probeDuration(ctx context.Context, path string) (float64,
 	dur, err := strconv.ParseFloat(result.Format.Duration, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse duration %q: %w", result.Format.Duration, err)
+	}
+	if err := validateProbedDuration(path, dur); err != nil {
+		return 0, err
 	}
 	return dur, nil
 }

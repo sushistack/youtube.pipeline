@@ -385,6 +385,56 @@ func TestPhaseCRunner_ResumeReEntry(t *testing.T) {
 	}
 }
 
+// TestPhaseCRunner_3ShotCrossDissolve_ShortFirstShot exercises the R-09 short-
+// shot guard (Story 11-5 AC-3): when the composed pre-transition stream is
+// shorter than the 0.5 s dissolve window, Phase C must degrade to a hard cut
+// instead of emitting an offset-clamped-to-zero xfade. Verifies the produced
+// clip remains a valid MP4 under real FFmpeg.
+func TestPhaseCRunner_3ShotCrossDissolve_ShortFirstShot(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	skipIfNoFFmpeg(t)
+
+	runDir := t.TempDir()
+	// First shot: 0.3 s (< 0.5 s dissolve window). Subsequent shots are normal.
+	durations := []float64{0.3, 1.5, 1.5}
+	colors := []string{"red", "green", "blue"}
+	shots := make([]domain.Shot, len(durations))
+	for i := range durations {
+		p := filepath.Join(runDir, "images", fmt.Sprintf("scene_00/shot_%02d.png", i))
+		makeTestImage(t, p, colors[i])
+		shots[i] = domain.Shot{ImagePath: p, DurationSeconds: durations[i], Transition: domain.TransitionCrossDissolve}
+	}
+	ttsPath := filepath.Join(runDir, "tts", "scene_00.wav")
+	makeTestAudio(t, ttsPath, 3.0)
+	ttsDur := 3000
+
+	ep := &domain.Episode{
+		SceneIndex:    0,
+		ShotCount:     len(shots),
+		Shots:         shots,
+		TTSPath:       strPtr(ttsPath),
+		TTSDurationMs: &ttsDur,
+	}
+
+	runner, _, _ := newTestRunner(t)
+	res, err := runner.Run(context.Background(), pipeline.PhaseCRequest{
+		RunID: "test-run-short-xfade", RunDir: runDir, Segments: []*domain.Episode{ep},
+	})
+	if err != nil {
+		t.Fatalf("Run with short pre-transition stream: %v", err)
+	}
+	if len(res.ClipPaths) != 1 {
+		t.Fatalf("clip count = %d, want 1", len(res.ClipPaths))
+	}
+	if _, statErr := os.Stat(res.ClipPaths[0]); statErr != nil {
+		t.Errorf("clip file missing: %v", statErr)
+	}
+	clipDur := probeFileDuration(t, res.ClipPaths[0])
+	if clipDur <= 0 {
+		t.Errorf("clip duration = %.3fs, want > 0 (degenerate xfade would yield empty/invalid output)", clipDur)
+	}
+}
+
 // TestPhaseCRunner_Run_ValidatesRequest verifies that empty requests are rejected.
 func TestPhaseCRunner_Run_ValidatesRequest(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
