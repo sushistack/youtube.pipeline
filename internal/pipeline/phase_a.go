@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -219,8 +220,32 @@ func (r *PhaseARunner) Run(ctx context.Context, state *agents.PipelineState) err
 			return fmt.Errorf("phase a: stage=%s: %w", entry.ps.String(), err)
 		}
 
+		// Deterministic agents: load from cache if available, skip invocation.
+		if entry.ps == agents.StageResearcher || entry.ps == agents.StageStructurer {
+			if r.tryLoadCache(entry.ps, runDir, state) {
+				continue
+			}
+		}
+
 		if err := r.runAgent(ctx, entry.ps, entry.agent, state); err != nil {
 			return err
+		}
+
+		// Persist deterministic agent output for future retries.
+		if entry.ps == agents.StageResearcher || entry.ps == agents.StageStructurer {
+			r.writeCache(entry.ps, runDir, state)
+		}
+
+		// Short-circuit: if post_writer_critic rejects the narration, skip
+		// visual_breakdowner/reviewer/post_reviewer_critic entirely. The
+		// narration will be rewritten on the next attempt — running downstream
+		// stages on a rejected script wastes 2+ minutes and produces artifacts
+		// that are immediately discarded.
+		if entry.ps == agents.StagePostWriterCritic &&
+			state.Critic != nil &&
+			state.Critic.PostWriter != nil &&
+			state.Critic.PostWriter.Verdict == domain.CriticVerdictRetry {
+			break
 		}
 	}
 
@@ -328,6 +353,97 @@ func shouldFinalizePhaseA(state *agents.PipelineState) bool {
 	}
 	return state.Critic.PostReviewer.Verdict == domain.CriticVerdictPass ||
 		state.Critic.PostReviewer.Verdict == domain.CriticVerdictAcceptWithNotes
+}
+
+// tryLoadCache attempts to read a cached agent output from disk for deterministic
+// agents (researcher, structurer). On success it populates the relevant state
+// field and returns true so the caller can skip invoking the agent. Any read
+// or unmarshal failure is treated as a cache miss (returns false) — the agent
+// will run normally and overwrite the stale or corrupt file.
+func (r *PhaseARunner) tryLoadCache(ps agents.PipelineStage, runDir string, state *agents.PipelineState) bool {
+	var cacheFile string
+	switch ps {
+	case agents.StageResearcher:
+		cacheFile = filepath.Join(runDir, "research_cache.json")
+	case agents.StageStructurer:
+		cacheFile = filepath.Join(runDir, "structure_cache.json")
+	default:
+		return false
+	}
+
+	data, err := os.ReadFile(cacheFile)
+	if err != nil {
+		return false
+	}
+
+	switch ps {
+	case agents.StageResearcher:
+		var out *domain.ResearcherOutput
+		if err := json.Unmarshal(data, &out); err != nil || out == nil {
+			return false
+		}
+		if out.SCPID != state.SCPID {
+			return false
+		}
+		state.Research = out
+	case agents.StageStructurer:
+		var out *domain.StructurerOutput
+		if err := json.Unmarshal(data, &out); err != nil || out == nil {
+			return false
+		}
+		if out.SCPID != state.SCPID {
+			return false
+		}
+		state.Structure = out
+	}
+
+	r.logger.Info("agent cache hit", "pipeline_stage", ps.String(), "run_id", state.RunID)
+	return true
+}
+
+// writeCache persists a deterministic agent's output to disk atomically
+// (tmp file → rename). Errors are logged but not returned — a failed cache
+// write is non-fatal; the pipeline result is not affected.
+func (r *PhaseARunner) writeCache(ps agents.PipelineStage, runDir string, state *agents.PipelineState) {
+	var (
+		cacheFile string
+		payload   any
+	)
+	switch ps {
+	case agents.StageResearcher:
+		if state.Research == nil {
+			return
+		}
+		cacheFile = filepath.Join(runDir, "research_cache.json")
+		payload = state.Research
+	case agents.StageStructurer:
+		if state.Structure == nil {
+			return
+		}
+		cacheFile = filepath.Join(runDir, "structure_cache.json")
+		payload = state.Structure
+	default:
+		return
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		r.logger.Warn("agent cache marshal failed", "pipeline_stage", ps.String(), "run_id", state.RunID, "error", err.Error())
+		return
+	}
+
+	tmp := cacheFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		r.logger.Warn("agent cache write failed", "pipeline_stage", ps.String(), "run_id", state.RunID, "error", err.Error())
+		return
+	}
+	if err := os.Rename(tmp, cacheFile); err != nil {
+		r.logger.Warn("agent cache rename failed", "pipeline_stage", ps.String(), "run_id", state.RunID, "error", err.Error())
+		os.Remove(tmp)
+		return
+	}
+
+	r.logger.Info("agent cache written", "pipeline_stage", ps.String(), "run_id", state.RunID)
 }
 
 // ScenarioPath returns the canonical path to scenario.json for the

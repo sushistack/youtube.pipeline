@@ -866,6 +866,152 @@ func TestPhaseARunner_MkdirFailure_ReturnsError(t *testing.T) {
 	testutil.AssertEqual(t, state.FinishedAt, "")
 }
 
+// --- Phase A agent caching (researcher / structurer) ----------------------
+
+func TestPhaseARunner_ResearcherCacheHit(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	b := defaultRunnerBuilder(t)
+
+	// Write a valid research_cache.json before Run() is called.
+	runDir := filepath.Join(b.outputDir, "run-1")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cached := &domain.ResearcherOutput{SCPID: "scp-1", Title: "from-cache"}
+	writeTestCacheJSON(t, filepath.Join(runDir, "research_cache.json"), cached)
+
+	var researcherCalls int
+	b.researcher = func(_ context.Context, _ *agents.PipelineState) error {
+		researcherCalls++
+		return nil
+	}
+
+	r := b.build(t)
+	state := newState()
+	if err := r.Run(context.Background(), state); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	testutil.AssertEqual(t, researcherCalls, 0)
+	if state.Research == nil {
+		t.Fatal("state.Research must be populated from cache")
+	}
+	testutil.AssertEqual(t, state.Research.Title, "from-cache")
+}
+
+func TestPhaseARunner_StructurerCacheHit(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	b := defaultRunnerBuilder(t)
+
+	// Write a valid structure_cache.json before Run() is called.
+	runDir := filepath.Join(b.outputDir, "run-1")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cached := &domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 42}
+	writeTestCacheJSON(t, filepath.Join(runDir, "structure_cache.json"), cached)
+
+	var structurerCalls int
+	b.structurer = func(_ context.Context, _ *agents.PipelineState) error {
+		structurerCalls++
+		return nil
+	}
+
+	r := b.build(t)
+	state := newState()
+	if err := r.Run(context.Background(), state); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	testutil.AssertEqual(t, structurerCalls, 0)
+	if state.Structure == nil {
+		t.Fatal("state.Structure must be populated from cache")
+	}
+	testutil.AssertEqual(t, state.Structure.TargetSceneCount, 42)
+}
+
+func TestPhaseARunner_CacheMissWritesFile(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	b := defaultRunnerBuilder(t)
+
+	b.researcher = func(_ context.Context, state *agents.PipelineState) error {
+		state.Research = &domain.ResearcherOutput{SCPID: "scp-1", Title: "fresh"}
+		return nil
+	}
+	b.structurer = func(_ context.Context, state *agents.PipelineState) error {
+		state.Structure = &domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 10}
+		return nil
+	}
+
+	r := b.build(t)
+	state := newState()
+	if err := r.Run(context.Background(), state); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	runDir := filepath.Join(b.outputDir, state.RunID)
+	if _, err := os.Stat(filepath.Join(runDir, "research_cache.json")); err != nil {
+		t.Errorf("research_cache.json not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "structure_cache.json")); err != nil {
+		t.Errorf("structure_cache.json not written: %v", err)
+	}
+}
+
+// TestPhaseARunner_ResearcherCacheHit_StructurerRunsNormally verifies the
+// cross path: researcher is served from cache (0 calls) while structurer has
+// no cache file and runs normally (1 call, populates state.Structure).
+func TestPhaseARunner_ResearcherCacheHit_StructurerRunsNormally(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	b := defaultRunnerBuilder(t)
+
+	runDir := filepath.Join(b.outputDir, "run-1")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Only pre-seed research cache — no structure_cache.json.
+	cachedResearch := &domain.ResearcherOutput{SCPID: "scp-1", Title: "cached"}
+	writeTestCacheJSON(t, filepath.Join(runDir, "research_cache.json"), cachedResearch)
+
+	var researcherCalls, structurerCalls int
+	b.researcher = func(_ context.Context, _ *agents.PipelineState) error {
+		researcherCalls++
+		return nil
+	}
+	b.structurer = func(_ context.Context, state *agents.PipelineState) error {
+		structurerCalls++
+		state.Structure = &domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 7}
+		return nil
+	}
+
+	r := b.build(t)
+	state := newState()
+	if err := r.Run(context.Background(), state); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	testutil.AssertEqual(t, researcherCalls, 0)
+	testutil.AssertEqual(t, structurerCalls, 1)
+	if state.Research == nil || state.Research.Title != "cached" {
+		t.Errorf("state.Research not loaded from cache: %+v", state.Research)
+	}
+	if state.Structure == nil || state.Structure.TargetSceneCount != 7 {
+		t.Errorf("state.Structure not populated by structurer agent: %+v", state.Structure)
+	}
+}
+
+// writeTestCacheJSON marshals v to JSON and writes it to path.
+func writeTestCacheJSON(t *testing.T, path string, v any) {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal cache: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write cache file %s: %v", path, err)
+	}
+}
+
 // --- ScenarioPath helper (AC-SCENARIO-JSON-PATH-ON-RUN) ------------------
 
 func TestScenarioPath(t *testing.T) {
