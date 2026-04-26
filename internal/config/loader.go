@@ -38,6 +38,7 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("tts_voice", cfg.TTSVoice)
 	v.SetDefault("tts_audio_format", cfg.TTSAudioFormat)
 	v.SetDefault("image_model", cfg.ImageModel)
+	v.SetDefault("image_edit_model", cfg.ImageEditModel)
 	v.SetDefault("writer_provider", cfg.WriterProvider)
 	v.SetDefault("critic_provider", cfg.CriticProvider)
 	v.SetDefault("dashscope_region", cfg.DashScopeRegion)

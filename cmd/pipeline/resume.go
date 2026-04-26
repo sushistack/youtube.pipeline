@@ -66,7 +66,14 @@ func runResume(cmd *cobra.Command, runID string, force bool) error {
 	if limiterErr != nil {
 		return fmt.Errorf("build limiter factory: %w", limiterErr)
 	}
-	if phaseBRunner, err := buildPhaseBRunner(cfg, os.Getenv("DASHSCOPE_API_KEY"), limiterFactory, store, segStore, logger); err == nil {
+	// CharacterResolver is required for image_track Edit calls on character
+	// shots. resume.go wires it identically to serve.go so a resume at
+	// StageImage produces visually-consistent regenerations.
+	characterCache := db.NewCharacterCacheStore(database)
+	characterClient := service.NewDuckDuckGoClient(nil)
+	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
+
+	if phaseBRunner, err := buildPhaseBRunner(cfg, os.Getenv("DASHSCOPE_API_KEY"), limiterFactory, store, segStore, characterSvc, logger); err == nil {
 		engine.SetPhaseBExecutor(phaseBRunner)
 	} else {
 		logger.Warn("phase b runner unavailable (resume retries disabled for phase b)", "error", err.Error())

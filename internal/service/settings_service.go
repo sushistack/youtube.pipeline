@@ -306,6 +306,7 @@ func validateSettingsConfig(cfg domain.PipelineConfig, env map[string]string, fi
 		"config.critic_model":     cfg.CriticModel,
 		"config.image_provider":   cfg.ImageProvider,
 		"config.image_model":      cfg.ImageModel,
+		"config.image_edit_model": cfg.ImageEditModel,
 		"config.tts_provider":     cfg.TTSProvider,
 		"config.tts_model":        cfg.TTSModel,
 		"config.tts_voice":        cfg.TTSVoice,
@@ -356,6 +357,7 @@ func normalizeSettingsConfig(cfg domain.PipelineConfig) SettingsConfigInput {
 		WriterModel:     cfg.WriterModel,
 		CriticModel:     cfg.CriticModel,
 		ImageModel:      cfg.ImageModel,
+		ImageEditModel:  cfg.ImageEditModel,
 		TTSModel:        cfg.TTSModel,
 		TTSVoice:        cfg.TTSVoice,
 		TTSAudioFormat:  cfg.TTSAudioFormat,
@@ -391,6 +393,7 @@ func applyEditableConfig(cfg *domain.PipelineConfig, input SettingsConfigInput) 
 	cfg.WriterModel = input.WriterModel
 	cfg.CriticModel = input.CriticModel
 	cfg.ImageModel = input.ImageModel
+	cfg.ImageEditModel = input.ImageEditModel
 	cfg.TTSModel = input.TTSModel
 	cfg.TTSVoice = input.TTSVoice
 	cfg.TTSAudioFormat = input.TTSAudioFormat

@@ -20,6 +20,7 @@ type SettingsConfigInput struct {
 	WriterModel     string `json:"writer_model"`
 	CriticModel     string `json:"critic_model"`
 	ImageModel      string `json:"image_model"`
+	ImageEditModel  string `json:"image_edit_model"`
 	TTSModel        string `json:"tts_model"`
 	TTSVoice        string `json:"tts_voice"`
 	TTSAudioFormat  string `json:"tts_audio_format"`

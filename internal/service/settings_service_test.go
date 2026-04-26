@@ -82,6 +82,7 @@ func TestSettingsService_SaveRejectsValidationErrors(t *testing.T) {
 			WriterModel:     "writer",
 			CriticModel:     "critic",
 			ImageModel:      "image",
+			ImageEditModel:  "image-edit",
 			TTSModel:        "tts",
 			TTSVoice:        "voice",
 			TTSAudioFormat:  "wav",
@@ -205,7 +206,8 @@ func validSettingsInput() SettingsUpdateInput {
 		Config: SettingsConfigInput{
 			WriterModel:     "deepseek-chat-v2",
 			CriticModel:     "gemini-2.0-flash",
-			ImageModel:      "qwen-max-vl",
+			ImageModel:      "qwen-image",
+			ImageEditModel:  "qwen-image-edit",
 			TTSModel:        "qwen3-tts",
 			TTSVoice:        "longhua",
 			TTSAudioFormat:  "wav",

@@ -12,7 +12,16 @@ type PipelineConfig struct {
 	WriterModel string `yaml:"writer_model" mapstructure:"writer_model"`
 	CriticModel string `yaml:"critic_model" mapstructure:"critic_model"`
 	TTSModel    string `yaml:"tts_model"    mapstructure:"tts_model"`
-	ImageModel  string `yaml:"image_model"  mapstructure:"image_model"`
+	// ImageModel is the text-to-image model used for non-character shots
+	// (e.g. "qwen-image"). It is intentionally distinct from ImageEditModel
+	// because qwen-image does not accept reference images; routing depends
+	// on whether a shot contains the operator-selected character.
+	ImageModel string `yaml:"image_model" mapstructure:"image_model"`
+	// ImageEditModel is the reference-image-conditioned model used for
+	// character shots (e.g. "qwen-image-edit"). It accepts an `input.ref_imgs`
+	// array carrying the selected character's image URL so generated frames
+	// stay visually consistent with the operator's choice.
+	ImageEditModel string `yaml:"image_edit_model" mapstructure:"image_edit_model"`
 
 	// TTSVoice is the DashScope qwen3-tts voice identifier. The voice preset
 	// must be a Korean-capable voice; it is left as a config field so FR47
@@ -101,7 +110,8 @@ func DefaultConfig() PipelineConfig {
 		TTSModel:              "qwen3-tts-flash-2025-09-18",
 		TTSVoice:              "longhua",
 		TTSAudioFormat:        "wav",
-		ImageModel:            "qwen-max-vl",
+		ImageModel:            "qwen-image",
+		ImageEditModel:        "qwen-image-edit",
 		WriterProvider:        "deepseek",
 		CriticProvider:        "gemini",
 		ImageProvider:         "dashscope",

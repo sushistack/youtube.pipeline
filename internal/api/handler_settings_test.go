@@ -54,7 +54,8 @@ func TestSettingsHandler_GetAndPutCycle(t *testing.T) {
 	  "config": {
 	    "writer_model": "deepseek-chat-v2",
 	    "critic_model": "gemini-2.0-flash",
-	    "image_model": "qwen-max-vl",
+	    "image_model": "qwen-image",
+	    "image_edit_model": "qwen-image-edit",
 	    "tts_model": "qwen3-tts",
 	    "tts_voice": "longhua",
 	    "tts_audio_format": "wav",
@@ -116,6 +117,7 @@ func TestSettingsHandler_PutReturnsFieldDetailsForValidation(t *testing.T) {
 	    "writer_model": "writer",
 	    "critic_model": "critic",
 	    "image_model": "image",
+	    "image_edit_model": "image-edit",
 	    "tts_model": "tts",
 	    "tts_voice": "voice",
 	    "tts_audio_format": "wav",
@@ -172,7 +174,8 @@ func TestSettingsHandler_PutReturns409WhenIfMatchStale(t *testing.T) {
 	  "config": {
 	    "writer_model": "deepseek-chat-v2",
 	    "critic_model": "gemini-2.0-flash",
-	    "image_model": "qwen-max-vl",
+	    "image_model": "qwen-image",
+	    "image_edit_model": "qwen-image-edit",
 	    "tts_model": "qwen3-tts",
 	    "tts_voice": "longhua",
 	    "tts_audio_format": "wav",

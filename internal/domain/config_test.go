@@ -27,6 +27,9 @@ func TestDefaultConfig_AllFieldsPopulated(t *testing.T) {
 	if cfg.ImageModel == "" {
 		t.Error("ImageModel is empty")
 	}
+	if cfg.ImageEditModel == "" {
+		t.Error("ImageEditModel is empty")
+	}
 	if cfg.WriterProvider == "" {
 		t.Error("WriterProvider is empty")
 	}

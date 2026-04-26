@@ -33,10 +33,10 @@ import (
 
 const viteDevServerURL = "http://localhost:5173"
 
-// buildPhaseBRunner constructs a PhaseBRunner with a real TTS track backed by
-// the DashScope qwen3-tts-flash client. Returns an error if the API key is
-// missing or any construction step fails; the caller decides how to handle the
-// absence (warn + skip vs. fatal).
+// buildPhaseBRunner constructs a PhaseBRunner with real DashScope-backed
+// image and TTS tracks. Returns an error if the API key is missing or any
+// construction step fails; the caller decides how to handle the absence
+// (warn + skip vs. fatal).
 //
 // The limiter factory is injected rather than created per-call so TTS and
 // image tracks continue to share a single DashScope limiter budget across
@@ -49,6 +49,7 @@ func buildPhaseBRunner(
 	limiterFactory *llmclient.ProviderLimiterFactory,
 	runStore *db.RunStore,
 	segStore *db.SegmentStore,
+	characterResolver pipeline.CharacterResolver,
 	logger *slog.Logger,
 ) (*pipeline.PhaseBRunner, error) {
 	if dashScopeAPIKey == "" {
@@ -57,16 +58,57 @@ func buildPhaseBRunner(
 	if limiterFactory == nil {
 		return nil, fmt.Errorf("phase b runner: nil limiter factory")
 	}
+	if characterResolver == nil {
+		return nil, fmt.Errorf("phase b runner: nil character resolver")
+	}
 
-	ttsClient, err := dashscope.NewTTSClient(&http.Client{Timeout: 120 * time.Second}, dashscope.TTSClientConfig{
-		APIKey: dashScopeAPIKey,
+	imageEndpoint := dashscope.DefaultImageEndpointIntl
+	ttsEndpoint := ""
+	if cfg.DashScopeRegion == "cn-beijing" {
+		imageEndpoint = dashscope.DefaultImageEndpointCN
+		ttsEndpoint = dashscope.DefaultTTSEndpointCN
+	}
+
+	httpClient := &http.Client{Timeout: 120 * time.Second}
+
+	ttsClient, err := dashscope.NewTTSClient(httpClient, dashscope.TTSClientConfig{
+		APIKey:   dashScopeAPIKey,
+		Endpoint: ttsEndpoint,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build tts client: %w", err)
 	}
 
+	imageClient, err := dashscope.NewImageClient(httpClient, dashscope.ImageClientConfig{
+		APIKey:   dashScopeAPIKey,
+		Endpoint: imageEndpoint,
+		Clock:    clock.RealClock{},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build image client: %w", err)
+	}
+
 	// Compliance audit logging — creates {outputDir}/{runID}/audit.log.
 	auditLogger := pipeline.NewFileAuditLogger(cfg.OutputDir)
+
+	imageTrack, err := pipeline.NewImageTrack(pipeline.ImageTrackConfig{
+		OutputDir:         cfg.OutputDir,
+		Provider:          cfg.ImageProvider,
+		GenerateModel:     cfg.ImageModel,
+		EditModel:         cfg.ImageEditModel,
+		Width:             1024,
+		Height:            1024,
+		Images:            imageClient,
+		CharacterResolver: characterResolver,
+		Shots:             segStore,
+		Limiter:           limiterFactory.DashScopeImage(),
+		Clock:             clock.RealClock{},
+		Logger:            logger,
+		AuditLogger:       auditLogger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build image track: %w", err)
+	}
 
 	ttsTrack, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
 		OutputDir:       cfg.OutputDir,
@@ -86,19 +128,13 @@ func buildPhaseBRunner(
 		return nil, fmt.Errorf("build tts track: %w", err)
 	}
 
-	// Image track requires further wiring (Story 5.4); use a no-op stub here
-	// so the runner can be instantiated without the image plumbing.
-	imageTrackStub := pipeline.ImageTrack(func(_ context.Context, req pipeline.PhaseBRequest) (pipeline.ImageTrackResult, error) {
-		return pipeline.ImageTrackResult{Observation: domain.NewStageObservation(domain.StageImage)}, nil
-	})
-
 	// runStore is passed as the PhaseBRunLoader: whenever image_track or the
 	// tts_track is invoked, PhaseBRunner.prepareRequest resolves
 	// runs.frozen_descriptor from the DB and populates
 	// PhaseBRequest.FrozenDescriptorOverride. This makes AC-6 propagation
 	// load-bearing at the Phase B entry point — no future wiring can forget
 	// to thread the operator's edited descriptor.
-	return pipeline.NewPhaseBRunner(imageTrackStub, ttsTrack, nil, clock.RealClock{}, logger, nil, runStore), nil
+	return pipeline.NewPhaseBRunner(imageTrack, ttsTrack, nil, clock.RealClock{}, logger, nil, runStore), nil
 }
 
 // buildPhaseCRuntime constructs the Phase C assembly runner and metadata
@@ -142,11 +178,12 @@ func buildPhaseCRuntime(
 }
 
 type dynamicPhaseBExecutor struct {
-	settings       *service.SettingsService
-	runStore       *db.RunStore
-	segStore       *db.SegmentStore
-	logger         *slog.Logger
-	limiterFactory *llmclient.ProviderLimiterFactory
+	settings          *service.SettingsService
+	runStore          *db.RunStore
+	segStore          *db.SegmentStore
+	characterResolver pipeline.CharacterResolver
+	logger            *slog.Logger
+	limiterFactory    *llmclient.ProviderLimiterFactory
 }
 
 func (e *dynamicPhaseBExecutor) Run(ctx context.Context, req pipeline.PhaseBRequest) (pipeline.PhaseBResult, error) {
@@ -164,6 +201,7 @@ func (e *dynamicPhaseBExecutor) Run(ctx context.Context, req pipeline.PhaseBRequ
 		e.limiterFactory,
 		e.runStore,
 		e.segStore,
+		e.characterResolver,
 		e.logger,
 	)
 	if err != nil {
@@ -234,12 +272,23 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 		return fmt.Errorf("build limiter factory: %w", err)
 	}
 
+	// Character service must be constructed before the Phase B executor so
+	// it can be threaded into image_track as the CharacterResolver port.
+	// Without this, character-shot Edit calls have no resolved reference URL
+	// and image_track surfaces the "selected character has no image
+	// reference" validation error before any provider call.
+	characterCache := db.NewCharacterCacheStore(database)
+	characterClient := service.NewDuckDuckGoClient(nil)
+	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
+	characterSvc.SetDescriptorRecorder(decisionStore)
+
 	engine.SetPhaseBExecutor(&dynamicPhaseBExecutor{
-		settings:       settingsSvc,
-		runStore:       store,
-		segStore:       segStore,
-		logger:         logger,
-		limiterFactory: limiterFactory,
+		settings:          settingsSvc,
+		runStore:          store,
+		segStore:          segStore,
+		characterResolver: characterSvc,
+		logger:            logger,
+		limiterFactory:    limiterFactory,
 	})
 
 	// Phase C runs assembly + metadata entry. Wiring it here makes
@@ -253,10 +302,6 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	engine.SetPhaseCRunner(phaseCRunner)
 	engine.SetPhaseCMetadataBuilder(metaBuilder)
 	hitlSvc := service.NewHITLService(store, decisionStore, logger)
-	characterCache := db.NewCharacterCacheStore(database)
-	characterClient := service.NewDuckDuckGoClient(nil)
-	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
-	characterSvc.SetDescriptorRecorder(decisionStore)
 	sceneSvc := service.NewSceneService(store, segStore, decisionStore, clock.RealClock{})
 	sceneSvc.SetSceneRegenerator(service.NewNoOpSceneRegenerator(segStore))
 
