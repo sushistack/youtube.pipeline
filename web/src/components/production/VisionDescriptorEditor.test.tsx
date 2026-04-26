@@ -136,6 +136,71 @@ describe('VisionDescriptorEditor', () => {
     expect(textarea.value).toBe('operator edits')
   })
 
+  it('Edit descriptor toggles textarea visibility and switches button label', async () => {
+    const user = userEvent.setup()
+    render(
+      <VisionDescriptorEditor
+        onConfirm={vi.fn()}
+        onDescriptorChange={vi.fn()}
+        prefill="readable"
+      />,
+    )
+    expect(screen.queryByLabelText(/vision descriptor draft$/i)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /edit descriptor/i }))
+    expect(screen.getByLabelText(/vision descriptor draft$/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /save edit/i })).toBeInTheDocument()
+  })
+
+  it('Save edit syncs draft to parent and returns to read mode', async () => {
+    const user = userEvent.setup()
+    const on_change = vi.fn()
+    render(
+      <VisionDescriptorEditor
+        onConfirm={vi.fn()}
+        onDescriptorChange={on_change}
+        prefill="initial"
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /edit descriptor/i }))
+    const textarea = screen.getByLabelText(/vision descriptor draft$/i) as HTMLTextAreaElement
+    await user.clear(textarea)
+    await user.type(textarea, '  edited via button  ')
+    on_change.mockClear()
+    await user.click(screen.getByRole('button', { name: /save edit/i }))
+    expect(on_change).toHaveBeenCalledWith('edited via button')
+    // Read-mode is restored — the role=button div with aria-label "Vision Descriptor draft. Press Tab..." is back.
+    expect(
+      screen.getByRole('button', { name: /vision descriptor draft\. press tab/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('Confirm & continue calls onConfirm', async () => {
+    const user = userEvent.setup()
+    const on_confirm = vi.fn()
+    render(
+      <VisionDescriptorEditor
+        onConfirm={on_confirm}
+        onDescriptorChange={vi.fn()}
+        prefill="initial"
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /confirm & continue/i }))
+    expect(on_confirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('Confirm & continue is disabled and shows Saving label while submitting', () => {
+    render(
+      <VisionDescriptorEditor
+        is_submitting
+        onConfirm={vi.fn()}
+        onDescriptorChange={vi.fn()}
+        prefill="initial"
+      />,
+    )
+    const primary = screen.getByRole('button', { name: /saving/i })
+    expect(primary).toBeDisabled()
+  })
+
   it('resets draft and revert target when prefill prop changes', async () => {
     const { rerender } = render(
       <VisionDescriptorEditor

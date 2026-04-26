@@ -327,9 +327,6 @@ export function CharacterPick({ run }: CharacterPickProps) {
           )}
           {candidates.length > 0 && (
             <>
-              <p className="character-pick__hint">
-                Press 1–9 or 0 to select, Enter to confirm, Esc to search again.
-              </p>
               <CharacterGrid
                 candidates={candidates}
                 on_confirm={handle_grid_confirm}
@@ -337,6 +334,26 @@ export function CharacterPick({ run }: CharacterPickProps) {
                 on_select={set_selected_candidate_id}
                 selected_candidate_id={selected_candidate_id}
               />
+              <footer className="character-pick__grid-actions">
+                <button
+                  className="character-pick__secondary"
+                  onClick={handle_grid_escape}
+                  type="button"
+                >
+                  Search again
+                </button>
+                <p className="character-pick__hint character-pick__hint--inline">
+                  1–9/0 select · Enter confirm · Esc search again
+                </p>
+                <button
+                  className="character-pick__primary"
+                  disabled={!selected_candidate_id}
+                  onClick={handle_grid_confirm}
+                  type="button"
+                >
+                  Confirm selection
+                </button>
+              </footer>
             </>
           )}
         </>

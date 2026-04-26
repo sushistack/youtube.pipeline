@@ -80,6 +80,15 @@ export function VisionDescriptorEditor({
     onDescriptorChange(draft.trim())
   }, [draft, onDescriptorChange])
 
+  const handle_edit_toggle = useCallback(() => {
+    if (edit_mode) {
+      onDescriptorChange(draft.trim())
+      set_edit_mode(false)
+    } else {
+      set_edit_mode(true)
+    }
+  }, [draft, edit_mode, onDescriptorChange])
+
   return (
     <section
       aria-label="Vision Descriptor editor"
@@ -117,9 +126,33 @@ export function VisionDescriptorEditor({
         </div>
       )}
 
-      <p className="vision-descriptor__hint">
-        Tab to edit · Ctrl+Z to revert · Enter to confirm
-      </p>
+      <footer className="vision-descriptor__actions">
+        <button
+          className="vision-descriptor__secondary"
+          disabled={is_submitting}
+          onClick={handle_edit_toggle}
+          // Keep textarea focused during the click so the natural blur path
+          // (handle_blur → set_edit_mode(false)) cannot race with this
+          // onClick's stale closure and silently re-enter edit mode.
+          onMouseDown={(e) => {
+            if (edit_mode) e.preventDefault()
+          }}
+          type="button"
+        >
+          {edit_mode ? 'Save edit' : 'Edit descriptor'}
+        </button>
+        <p className="vision-descriptor__hint vision-descriptor__hint--inline">
+          Tab edit · Ctrl+Z revert · Enter confirm
+        </p>
+        <button
+          className="vision-descriptor__primary"
+          disabled={is_submitting}
+          onClick={onConfirm}
+          type="button"
+        >
+          {is_submitting ? 'Saving…' : 'Confirm & continue'}
+        </button>
+      </footer>
     </section>
   )
 }

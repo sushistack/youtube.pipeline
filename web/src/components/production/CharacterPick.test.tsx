@@ -266,6 +266,63 @@ describe('CharacterPick', () => {
     expect(prefilledInput.value).toBe('scp-049-prior')
   })
 
+  it('renders Confirm selection disabled until candidate clicked, then advances to descriptor phase on click', async () => {
+    spyFetch((url) => {
+      if (url.includes('/characters/descriptor')) {
+        return makeDescriptorResponse('auto-desc-button', null)
+      }
+      return makeCandidatesResponse(10)
+    })
+
+    const run = makeRun({ character_query_key: 'scp-049' })
+    const user = userEvent.setup()
+    renderWithProviders(<CharacterPick run={run} />)
+
+    await screen.findByTestId('character-grid')
+    const confirm_btn = screen.getByRole('button', { name: /confirm selection/i })
+    expect(confirm_btn).toBeDisabled()
+
+    await user.click(screen.getByTestId('character-grid-cell-2'))
+    expect(confirm_btn).toBeEnabled()
+
+    await user.click(confirm_btn)
+    await waitFor(() => {
+      expect(screen.getByText('auto-desc-button')).toBeInTheDocument()
+    })
+  })
+
+  it('renders Search again that returns to search phase and clears selection', async () => {
+    spyFetch((url) => {
+      if (url.includes('/characters/descriptor')) {
+        return makeDescriptorResponse('auto-desc', null)
+      }
+      return makeCandidatesResponse(10)
+    })
+
+    const run = makeRun({ character_query_key: 'scp-049' })
+    const user = userEvent.setup()
+    renderWithProviders(<CharacterPick run={run} />)
+
+    await screen.findByTestId('character-grid')
+    await user.click(screen.getByTestId('character-grid-cell-3'))
+    expect(screen.getByTestId('character-grid-cell-3')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+
+    await user.click(screen.getByRole('button', { name: /search again/i }))
+    const input = await screen.findByLabelText(/search query/i)
+    expect(input).toBeInTheDocument()
+
+    await user.type(input, 'SCP-049')
+    await user.click(screen.getByRole('button', { name: /^search$/i }))
+    const grid_again = await screen.findByTestId('character-grid')
+    const selected = within(grid_again)
+      .getAllByRole('option')
+      .filter((c) => c.getAttribute('aria-selected') === 'true')
+    expect(selected).toHaveLength(0)
+  })
+
   it('confirm triggers pickCharacterWithDescriptor mutation', async () => {
     const run = makeRun({ character_query_key: 'scp-049' })
     const { calls } = spyFetch((url, init) => {
