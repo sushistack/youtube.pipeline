@@ -71,6 +71,13 @@ type Engine struct {
 	runs           RunStore
 	segments       SegmentStore
 	sessions       HITLSessionCleaner
+	// hitlSessions is the full session store used to upsert hitl_sessions
+	// rows when Advance transitions a run INTO a HITL stage (scenario_review,
+	// batch_review, metadata_ack). Optional — nil keeps the legacy behavior
+	// where rows are only DELETED on Resume out of HITL state, leaving the
+	// row missing on transition (manifests as the UI seeing "no session" and
+	// failing to render scenes).
+	hitlSessions   HITLSessionStore
 	phaseA         PhaseAExecutor
 	phaseB         PhaseBExecutor
 	phaseC         *PhaseCRunner
@@ -122,6 +129,32 @@ func (e *Engine) SetPhaseCMetadataBuilder(builder MetadataBuilder) {
 // stage-advance boundary. Nil disables promotion (acceptable for tests).
 func (e *Engine) SetSettingsPromoter(p SettingsPromoter) {
 	e.settings = p
+}
+
+// SetHITLSessionStore wires the full HITL session store used to upsert
+// hitl_sessions rows when Advance transitions a run INTO a HITL stage
+// (scenario_review, batch_review, metadata_ack). Without this, the row stays
+// missing after the transition and the UI shows "no session" + empty scene
+// list. Nil disables the upsert (legacy behavior; tests/tools).
+func (e *Engine) SetHITLSessionStore(s HITLSessionStore) {
+	e.hitlSessions = s
+}
+
+// upsertHITLSessionAtTransition is the post-transition hook that creates
+// the hitl_sessions row when a run lands in a HITL wait state. Best-effort:
+// failures are logged but never override the transition's success. No-op
+// when hitlSessions is unset or stage is not a HITL stage.
+func (e *Engine) upsertHITLSessionAtTransition(ctx context.Context, runID string, stage domain.Stage) {
+	if e.hitlSessions == nil {
+		return
+	}
+	if !IsHITLStage(stage) {
+		return
+	}
+	if _, err := UpsertSessionFromState(ctx, e.hitlSessions, e.clock, runID, stage, domain.StatusWaiting); err != nil {
+		e.logger.Warn("upsert hitl session at transition failed",
+			"run_id", runID, "stage", string(stage), "error", err.Error())
+	}
 }
 
 // promoteSettingsAtBoundary fires the queued-settings promoter at a stage
@@ -253,6 +286,10 @@ func (e *Engine) advancePhaseA(ctx context.Context, runID string, run *domain.Ru
 	if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
 		return fmt.Errorf("advance %s: apply phase a success result: %w", runID, err)
 	}
+	// HITL-row upsert MUST follow ApplyPhaseAResult: the runs row drives
+	// hitl_service's IsHITLStage check, so the session row is meaningless
+	// until the run is actually in scenario_review/waiting.
+	e.upsertHITLSessionAtTransition(ctx, runID, domain.StageScenarioReview)
 	return nil
 }
 
@@ -293,6 +330,7 @@ func (e *Engine) runPhaseB(ctx context.Context, runID string, run *domain.Run, s
 	if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
 		return fmt.Errorf("apply phase b success result: %w", err)
 	}
+	e.upsertHITLSessionAtTransition(ctx, runID, domain.StageBatchReview)
 	return nil
 }
 
@@ -364,6 +402,7 @@ func (e *Engine) runPhaseC(ctx context.Context, runID string, run *domain.Run, s
 		e.logger.Warn("phase c metadata builder not configured — compliance files skipped",
 			"run_id", runID)
 	}
+	e.upsertHITLSessionAtTransition(ctx, runID, nextStage)
 	return nil
 }
 

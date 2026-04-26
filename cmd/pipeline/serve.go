@@ -221,6 +221,7 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 
 	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
 	engine.SetSettingsPromoter(settingsSvc)
+	engine.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore))
 	svc := service.NewRunService(store, engine)
 	svc.SetSettingsRuntime(settingsSvc)
 
