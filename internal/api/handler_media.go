@@ -19,6 +19,15 @@ type SegmentLookup interface {
 	GetByRunIDAndSceneIndex(ctx context.Context, runID string, sceneIndex int) (*domain.Episode, error)
 }
 
+// EffectiveOutputDirResolver returns the OutputDir that the running pipeline
+// is currently writing to. *service.SettingsService satisfies this
+// structurally via LoadEffectiveRuntimeConfig. MediaHandler uses it so the
+// path it serves from always matches the path Phase B / Phase C wrote to —
+// even when the operator updates settings mid-life.
+type EffectiveOutputDirResolver interface {
+	LoadEffectiveRuntimeConfig(ctx context.Context) (domain.PipelineConfig, error)
+}
+
 // MediaHandler serves per-scene media files (TTS audio, generated images) by
 // resolving the segment row's relative path under {outputDir}/{runID}/. Run ID
 // is validated via the runs store before any filesystem work, and the resolved
@@ -26,14 +35,26 @@ type SegmentLookup interface {
 // crafted relative path with `..` segments cannot escape into the rest of the
 // filesystem.
 type MediaHandler struct {
-	runs      RunArtifactsStore
-	segments  SegmentLookup
-	outputDir string
+	runs       RunArtifactsStore
+	segments   SegmentLookup
+	resolver   EffectiveOutputDirResolver
+	fallback   string
 }
 
-// NewMediaHandler constructs a MediaHandler.
-func NewMediaHandler(runs RunArtifactsStore, segments SegmentLookup, outputDir string) *MediaHandler {
-	return &MediaHandler{runs: runs, segments: segments, outputDir: outputDir}
+// NewMediaHandler constructs a MediaHandler. resolver is consulted at every
+// request for the active OutputDir; fallback is used when the resolver is nil
+// or returns an empty string (e.g. settings bootstrap not yet run).
+func NewMediaHandler(runs RunArtifactsStore, segments SegmentLookup, resolver EffectiveOutputDirResolver, fallback string) *MediaHandler {
+	return &MediaHandler{runs: runs, segments: segments, resolver: resolver, fallback: fallback}
+}
+
+func (h *MediaHandler) outputDir(ctx context.Context) string {
+	if h.resolver != nil {
+		if cfg, err := h.resolver.LoadEffectiveRuntimeConfig(ctx); err == nil && cfg.OutputDir != "" {
+			return cfg.OutputDir
+		}
+	}
+	return h.fallback
 }
 
 // Audio handles GET /api/runs/{id}/scenes/{idx}/audio.
@@ -60,7 +81,70 @@ func (h *MediaHandler) Audio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	abs, ok := resolveRunRelativePath(h.outputDir, runID, *seg.TTSPath)
+	abs, ok := resolveRunRelativePath(h.outputDir(r.Context()), runID, *seg.TTSPath)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	f, err := os.Open(abs)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	contentType := mime.TypeByExtension(filepath.Ext(abs))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeContent(w, r, filepath.Base(abs), stat.ModTime(), f)
+}
+
+// Image handles GET /api/runs/{id}/scenes/{idx}/shots/{shot}/image where
+// shot is the 1-based position in the segment's Shots array. 404 covers all
+// missing-resource cases (run/segment/shot not found, file missing) so the
+// client surfaces a single image-unavailable state regardless of which step
+// failed.
+func (h *MediaHandler) Image(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	idxStr := r.PathValue("idx")
+	shotStr := r.PathValue("shot")
+	sceneIndex, err := strconv.Atoi(idxStr)
+	if err != nil || sceneIndex < 0 {
+		http.NotFound(w, r)
+		return
+	}
+	shotPos, err := strconv.Atoi(shotStr)
+	if err != nil || shotPos <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	if _, err := h.runs.Get(r.Context(), runID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	seg, err := h.segments.GetByRunIDAndSceneIndex(r.Context(), runID, sceneIndex)
+	if err != nil || seg == nil || shotPos > len(seg.Shots) {
+		http.NotFound(w, r)
+		return
+	}
+	shot := seg.Shots[shotPos-1]
+	if strings.TrimSpace(shot.ImagePath) == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	abs, ok := resolveRunRelativePath(h.outputDir(r.Context()), runID, shot.ImagePath)
 	if !ok {
 		http.NotFound(w, r)
 		return

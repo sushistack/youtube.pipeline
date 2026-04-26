@@ -253,9 +253,26 @@ func (e *Engine) advancePhaseA(ctx context.Context, runID string, run *domain.Ru
 		return fmt.Errorf("advance %s: %w: phase a executor is nil", runID, domain.ErrValidation)
 	}
 
+	// Transition to research/running immediately so the UI stops showing the
+	// "pending" guidance card and can display an in-progress indicator instead.
+	// Terminal states (scenario_review/waiting or write/failed) are written by
+	// ApplyPhaseAResult at the end of the chain.
+	if err := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
+		Stage:  domain.StageResearch,
+		Status: domain.StatusRunning,
+	}); err != nil {
+		return fmt.Errorf("advance %s: mark running: %w", runID, err)
+	}
+
 	state := &agents.PipelineState{
 		RunID: run.ID,
 		SCPID: run.SCPID,
+		OnSubStageStart: func(ctx context.Context, ps agents.PipelineStage) error {
+			return e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
+				Stage:  ps.DomainStage(),
+				Status: domain.StatusRunning,
+			})
+		},
 	}
 	if err := e.phaseA.Run(ctx, state); err != nil {
 		return fmt.Errorf("advance %s: %w", runID, err)
@@ -320,6 +337,17 @@ func (e *Engine) advancePhaseA(ctx context.Context, runID string, run *domain.Ru
 // Callers are responsible for promoting settings and loading segments before
 // calling this method.
 func (e *Engine) runPhaseB(ctx context.Context, runID string, run *domain.Run, segments []*domain.Episode) error {
+	// Mark running before dispatching so the UI stops showing the "Generate
+	// Assets" button and reflects in-progress state while tracks execute.
+	if err := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
+		Stage:        run.Stage,
+		Status:       domain.StatusRunning,
+		CriticScore:  run.CriticScore,
+		ScenarioPath: run.ScenarioPath,
+		RetryReason:  run.RetryReason,
+	}); err != nil {
+		return fmt.Errorf("mark phase b running: %w", err)
+	}
 	req := PhaseBRequest{
 		RunID:        runID,
 		Stage:        run.Stage,
@@ -636,7 +664,7 @@ func (e *Engine) ExecuteResume(ctx context.Context, runID string) error {
 }
 
 // validateResumable returns ErrConflict when the run cannot be resumed.
-// Resumable states are: status ∈ {failed, waiting} AND stage != complete.
+// Resumable states are: status ∈ {failed, waiting, cancelled} AND stage != complete.
 // Everything else is a conflict. Stage validity is checked separately by
 // the caller (IsValid) before this function is invoked.
 func validateResumable(run *domain.Run) error {
@@ -644,7 +672,7 @@ func validateResumable(run *domain.Run) error {
 		return fmt.Errorf("%w: run already at complete stage", domain.ErrConflict)
 	}
 	switch run.Status {
-	case domain.StatusFailed, domain.StatusWaiting:
+	case domain.StatusFailed, domain.StatusWaiting, domain.StatusCancelled:
 		return nil
 	case domain.StatusPending:
 		return fmt.Errorf("%w: run has not started; use create/advance to begin", domain.ErrConflict)
@@ -652,8 +680,6 @@ func validateResumable(run *domain.Run) error {
 		return fmt.Errorf("%w: run already in progress", domain.ErrConflict)
 	case domain.StatusCompleted:
 		return fmt.Errorf("%w: run already completed", domain.ErrConflict)
-	case domain.StatusCancelled:
-		return fmt.Errorf("%w: run was cancelled", domain.ErrConflict)
 	}
 	return fmt.Errorf("%w: unknown status %q", domain.ErrConflict, run.Status)
 }

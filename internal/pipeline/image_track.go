@@ -2,18 +2,27 @@ package pipeline
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline/agents"
 )
+
+// referenceImageMaxBytes caps the reference image download. DashScope rejects
+// payloads above ~10 MiB; we stop well below that to keep request bodies sane
+// after base64 expansion (≈4/3× the raw size).
+const referenceImageMaxBytes = 8 << 20
 
 // CharacterResolver resolves the operator-selected character candidate for a
 // run via the Story 5.3 handoff contract. Image-track callers depend on this
@@ -37,6 +46,13 @@ type Limiter interface {
 	Do(ctx context.Context, fn func(context.Context) error) error
 }
 
+// ReferenceImageFetcher resolves a candidate reference URL into a value the
+// downstream image-edit provider can ingest. Production wires this to a
+// fetcher that downloads and re-encodes as a base64 data URL (DashScope
+// cannot fetch DDG/Bing-CDN URLs). When nil, the URL is passed through
+// unchanged — used by tests with mock providers that do not actually fetch.
+type ReferenceImageFetcher func(ctx context.Context, url string) (string, error)
+
 // ImageTrackConfig bundles the dependencies required to build an ImageTrack
 // function. Provider/model identifiers are config-driven per AC-4 so business
 // logic does not hardcode DashScope model names.
@@ -57,6 +73,9 @@ type ImageTrackConfig struct {
 	// audit entries are written after each successful Generate/Edit call.
 	// Nil is allowed (no-op guard).
 	AuditLogger domain.AuditLogger
+	// RefImageFetcher rewrites the selected character's image URL before it is
+	// handed to the image-edit provider. Nil disables rewriting.
+	RefImageFetcher ReferenceImageFetcher
 }
 
 // NewImageTrack constructs the Phase B image track from cfg. The returned
@@ -201,6 +220,20 @@ func runImageTrack(
 		}
 		if selected == nil || selected.ImageURL == "" {
 			return ImageTrackResult{}, fmt.Errorf("image track: %w: selected character has no image reference", domain.ErrValidation)
+		}
+		if cfg.RefImageFetcher != nil {
+			// DashScope cannot fetch DDG/Bing-CDN URLs directly (redirects, UA
+			// gating). Production wires a fetcher that downloads the reference
+			// once and rewrites to a base64 data URL the qwen-image-edit
+			// endpoint accepts inline.
+			rewritten, fetchErr := cfg.RefImageFetcher(ctx, selected.ImageURL)
+			if fetchErr != nil {
+				return ImageTrackResult{}, fmt.Errorf("image track: prepare reference image: %w", fetchErr)
+			}
+			// Operate on a local copy so the cache row stays untouched.
+			copy := *selected
+			copy.ImageURL = rewritten
+			selected = &copy
 		}
 	}
 
@@ -365,6 +398,65 @@ func loadScenarioState(req PhaseBRequest) (*agents.PipelineState, error) {
 		return nil, fmt.Errorf("image track: %w: decode scenario.json: %v", domain.ErrValidation, err)
 	}
 	return &state, nil
+}
+
+// FetchReferenceImageAsDataURL downloads imageURL and returns a base64 data
+// URL (`data:<mime>;base64,...`) suitable for DashScope's ref_imgs field.
+// DashScope's text2image endpoint cannot fetch arbitrary external URLs (DDG,
+// Bing CDN) due to redirect chains and User-Agent gating, but it accepts
+// inlined data URLs. The size cap protects request bodies from blowing past
+// DashScope's payload limits after base64 expansion.
+func FetchReferenceImageAsDataURL(ctx context.Context, imageURL string) (string, error) {
+	if strings.HasPrefix(imageURL, "data:") {
+		// Already inlined — pass through.
+		return imageURL, nil
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create reference fetch request: %w", err)
+	}
+	// Some image hosts (Bing CDN among them) refuse default Go UA.
+	httpReq.Header.Set("User-Agent", "Mozilla/5.0 youtube.pipeline reference fetch")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("fetch reference: %w: %v", domain.ErrStageFailed, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("fetch reference: %w: status %d", domain.ErrStageFailed, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, referenceImageMaxBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("read reference body: %w: %v", domain.ErrStageFailed, err)
+	}
+	if len(body) == 0 {
+		return "", fmt.Errorf("%w: reference image is empty", domain.ErrValidation)
+	}
+	if len(body) > referenceImageMaxBytes {
+		return "", fmt.Errorf("%w: reference image exceeds %d byte cap", domain.ErrValidation, referenceImageMaxBytes)
+	}
+
+	mime := resp.Header.Get("Content-Type")
+	// Strip "; charset=..." or other parameters; some hosts return text/html for
+	// blocked content, which would corrupt the data URL — sniff to verify.
+	if idx := strings.IndexByte(mime, ';'); idx >= 0 {
+		mime = strings.TrimSpace(mime[:idx])
+	}
+	if !strings.HasPrefix(mime, "image/") {
+		mime = http.DetectContentType(body)
+		if idx := strings.IndexByte(mime, ';'); idx >= 0 {
+			mime = strings.TrimSpace(mime[:idx])
+		}
+	}
+	if !strings.HasPrefix(mime, "image/") {
+		return "", fmt.Errorf("%w: reference url returned non-image content type %q", domain.ErrValidation, mime)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(body)
+	return "data:" + mime + ";base64," + encoded, nil
 }
 
 // buildCharacterMap returns a scene_num → containsCharacter lookup using the

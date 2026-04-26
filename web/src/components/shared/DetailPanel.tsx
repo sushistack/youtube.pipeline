@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { ReviewItem } from '../../contracts/runContracts'
+import { useEffect, useState } from 'react'
+import type { ReviewItem, Shot } from '../../contracts/runContracts'
 import { AudioPlayer } from './AudioPlayer'
 
 interface DetailPanelProps {
@@ -10,6 +10,105 @@ interface DetailPanelProps {
 interface DiffPart {
   changed: boolean
   text: string
+}
+
+interface ShotCarouselProps {
+  scene_index: number
+  shots: Shot[]
+  variant: 'default' | 'high-leverage'
+}
+
+function ShotCarousel({ scene_index, shots, variant }: ShotCarouselProps) {
+  const [active, set_active] = useState(0)
+  const safe_active = shots.length === 0 ? 0 : Math.min(active, shots.length - 1)
+  // Reset when the scene changes — `key` on the parent <DetailPanel> already
+  // remounts the component, but switching version (current ↔ previous) may
+  // shrink the array under the cursor without remount.
+  useEffect(() => {
+    if (active >= shots.length) {
+      set_active(0)
+    }
+  }, [active, shots.length])
+  const shot = shots[safe_active]
+  const has_image = Boolean(shot?.image_path)
+
+  function go_prev() {
+    if (shots.length === 0) return
+    set_active((current) => (current - 1 + shots.length) % shots.length)
+  }
+
+  function go_next() {
+    if (shots.length === 0) return
+    set_active((current) => (current + 1) % shots.length)
+  }
+
+  return (
+    <section className="shot-carousel" data-variant={variant} aria-label="Shot carousel">
+      <div className="shot-carousel__viewport">
+        {has_image ? (
+          <img
+            alt={`Scene ${scene_index + 1} shot ${safe_active + 1}`}
+            className="shot-carousel__image"
+            src={shot.image_path}
+          />
+        ) : (
+          <div className="shot-carousel__fallback">
+            <svg aria-hidden="true" fill="none" height="40" viewBox="0 0 40 40" width="40">
+              <rect height="26" rx="3" stroke="currentColor" strokeWidth="1.5" width="34" x="3" y="9" />
+              <circle cx="13" cy="19" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M3 28l8-7 6 6 5-4 9 8" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.5" />
+            </svg>
+            <span>{shots.length === 0 ? 'No shots yet' : 'No image yet'}</span>
+          </div>
+        )}
+        {shots.length > 1 ? (
+          <>
+            <button
+              type="button"
+              aria-label="Previous shot"
+              className="shot-carousel__nav shot-carousel__nav--prev"
+              onClick={go_prev}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              aria-label="Next shot"
+              className="shot-carousel__nav shot-carousel__nav--next"
+              onClick={go_next}
+            >
+              ›
+            </button>
+          </>
+        ) : null}
+      </div>
+      <div className="shot-carousel__footer">
+        <span className="shot-carousel__counter">
+          {shots.length === 0 ? 'No shots' : `Shot ${safe_active + 1} / ${shots.length}`}
+        </span>
+        {shot?.transition ? (
+          <span className="shot-carousel__transition">{shot.transition}</span>
+        ) : null}
+        {shots.length > 1 ? (
+          <ul className="shot-carousel__indicators" role="tablist" aria-label="Shot indicators">
+            {shots.map((_, index) => (
+              <li key={index}>
+                <button
+                  type="button"
+                  className="shot-carousel__indicator"
+                  data-active={String(index === safe_active)}
+                  onClick={() => set_active(index)}
+                  aria-label={`Show shot ${index + 1}`}
+                  role="tab"
+                  aria-selected={index === safe_active}
+                />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </section>
+  )
 }
 
 function buildDiffParts(current: string, previous: string): DiffPart[] {
@@ -38,7 +137,6 @@ function scoreTone(score: number | null | undefined) {
 export function DetailPanel({ is_regenerating = false, item }: DetailPanelProps) {
   const [version, setVersion] = useState<'current' | 'previous'>('current')
   const activeVersion = version === 'previous' && item.previous_version ? item.previous_version : item
-  const heroShot = activeVersion.shots[0] ?? item.shots[0]
   const narrationDiff = item.previous_version
     ? buildDiffParts(item.narration, item.previous_version.narration)
     : []
@@ -124,31 +222,22 @@ export function DetailPanel({ is_regenerating = false, item }: DetailPanelProps)
         ) : null}
       </header>
 
-      <section
-        className="detail-panel__hero"
-        data-variant={item.high_leverage ? 'high-leverage' : 'default'}
-      >
-        {item.clip_path && version === 'current' ? (
+      {item.clip_path && version === 'current' ? (
+        <section
+          className="detail-panel__hero"
+          data-variant={item.high_leverage ? 'high-leverage' : 'default'}
+        >
           <video className="detail-panel__video" controls src={item.clip_path}>
             <track kind="captions" />
           </video>
-        ) : heroShot?.image_path ? (
-          <img
-            alt={`Scene ${item.scene_index + 1} hero`}
-            className="detail-panel__hero-image"
-            src={heroShot.image_path}
-          />
-        ) : (
-          <div className="detail-panel__hero-fallback">
-          <svg aria-hidden="true" className="detail-panel__hero-placeholder-icon" fill="none" height="40" viewBox="0 0 40 40" width="40">
-            <rect height="26" rx="3" stroke="currentColor" strokeWidth="1.5" width="34" x="3" y="9" />
-            <circle cx="13" cy="19" r="3.5" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M3 28l8-7 6 6 5-4 9 8" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.5" />
-          </svg>
-          <span>No image yet</span>
-        </div>
-        )}
-      </section>
+        </section>
+      ) : (
+        <ShotCarousel
+          scene_index={item.scene_index}
+          shots={activeVersion.shots}
+          variant={item.high_leverage ? 'high-leverage' : 'default'}
+        />
+      )}
 
       <section className="detail-panel__body">
         <AudioPlayer
@@ -269,28 +358,6 @@ export function DetailPanel({ is_regenerating = false, item }: DetailPanelProps)
         </section>
       ) : null}
 
-      {!item.clip_path ? (
-        <section className="detail-panel__gallery" aria-label="Shot gallery">
-          {activeVersion.shots.map((shot, index) => (
-            <div key={`${item.scene_index}-shot-${index}`} className="detail-panel__gallery-item">
-              {shot.image_path ? (
-                <img
-                  alt={`Scene ${item.scene_index + 1} shot ${index + 1}`}
-                  src={shot.image_path}
-                />
-              ) : (
-                <div className="detail-panel__hero-fallback">Shot {index + 1}</div>
-              )}
-              <div className="detail-panel__gallery-meta">
-                <span>Shot {index + 1}</span>
-                {shot.transition ? (
-                  <span className="detail-panel__transition-chip">{shot.transition}</span>
-                ) : null}
-              </div>
-            </div>
-          ))}
-        </section>
-      ) : null}
     </article>
   )
 }

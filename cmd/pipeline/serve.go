@@ -120,8 +120,12 @@ func buildPhaseBRunner(
 		Provider:          cfg.ImageProvider,
 		GenerateModel:     cfg.ImageModel,
 		EditModel:         cfg.ImageEditModel,
-		Width:             1024,
-		Height:            1024,
+		// 16:9 at qwen-image-2.0's recommended resolution (2688×1536 =
+		// 4,128,768 px, just under the 2048² total-pixel cap). YouTube's native
+		// frame is 16:9; keeping image generation aligned avoids letterboxing
+		// when Phase C composites them with ken_burns.
+		Width:             2688,
+		Height:            1536,
 		Images:            imageClient,
 		CharacterResolver: characterResolver,
 		Shots:             segStore,
@@ -129,6 +133,7 @@ func buildPhaseBRunner(
 		Clock:             clock.RealClock{},
 		Logger:            logger,
 		AuditLogger:       auditLogger,
+		RefImageFetcher:   pipeline.FetchReferenceImageAsDataURL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build image track: %w", err)
@@ -524,7 +529,7 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 
 	limiterFactory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
 		DashScope: llmclient.LimitConfig{RequestsPerMinute: 10, MaxConcurrent: 2, AcquireTimeout: 30 * time.Second},
-		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
+		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 5 * time.Minute},
 		Gemini:    llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
 	}, clock.RealClock{})
 	if err != nil {
@@ -539,6 +544,7 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	characterCache := db.NewCharacterCacheStore(database)
 	characterClient := service.NewDuckDuckGoClient(nil)
 	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
+	characterSvc.SetOutputDir(cfg.OutputDir)
 	characterSvc.SetDescriptorRecorder(decisionStore)
 
 	engine.SetPhaseBExecutor(&dynamicPhaseBExecutor{

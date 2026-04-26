@@ -61,7 +61,7 @@ func runResume(cmd *cobra.Command, runID string, force bool) error {
 	engine.SetNarrationSeeder(segStore)
 	limiterFactory, limiterErr := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
 		DashScope: llmclient.LimitConfig{RequestsPerMinute: 10, MaxConcurrent: 2, AcquireTimeout: 30 * time.Second},
-		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
+		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 5 * time.Minute},
 		Gemini:    llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
 	}, clock.RealClock{})
 	if limiterErr != nil {

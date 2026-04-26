@@ -220,6 +220,23 @@ func (r *PhaseARunner) Run(ctx context.Context, state *agents.PipelineState) err
 			return fmt.Errorf("phase a: stage=%s: %w", entry.ps.String(), err)
 		}
 
+		// Notify the engine that this sub-stage is starting so it can persist
+		// run.stage to the DB and surface progress via the SSE status stream.
+		// StageResearcher is skipped (engine already wrote research/running
+		// before calling Run). StagePostWriterCritic is skipped because it
+		// shares domain.StageCritic with the final critic, which would make
+		// the UI jump to "Critic pass" and back — staying on "write" is less
+		// confusing.
+		if state.OnSubStageStart != nil &&
+			entry.ps != agents.StageResearcher &&
+			entry.ps != agents.StagePostWriterCritic {
+			if err := state.OnSubStageStart(ctx, entry.ps); err != nil {
+				r.logger.Warn("substage progress update failed",
+					"run_id", state.RunID, "pipeline_stage", entry.ps.String(), "error", err.Error())
+				// Non-fatal: the run continues; the UI just misses this tick.
+			}
+		}
+
 		// Deterministic agents: load from cache if available, skip invocation.
 		if entry.ps == agents.StageResearcher || entry.ps == agents.StageStructurer {
 			if r.tryLoadCache(entry.ps, runDir, state) {

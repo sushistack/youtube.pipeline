@@ -149,7 +149,9 @@ func (s *CharacterService) Pick(ctx context.Context, runID, candidateID, frozenD
 	if trimmed := strings.TrimSpace(frozenDescriptor); trimmed != "" {
 		descriptorPtr = &trimmed
 	}
-	if err := s.runs.ApplyCharacterPick(ctx, runID, queryKey, candidateID, descriptorPtr, nextStage, pipeline.StatusForStage(nextStage)); err != nil {
+	// Park at image/waiting so the operator can manually trigger asset generation.
+	// The /advance endpoint runs Phase B when the operator clicks "Generate Assets".
+	if err := s.runs.ApplyCharacterPick(ctx, runID, queryKey, candidateID, descriptorPtr, nextStage, domain.StatusWaiting); err != nil {
 		return nil, fmt.Errorf("character pick: persist selection: %w", err)
 	}
 

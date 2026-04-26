@@ -35,10 +35,12 @@ export function FailureBanner({ on_dismiss, run }: FailureBannerProps) {
     },
   })
 
+  const is_resumable = run.status === 'failed' || run.status === 'cancelled'
+
   useKeyboardShortcuts(
     [
       {
-        enabled: run.status === 'failed' && !resume_mutation.isPending,
+        enabled: is_resumable && !resume_mutation.isPending,
         handler: () => {
           resume_mutation.mutate()
         },
@@ -47,7 +49,7 @@ export function FailureBanner({ on_dismiss, run }: FailureBannerProps) {
         scope: 'context',
       },
       {
-        enabled: run.status === 'failed',
+        enabled: is_resumable,
         handler: () => {
           on_dismiss()
         },
@@ -56,27 +58,32 @@ export function FailureBanner({ on_dismiss, run }: FailureBannerProps) {
         scope: 'context',
       },
     ],
-    { enabled: run.status === 'failed' },
+    { enabled: is_resumable },
   )
 
-  if (run.status !== 'failed') {
+  if (!is_resumable) {
     return null
   }
 
-  const variant_class =
-    run.retry_reason === 'rate_limit'
+  const is_cancelled = run.status === 'cancelled'
+  const variant_class = is_cancelled
+    ? 'failure-banner--cancelled'
+    : run.retry_reason === 'rate_limit'
       ? 'failure-banner--retryable'
       : 'failure-banner--fatal'
 
   return (
     <section
-      aria-label="Run failure recovery"
+      aria-label={is_cancelled ? 'Run cancelled recovery' : 'Run failure recovery'}
       className={`failure-banner ${variant_class}`}
       role="alert"
     >
       <div className="failure-banner__content">
         <p className="failure-banner__meta">
-          <strong>Pipeline failed</strong> — {getFailureMessage(run.retry_reason)} · Spend <strong>{formatCurrency(run.cost_usd)}</strong>
+          {is_cancelled
+            ? <><strong>Run cancelled</strong> · Spend <strong>{formatCurrency(run.cost_usd)}</strong></>
+            : <><strong>Pipeline failed</strong> — {getFailureMessage(run.retry_reason)} · Spend <strong>{formatCurrency(run.cost_usd)}</strong></>
+          }
         </p>
         <div className="failure-banner__actions">
           <button
@@ -86,7 +93,7 @@ export function FailureBanner({ on_dismiss, run }: FailureBannerProps) {
             type="button"
           >
             <span className="failure-banner__shortcut">[Enter]</span>
-            <span>{resume_mutation.isPending ? 'Resuming...' : 'Resume'}</span>
+            <span>{resume_mutation.isPending ? (is_cancelled ? 'Restarting...' : 'Resuming...') : (is_cancelled ? 'Restart' : 'Resume')}</span>
           </button>
           <button
             aria-label="Dismiss failure banner"

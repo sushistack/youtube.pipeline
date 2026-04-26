@@ -36,27 +36,10 @@ function isActionable(item: ReviewItem) {
 }
 
 function sortReviewItems(items: ReviewItem[]) {
-  return items.slice().sort((left, right) => {
-    const bucket = (item: ReviewItem) => {
-      if (isActionable(item) && item.high_leverage) {
-        return 0;
-      }
-      if (isActionable(item)) {
-        return 1;
-      }
-      if (item.review_status === "auto_approved") {
-        return 3;
-      }
-      return 2;
-    };
-
-    const leftBucket = bucket(left);
-    const rightBucket = bucket(right);
-    if (leftBucket !== rightBucket) {
-      return leftBucket - rightBucket;
-    }
-    return left.scene_index - right.scene_index;
-  });
+  // Operator preference: scene order beats high-leverage bucketing. The
+  // high-leverage flag is still shown on each card via the badge, so the
+  // operator can pick which to focus on without a forced reordering.
+  return items.slice().sort((left, right) => left.scene_index - right.scene_index);
 }
 
 function getFallbackSelection(items: ReviewItem[]) {

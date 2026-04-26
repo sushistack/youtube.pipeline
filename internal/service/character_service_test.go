@@ -99,7 +99,9 @@ func TestCharacterService_Pick_PersistsSelectedCharacterIDAndAdvancesRun(t *test
 		t.Fatalf("Pick: %v", err)
 	}
 	testutil.AssertEqual(t, updated.Stage, domain.StageImage)
-	testutil.AssertEqual(t, updated.Status, domain.StatusRunning)
+	// After Pick the run parks at image/waiting so the operator can manually
+	// trigger Phase B via the Generate Assets button (POST /advance).
+	testutil.AssertEqual(t, updated.Status, domain.StatusWaiting)
 	if updated.SelectedCharacterID == nil || *updated.SelectedCharacterID != "scp-049#1" {
 		t.Fatalf("SelectedCharacterID = %v, want scp-049#1", updated.SelectedCharacterID)
 	}

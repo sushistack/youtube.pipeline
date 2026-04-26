@@ -461,10 +461,7 @@ func toReviewItemResponseFromEpisode(runID string, ep *domain.Episode) *reviewIt
 	if ep.Narration != nil {
 		narration = *ep.Narration
 	}
-	shots := ep.Shots
-	if shots == nil {
-		shots = []domain.Shot{}
-	}
+	shots := rewriteShotImageURLs(runID, ep.SceneIndex, ep.Shots)
 	flags := ep.SafeguardFlags
 	if flags == nil {
 		flags = []string{}
@@ -494,6 +491,27 @@ func toReviewItemResponseFromEpisode(runID string, ep *domain.Episode) *reviewIt
 		}
 	}
 	return response
+}
+
+// rewriteShotImageURLs deep-copies shots and replaces each image_path (a
+// server-side relative filesystem path) with an API URL the browser can
+// fetch. The /shots/{shot}/image media handler resolves it back to a file
+// under the effective OutputDir. Empty image paths are preserved as empty so
+// the UI can render an "unavailable" state.
+func rewriteShotImageURLs(runID string, sceneIndex int, shots []domain.Shot) []domain.Shot {
+	if shots == nil {
+		return []domain.Shot{}
+	}
+	out := make([]domain.Shot, len(shots))
+	for i, shot := range shots {
+		out[i] = shot
+		if runID == "" || strings.TrimSpace(shot.ImagePath) == "" {
+			out[i].ImagePath = ""
+			continue
+		}
+		out[i].ImagePath = fmt.Sprintf("/api/runs/%s/scenes/%d/shots/%d/image", runID, sceneIndex, i+1)
+	}
+	return out
 }
 
 // sceneAudioURL rewrites a stored TTS path into an API URL the browser can
@@ -528,7 +546,7 @@ func toReviewItemResponse(runID string, item *service.ReviewItem) *reviewItemRes
 	response := &reviewItemResponse{
 		SceneIndex:             item.SceneIndex,
 		Narration:              item.Narration,
-		Shots:                  item.Shots,
+		Shots:                  rewriteShotImageURLs(runID, item.SceneIndex, item.Shots),
 		TTSPath:                sceneAudioURL(runID, item.SceneIndex, item.TTSPath),
 		TTSDurationMs:          item.TTSDurationMs,
 		ClipPath:               item.ClipPath,
@@ -553,7 +571,7 @@ func toReviewItemResponse(runID string, item *service.ReviewItem) *reviewItemRes
 	if item.PreviousVersion != nil {
 		response.PreviousVersion = &reviewItemPreviousVersionResponse{
 			Narration: item.PreviousVersion.Narration,
-			Shots:     item.PreviousVersion.Shots,
+			Shots:     rewriteShotImageURLs(runID, item.SceneIndex, item.PreviousVersion.Shots),
 		}
 	}
 	if item.PriorRejection != nil {

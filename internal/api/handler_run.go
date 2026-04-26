@@ -160,6 +160,13 @@ func (h *RunHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Disable the server's global WriteTimeout for this long-lived stream.
+	// Phase A can take several minutes; the 30s deadline would kill the
+	// connection mid-run. Client reconnects (EventSource auto-retry) serve
+	// as the effective liveness check instead.
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")

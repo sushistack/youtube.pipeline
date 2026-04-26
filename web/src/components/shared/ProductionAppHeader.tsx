@@ -87,6 +87,16 @@ export function ProductionAppHeader({
             No run selected
           </h2>
         )}
+        {cancellable ? (
+          <button
+            type="button"
+            className="production-app-header__cancel"
+            disabled={cancel_pending}
+            onClick={handleCancel}
+          >
+            {cancel_pending ? 'Cancelling…' : 'Cancel run'}
+          </button>
+        ) : null}
       </div>
       {run ? (
         <>
@@ -99,16 +109,6 @@ export function ProductionAppHeader({
             />
           </div>
           <div className="production-app-header__actions">
-            {cancellable ? (
-              <button
-                type="button"
-                className="production-app-header__cancel"
-                disabled={cancel_pending}
-                onClick={handleCancel}
-              >
-                {cancel_pending ? 'Cancelling…' : 'Cancel run'}
-              </button>
-            ) : null}
             <button
               type="button"
               className="production-app-header__toggle"

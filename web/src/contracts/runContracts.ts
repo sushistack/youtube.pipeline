@@ -339,6 +339,7 @@ export type UndoResponseData = z.infer<typeof undoResponseSchema>["data"];
 
 export type Scene = z.infer<typeof sceneSchema>;
 export type ReviewItem = z.infer<typeof reviewItemSchema>;
+export type Shot = z.infer<typeof reviewItemShotSchema>;
 export type TimelineCursor = z.infer<typeof timelineCursorSchema>;
 export type TimelineDecision = z.infer<typeof timelineDecisionSchema>;
 export type CharacterCandidate = z.infer<typeof characterCandidateSchema>;

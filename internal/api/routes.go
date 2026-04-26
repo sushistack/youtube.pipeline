@@ -51,6 +51,7 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/regen", deps.Scene.Regenerate)
 	if deps.Media != nil {
 		api.HandleFunc("GET /api/runs/{id}/scenes/{idx}/audio", deps.Media.Audio)
+		api.HandleFunc("GET /api/runs/{id}/scenes/{idx}/shots/{shot}/image", deps.Media.Image)
 	}
 	api.HandleFunc("POST /api/runs/{id}/scenario/approve", deps.Run.ApproveScenarioReview)
 
@@ -118,7 +119,7 @@ func NewDependencies(
 		OutputDir: outputDir,
 	}
 	if segments != nil {
-		deps.Media = NewMediaHandler(svc, segments, outputDir)
+		deps.Media = NewMediaHandler(svc, segments, settings, outputDir)
 	}
 	if tuning != nil {
 		deps.Tuning = NewTuningHandler(tuning)

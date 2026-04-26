@@ -8,8 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,14 +17,10 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
-// imageStubServer wires a fake DashScope text2image surface:
+// imageStubServer wires a fake DashScope multimodal-generation surface:
 //
-//   - POST /api/v1/services/aigc/text2image/image-synthesis → submitHandler
-//   - GET  /api/v1/tasks/{id}                              → taskHandler
-//   - GET  /image                                          → bytes from imageBytes
-//
-// Each handler is a closure so individual tests can vary submit/poll/error
-// behavior without rewriting the dispatch shell.
+//   - POST /api/v1/services/aigc/multimodal-generation/generation → submitHandler
+//   - GET  /image                                                 → bytes from imageBytes
 type imageStubServer struct {
 	*httptest.Server
 	imageURL string
@@ -34,7 +28,6 @@ type imageStubServer struct {
 
 type stubHandlers struct {
 	submit func(w http.ResponseWriter, r *http.Request)
-	task   func(w http.ResponseWriter, r *http.Request)
 	image  func(w http.ResponseWriter, r *http.Request)
 }
 
@@ -44,7 +37,7 @@ func newImageStubServer(t *testing.T, h stubHandlers) *imageStubServer {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	mux.HandleFunc("/api/v1/services/aigc/text2image/image-synthesis", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/services/aigc/multimodal-generation/generation", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method", http.StatusMethodNotAllowed)
 			return
@@ -53,64 +46,12 @@ func newImageStubServer(t *testing.T, h stubHandlers) *imageStubServer {
 			h.submit(w, r)
 		}
 	})
-	mux.HandleFunc("/api/v1/tasks/", func(w http.ResponseWriter, r *http.Request) {
-		if h.task != nil {
-			h.task(w, r)
-		}
-	})
 	mux.HandleFunc("/image", func(w http.ResponseWriter, r *http.Request) {
 		if h.image != nil {
 			h.image(w, r)
 		}
 	})
 	return &imageStubServer{Server: srv, imageURL: srv.URL + "/image"}
-}
-
-// driveFakeClock advances clk in small steps so any Sleep callers wake up.
-// We don't know exactly how long the client will sleep next, so loop until
-// done is signalled or the bound is hit.
-func driveFakeClock(t *testing.T, clk *clock.FakeClock, done <-chan struct{}) {
-	t.Helper()
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			default:
-			}
-			if clk.PendingSleepers() > 0 {
-				clk.Advance(time.Second)
-				continue
-			}
-			time.Sleep(time.Millisecond)
-		}
-	}()
-}
-
-// callImage runs fn in a goroutine while a fake clock driver advances time,
-// so polling backoffs unblock. Returns the result of fn.
-func callImage[T any](t *testing.T, clk *clock.FakeClock, fn func() (T, error)) (T, error) {
-	t.Helper()
-	type result struct {
-		v   T
-		err error
-	}
-	ch := make(chan result, 1)
-	done := make(chan struct{})
-	defer close(done)
-	driveFakeClock(t, clk, done)
-	go func() {
-		v, err := fn()
-		ch <- result{v: v, err: err}
-	}()
-	select {
-	case r := <-ch:
-		return r.v, r.err
-	case <-time.After(5 * time.Second):
-		t.Fatal("image client call did not return within 5s")
-	}
-	var zero T
-	return zero, nil
 }
 
 func newClient(t *testing.T, srv *imageStubServer, clk clock.Clock) *dashscope.ImageClient {
@@ -126,36 +67,23 @@ func newClient(t *testing.T, srv *imageStubServer, clk clock.Clock) *dashscope.I
 	return c
 }
 
-// writeSucceededTask serializes a task-status response with a SUCCEEDED
-// status pointing at the given image URL.
-func writeSucceededTask(w http.ResponseWriter, taskID, imageURL string) {
+// writeChoiceURL serializes a multimodal-generation response carrying a
+// single choice whose first content part is an image URL.
+func writeChoiceURL(w http.ResponseWriter, imageURL string) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"output": map[string]any{
-			"task_id":     taskID,
-			"task_status": "SUCCEEDED",
-			"results":     []map[string]any{{"url": imageURL}},
-		},
-		"request_id": "req-x",
-	})
-}
-
-func writeStatusTask(w http.ResponseWriter, taskID, status string) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"output": map[string]any{
-			"task_id":     taskID,
-			"task_status": status,
-		},
-	})
-}
-
-func writeSubmitOK(w http.ResponseWriter, taskID string) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"output": map[string]any{
-			"task_id":     taskID,
-			"task_status": "PENDING",
+			"choices": []map[string]any{
+				{
+					"finish_reason": "stop",
+					"message": map[string]any{
+						"role": "assistant",
+						"content": []map[string]any{
+							{"image": imageURL},
+						},
+					},
+				},
+			},
 		},
 		"request_id": "req-x",
 	})
@@ -201,25 +129,15 @@ func TestImageClient_Generate_HappyPath(t *testing.T) {
 			if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
 				t.Errorf("auth header = %q", got)
 			}
-			if got := r.Header.Get("X-DashScope-Async"); got != "enable" {
-				t.Errorf("async header = %q", got)
-			}
 			_ = json.NewDecoder(r.Body).Decode(&capturedBody)
-			writeSubmitOK(w, "task-1")
-		},
-		task: func(w http.ResponseWriter, r *http.Request) {
-			writeSucceededTask(w, "task-1", strings.TrimSuffix(r.Host, "")+"/image") //nolint:staticcheck
+			// Use the actual server URL so the client can fetch the image.
+			writeChoiceURL(w, "http://"+r.Host+"/image")
 		},
 		image: func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "image/png")
 			_, _ = w.Write(wantPNG)
 		},
 	})
-	// Patch the task handler to use the actual server URL for image.
-	taskHandler := func(w http.ResponseWriter, _ *http.Request) {
-		writeSucceededTask(w, "task-1", srv.imageURL)
-	}
-	srv.Config.Handler.(*http.ServeMux).HandleFunc("/api/v1/tasks/task-1", taskHandler)
 
 	clk := clock.NewFakeClock(time.Unix(0, 0))
 	client := newClient(t, srv, clk)
@@ -227,14 +145,12 @@ func TestImageClient_Generate_HappyPath(t *testing.T) {
 	tmp := t.TempDir()
 	out := filepath.Join(tmp, "shot_01.png")
 
-	resp, err := callImage(t, clk, func() (domain.ImageResponse, error) {
-		return client.Generate(context.Background(), domain.ImageRequest{
-			Prompt:     "a serene lake",
-			Model:      "qwen-image",
-			Width:      1024,
-			Height:     1024,
-			OutputPath: out,
-		})
+	resp, err := client.Generate(context.Background(), domain.ImageRequest{
+		Prompt:     "a serene lake",
+		Model:      "qwen-image-2.0",
+		Width:      1024,
+		Height:     1024,
+		OutputPath: out,
 	})
 	if err != nil {
 		t.Fatalf("Generate err: %v", err)
@@ -246,7 +162,7 @@ func TestImageClient_Generate_HappyPath(t *testing.T) {
 	if resp.Provider != "dashscope" {
 		t.Errorf("Provider = %q", resp.Provider)
 	}
-	if resp.Model != "qwen-image" {
+	if resp.Model != "qwen-image-2.0" {
 		t.Errorf("Model = %q", resp.Model)
 	}
 	if resp.CostUSD <= 0 {
@@ -264,7 +180,7 @@ func TestImageClient_Generate_HappyPath(t *testing.T) {
 	}
 
 	// Body shape sanity — model + size + n + prompt should be wired through.
-	if model, _ := capturedBody["model"].(string); model != "qwen-image" {
+	if model, _ := capturedBody["model"].(string); model != "qwen-image-2.0" {
 		t.Errorf("submitted model = %v", capturedBody["model"])
 	}
 	params, _ := capturedBody["parameters"].(map[string]any)
@@ -272,13 +188,27 @@ func TestImageClient_Generate_HappyPath(t *testing.T) {
 		t.Errorf("submitted size = %v", params["size"])
 	}
 	input, _ := capturedBody["input"].(map[string]any)
-	if _, hasRefs := input["ref_imgs"]; hasRefs {
-		t.Error("Generate should omit ref_imgs")
+	messages, _ := input["messages"].([]any)
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(messages))
+	}
+	msg, _ := messages[0].(map[string]any)
+	content, _ := msg["content"].([]any)
+	// Generate omits the image part — only one text part should appear.
+	if len(content) != 1 {
+		t.Fatalf("expected 1 content part for text-only generate, got %d", len(content))
+	}
+	first, _ := content[0].(map[string]any)
+	if _, hasImage := first["image"]; hasImage {
+		t.Error("Generate should omit the image content part")
+	}
+	if text, _ := first["text"].(string); text != "a serene lake" {
+		t.Errorf("text content = %v, want prompt", first["text"])
 	}
 }
 
 // ----------------------------------------------------------------------------
-// Edit passes reference URL
+// Edit passes reference URL through messages.content
 // ----------------------------------------------------------------------------
 
 func TestImageClient_Edit_PassesReferenceURL(t *testing.T) {
@@ -288,14 +218,11 @@ func TestImageClient_Edit_PassesReferenceURL(t *testing.T) {
 	srv := newImageStubServer(t, stubHandlers{
 		submit: func(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewDecoder(r.Body).Decode(&capturedBody)
-			writeSubmitOK(w, "task-edit")
+			writeChoiceURL(w, "http://"+r.Host+"/image")
 		},
 		image: func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte("png"))
 		},
-	})
-	srv.Config.Handler.(*http.ServeMux).HandleFunc("/api/v1/tasks/task-edit", func(w http.ResponseWriter, _ *http.Request) {
-		writeSucceededTask(w, "task-edit", srv.imageURL)
 	})
 
 	clk := clock.NewFakeClock(time.Unix(0, 0))
@@ -304,24 +231,35 @@ func TestImageClient_Edit_PassesReferenceURL(t *testing.T) {
 	tmp := t.TempDir()
 	out := filepath.Join(tmp, "shot_edit.png")
 
-	_, err := callImage(t, clk, func() (domain.ImageResponse, error) {
-		return client.Edit(context.Background(), domain.ImageEditRequest{
-			Prompt:            "the same character on a cliff",
-			Model:             "qwen-image-edit",
-			ReferenceImageURL: "https://example.com/character.png",
-			Width:             1024,
-			Height:            1024,
-			OutputPath:        out,
-		})
+	_, err := client.Edit(context.Background(), domain.ImageEditRequest{
+		Prompt:            "the same character on a cliff",
+		Model:             "qwen-image-edit",
+		ReferenceImageURL: "data:image/jpeg;base64,AAA",
+		Width:             1024,
+		Height:            1024,
+		OutputPath:        out,
 	})
 	if err != nil {
 		t.Fatalf("Edit err: %v", err)
 	}
 
 	input, _ := capturedBody["input"].(map[string]any)
-	refImgs, _ := input["ref_imgs"].([]any)
-	if len(refImgs) != 1 || refImgs[0] != "https://example.com/character.png" {
-		t.Errorf("ref_imgs = %v, want one entry equal to character.png URL", refImgs)
+	messages, _ := input["messages"].([]any)
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(messages))
+	}
+	msg, _ := messages[0].(map[string]any)
+	content, _ := msg["content"].([]any)
+	if len(content) != 2 {
+		t.Fatalf("Edit should send image + text content, got %d parts", len(content))
+	}
+	imagePart, _ := content[0].(map[string]any)
+	if got, _ := imagePart["image"].(string); got != "data:image/jpeg;base64,AAA" {
+		t.Errorf("image part = %v, want data URL", imagePart["image"])
+	}
+	textPart, _ := content[1].(map[string]any)
+	if got, _ := textPart["text"].(string); got != "the same character on a cliff" {
+		t.Errorf("text part = %v", textPart["text"])
 	}
 	if model, _ := capturedBody["model"].(string); model != "qwen-image-edit" {
 		t.Errorf("submitted model = %v", capturedBody["model"])
@@ -329,85 +267,7 @@ func TestImageClient_Edit_PassesReferenceURL(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------
-// Polling: PENDING twice, then SUCCEEDED
-// ----------------------------------------------------------------------------
-
-func TestImageClient_Generate_PollUntilSucceeded(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	var pollCount int32
-	srv := newImageStubServer(t, stubHandlers{
-		submit: func(w http.ResponseWriter, _ *http.Request) {
-			writeSubmitOK(w, "task-poll")
-		},
-		image: func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte("png"))
-		},
-	})
-	srv.Config.Handler.(*http.ServeMux).HandleFunc("/api/v1/tasks/task-poll", func(w http.ResponseWriter, _ *http.Request) {
-		n := atomic.AddInt32(&pollCount, 1)
-		if n < 3 {
-			writeStatusTask(w, "task-poll", "RUNNING")
-			return
-		}
-		writeSucceededTask(w, "task-poll", srv.imageURL)
-	})
-
-	clk := clock.NewFakeClock(time.Unix(0, 0))
-	client := newClient(t, srv, clk)
-	out := filepath.Join(t.TempDir(), "shot.png")
-
-	_, err := callImage(t, clk, func() (domain.ImageResponse, error) {
-		return client.Generate(context.Background(), domain.ImageRequest{
-			Prompt: "x", Model: "qwen-image", OutputPath: out,
-		})
-	})
-	if err != nil {
-		t.Fatalf("Generate err: %v", err)
-	}
-	if got := atomic.LoadInt32(&pollCount); got < 3 {
-		t.Errorf("poll count = %d, want >= 3 (RUNNING twice then SUCCEEDED)", got)
-	}
-}
-
-// ----------------------------------------------------------------------------
-// Task FAILED → ErrValidation
-// ----------------------------------------------------------------------------
-
-func TestImageClient_TaskFailedSurfacesError(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	srv := newImageStubServer(t, stubHandlers{
-		submit: func(w http.ResponseWriter, _ *http.Request) {
-			writeSubmitOK(w, "task-fail")
-		},
-	})
-	srv.Config.Handler.(*http.ServeMux).HandleFunc("/api/v1/tasks/task-fail", func(w http.ResponseWriter, _ *http.Request) {
-		writeStatusTask(w, "task-fail", "FAILED")
-	})
-
-	clk := clock.NewFakeClock(time.Unix(0, 0))
-	client := newClient(t, srv, clk)
-	out := filepath.Join(t.TempDir(), "shot.png")
-
-	_, err := callImage(t, clk, func() (domain.ImageResponse, error) {
-		return client.Generate(context.Background(), domain.ImageRequest{
-			Prompt: "x", Model: "qwen-image", OutputPath: out,
-		})
-	})
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !errors.Is(err, domain.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
-	}
-	if _, statErr := os.Stat(out); statErr == nil {
-		t.Error("output file should not exist after FAILED task")
-	}
-}
-
-// ----------------------------------------------------------------------------
-// HTTP 5xx on submit → ErrStageFailed (retryable)
+// HTTP 5xx → ErrStageFailed (retryable)
 // ----------------------------------------------------------------------------
 
 func TestImageClient_HTTP5xxIsRetryable(t *testing.T) {
@@ -421,7 +281,7 @@ func TestImageClient_HTTP5xxIsRetryable(t *testing.T) {
 	client := newClient(t, srv, clk)
 
 	_, err := client.Generate(context.Background(), domain.ImageRequest{
-		Prompt: "x", Model: "qwen-image", OutputPath: filepath.Join(t.TempDir(), "out.png"),
+		Prompt: "x", Model: "qwen-image-2.0", OutputPath: filepath.Join(t.TempDir(), "out.png"),
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -432,7 +292,7 @@ func TestImageClient_HTTP5xxIsRetryable(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------
-// HTTP 429 on submit → ErrRateLimited (retryable)
+// HTTP 429 → ErrRateLimited (retryable)
 // ----------------------------------------------------------------------------
 
 func TestImageClient_HTTP429IsRateLimited(t *testing.T) {
@@ -446,7 +306,7 @@ func TestImageClient_HTTP429IsRateLimited(t *testing.T) {
 	client := newClient(t, srv, clk)
 
 	_, err := client.Generate(context.Background(), domain.ImageRequest{
-		Prompt: "x", Model: "qwen-image", OutputPath: filepath.Join(t.TempDir(), "out.png"),
+		Prompt: "x", Model: "qwen-image-2.0", OutputPath: filepath.Join(t.TempDir(), "out.png"),
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -457,7 +317,7 @@ func TestImageClient_HTTP429IsRateLimited(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------
-// HTTP 4xx on submit → ErrValidation (terminal)
+// HTTP 4xx → ErrValidation (terminal)
 // ----------------------------------------------------------------------------
 
 func TestImageClient_HTTP4xxIsTerminal(t *testing.T) {
@@ -471,7 +331,37 @@ func TestImageClient_HTTP4xxIsTerminal(t *testing.T) {
 	client := newClient(t, srv, clk)
 
 	_, err := client.Generate(context.Background(), domain.ImageRequest{
-		Prompt: "x", Model: "qwen-image", OutputPath: filepath.Join(t.TempDir(), "out.png"),
+		Prompt: "x", Model: "qwen-image-2.0", OutputPath: filepath.Join(t.TempDir(), "out.png"),
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Response with error code → ErrValidation
+// ----------------------------------------------------------------------------
+
+func TestImageClient_PayloadErrorSurfacesValidation(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	srv := newImageStubServer(t, stubHandlers{
+		submit: func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":       "InvalidParameter",
+				"message":    "url error",
+				"request_id": "req-fail",
+			})
+		},
+	})
+	clk := clock.NewFakeClock(time.Unix(0, 0))
+	client := newClient(t, srv, clk)
+
+	_, err := client.Generate(context.Background(), domain.ImageRequest{
+		Prompt: "x", Model: "qwen-image-2.0", OutputPath: filepath.Join(t.TempDir(), "out.png"),
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -489,25 +379,20 @@ func TestImageClient_DownloadCapEnforced(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	huge := make([]byte, (50<<20)+10) // 50 MiB + 10 bytes — over cap
 	srv := newImageStubServer(t, stubHandlers{
-		submit: func(w http.ResponseWriter, _ *http.Request) {
-			writeSubmitOK(w, "task-big")
+		submit: func(w http.ResponseWriter, r *http.Request) {
+			writeChoiceURL(w, "http://"+r.Host+"/image")
 		},
 		image: func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write(huge)
 		},
-	})
-	srv.Config.Handler.(*http.ServeMux).HandleFunc("/api/v1/tasks/task-big", func(w http.ResponseWriter, _ *http.Request) {
-		writeSucceededTask(w, "task-big", srv.imageURL)
 	})
 
 	clk := clock.NewFakeClock(time.Unix(0, 0))
 	client := newClient(t, srv, clk)
 	out := filepath.Join(t.TempDir(), "out.png")
 
-	_, err := callImage(t, clk, func() (domain.ImageResponse, error) {
-		return client.Generate(context.Background(), domain.ImageRequest{
-			Prompt: "x", Model: "qwen-image", OutputPath: out,
-		})
+	_, err := client.Generate(context.Background(), domain.ImageRequest{
+		Prompt: "x", Model: "qwen-image-2.0", OutputPath: out,
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -521,61 +406,25 @@ func TestImageClient_DownloadCapEnforced(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------
-// Polling exceeds cap → ErrUpstreamTimeout
-// ----------------------------------------------------------------------------
-
-func TestImageClient_PollTimeoutSurfacesUpstreamTimeout(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-	srv := newImageStubServer(t, stubHandlers{
-		submit: func(w http.ResponseWriter, _ *http.Request) {
-			writeSubmitOK(w, "task-stuck")
-		},
-	})
-	srv.Config.Handler.(*http.ServeMux).HandleFunc("/api/v1/tasks/task-stuck", func(w http.ResponseWriter, _ *http.Request) {
-		writeStatusTask(w, "task-stuck", "RUNNING") // never completes
-	})
-
-	clk := clock.NewFakeClock(time.Unix(0, 0))
-	client := newClient(t, srv, clk)
-
-	_, err := callImage(t, clk, func() (domain.ImageResponse, error) {
-		return client.Generate(context.Background(), domain.ImageRequest{
-			Prompt: "x", Model: "qwen-image", OutputPath: filepath.Join(t.TempDir(), "out.png"),
-		})
-	})
-	if err == nil {
-		t.Fatal("expected timeout error, got nil")
-	}
-	if !errors.Is(err, domain.ErrUpstreamTimeout) {
-		t.Errorf("expected ErrUpstreamTimeout, got %v", err)
-	}
-}
-
-// ----------------------------------------------------------------------------
 // Cost is recorded
 // ----------------------------------------------------------------------------
 
 func TestImageClient_CostsAccumulate(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	srv := newImageStubServer(t, stubHandlers{
-		submit: func(w http.ResponseWriter, _ *http.Request) {
-			writeSubmitOK(w, "task-cost")
+		submit: func(w http.ResponseWriter, r *http.Request) {
+			writeChoiceURL(w, "http://"+r.Host+"/image")
 		},
 		image: func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte("png"))
 		},
 	})
-	srv.Config.Handler.(*http.ServeMux).HandleFunc("/api/v1/tasks/task-cost", func(w http.ResponseWriter, _ *http.Request) {
-		writeSucceededTask(w, "task-cost", srv.imageURL)
-	})
 
 	clk := clock.NewFakeClock(time.Unix(0, 0))
 	client := newClient(t, srv, clk)
 
-	resp, err := callImage(t, clk, func() (domain.ImageResponse, error) {
-		return client.Generate(context.Background(), domain.ImageRequest{
-			Prompt: "x", Model: "qwen-image", OutputPath: filepath.Join(t.TempDir(), "out.png"),
-		})
+	resp, err := client.Generate(context.Background(), domain.ImageRequest{
+		Prompt: "x", Model: "qwen-image-2.0", OutputPath: filepath.Join(t.TempDir(), "out.png"),
 	})
 	if err != nil {
 		t.Fatalf("Generate err: %v", err)

@@ -22,7 +22,9 @@ export function useRunStatus(run_id: string | null) {
     }
 
     es.addEventListener('done', () => es.close())
-    es.onerror = () => es.close()
+    // Do NOT close on error: let EventSource auto-reconnect (browser default).
+    // Explicit close only on the 'done' sentinel so a clean terminal exit
+    // does not trigger an unwanted reconnect loop.
 
     return () => es.close()
   }, [run_id, queryClient])

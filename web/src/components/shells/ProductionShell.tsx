@@ -280,6 +280,38 @@ export function ProductionShell() {
     if (current_run.stage === 'pending' && current_run.status === 'pending') {
       return renderPendingDetail()
     }
+    if ((current_run.stage === 'image' || current_run.stage === 'tts') && current_run.status === 'waiting') {
+      const is_pending = advance_mutation.isPending && advance_mutation.variables === current_run.id
+      return (
+        <section className="production__pending-state" aria-label="Asset generation gate">
+          <div className="production__pending-state-copy">
+            <p className="production-dashboard__eyebrow">Ready to generate</p>
+            <h2 className="production-dashboard__section-title">Generate Assets</h2>
+          </div>
+          <p className="route-shell__body">
+            Scenario and character confirmed. Click <strong>Generate Assets</strong> to start
+            image generation and voice rendering for all scenes.
+          </p>
+          <div className="production__pending-state-actions">
+            <button
+              type="button"
+              className="production__pending-resume-btn"
+              disabled={is_pending}
+              onClick={() => advance_mutation.mutate(current_run.id)}
+            >
+              {is_pending ? 'Starting…' : 'Generate Assets'}
+            </button>
+            {advance_mutation.isError && advance_mutation.variables === current_run.id ? (
+              <span className="production__pending-resume-error" role="status">
+                Failed: {advance_mutation.error instanceof Error
+                  ? advance_mutation.error.message
+                  : 'Unknown error — check the run log and retry.'}
+              </span>
+            ) : null}
+          </div>
+        </section>
+      )
+    }
     if (current_run.stage === 'scenario_review' && current_run.status === 'waiting') {
       // key on run.id matches sibling stage branches: switching runs while in
       // scenario_review must remount the inspector to flush its
@@ -369,7 +401,7 @@ export function ProductionShell() {
 
       <ProductionAppHeader run={current_run ?? null} status_payload={status_payload} />
 
-      {current_run && current_run.status === 'failed' && !is_failure_banner_dismissed ? (
+      {current_run && (current_run.status === 'failed' || current_run.status === 'cancelled') && !is_failure_banner_dismissed ? (
         <FailureBanner
           on_dismiss={() => set_dismissed_run_id(current_run.id)}
           run={current_run}

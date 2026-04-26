@@ -65,6 +65,11 @@ type PipelineState struct {
 	// specifically what to fix rather than repeating the same mistake.
 	PriorCriticFeedback string `json:"-"`
 
+	// OnSubStageStart is called by PhaseARunner before each agent starts so
+	// the engine can persist the current sub-stage to the DB and surface it
+	// via the SSE status stream. Never serialized; agents never touch this.
+	OnSubStageStart func(context.Context, PipelineStage) error `json:"-"`
+
 	// Provenance — runner-populated bookkeeping for NFR-M2 (version-
 	// controlled artifacts must record their own generator).
 	StartedAt  string `json:"started_at"`  // RFC3339 from clock.Clock

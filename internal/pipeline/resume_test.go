@@ -532,7 +532,7 @@ func TestResume_CompletedRun_Conflict(t *testing.T) {
 	}
 }
 
-func TestResume_CancelledRun_Conflict(t *testing.T) {
+func TestResume_CancelledRun_Resumable(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	outDir := t.TempDir()
 	runID := "scp-049-run-1"
@@ -545,8 +545,10 @@ func TestResume_CancelledRun_Conflict(t *testing.T) {
 
 	eng := newEngine(t, runs, segs, outDir)
 	_, err := eng.Resume(context.Background(), runID)
-	if !errors.Is(err, domain.ErrConflict) {
-		t.Errorf("err = %v, want ErrConflict for cancelled run", err)
+	// Cancelled runs are now resumable; the only error here is the
+	// fake store not having segments, not a conflict gate.
+	if errors.Is(err, domain.ErrConflict) {
+		t.Errorf("cancelled run should be resumable, got ErrConflict")
 	}
 }
 
