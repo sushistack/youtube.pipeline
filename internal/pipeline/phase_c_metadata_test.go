@@ -71,7 +71,7 @@ func validPipelineState(scpID string) *agents.PipelineState {
 		},
 		VisualBreakdown: &domain.VisualBreakdownOutput{
 			Metadata: domain.VisualBreakdownMetadata{
-				VisualBreakdownModel:    "gemini-2.0-flash",
+				VisualBreakdownModel:    "gemini-3.1-flash-lite-preview",
 				VisualBreakdownProvider: "gemini",
 			},
 		},
@@ -94,7 +94,7 @@ func validMetadataBuilderConfig(t *testing.T, outputDir string) pipeline.Metadat
 		OutputDir:      outputDir,
 		WriterModel:    "deepseek-chat",
 		WriterProvider: "deepseek",
-		CriticModel:    "gemini-2.0-flash",
+		CriticModel:    "gemini-3.1-flash-lite-preview",
 		CriticProvider: "gemini",
 		ImageModel:     "qwen-max-vl",
 		ImageProvider:  "dashscope",

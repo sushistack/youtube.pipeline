@@ -141,6 +141,12 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // newRequestID generates a UUID v4 string using crypto/rand.
 func newRequestID() string {
 	var b [16]byte

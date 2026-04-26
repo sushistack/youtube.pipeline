@@ -67,15 +67,16 @@ type PromptVersionProvider interface {
 // defines the API surface and mechanics, but a real Critic-backed
 // evaluator is a separate concern and may be stubbed for V1.
 type TuningService struct {
-	projectRoot string
-	evaluator   eval.Evaluator
-	shadow      ShadowSource
+	projectRoot  string
+	outputDir    string
+	evaluator    eval.Evaluator
+	shadow       ShadowSource
 	shadowWindow int
-	calibration CalibrationReader
-	clk         clock.Clock
+	calibration  CalibrationReader
+	clk          clock.Clock
 
-	mu         sync.Mutex
-	lastSaved  *db.PromptVersionTag
+	mu          sync.Mutex
+	lastSaved   *db.PromptVersionTag
 	lastSavedAt time.Time
 }
 
@@ -83,6 +84,7 @@ type TuningService struct {
 // back to 20, matching the existing `shadow_eval_window` config default.
 type TuningServiceOptions struct {
 	ProjectRoot  string
+	OutputDir    string
 	Evaluator    eval.Evaluator
 	ShadowSource ShadowSource
 	ShadowWindow int
@@ -110,6 +112,7 @@ func NewTuningService(opts TuningServiceOptions) *TuningService {
 	}
 	svc := &TuningService{
 		projectRoot:  opts.ProjectRoot,
+		outputDir:    opts.OutputDir,
 		evaluator:    opts.Evaluator,
 		shadow:       opts.ShadowSource,
 		shadowWindow: window,
@@ -365,7 +368,13 @@ func (s *TuningService) RunShadow(ctx context.Context) (TuningShadowReport, erro
 	if s.shadow == nil {
 		return TuningShadowReport{}, fmt.Errorf("run shadow: %w: shadow source not configured", domain.ErrValidation)
 	}
-	report, err := eval.RunShadow(ctx, s.projectRoot, s.shadow, s.evaluator, s.clk.Now(), s.shadowWindow)
+	// Empty OutputDir would make `filepath.Join("", runID, path)` resolve
+	// against the server's CWD — Shadow could then accidentally load a wrong
+	// file that happens to exist there. Refuse rather than silently degrade.
+	if s.outputDir == "" {
+		return TuningShadowReport{}, fmt.Errorf("run shadow: %w: output_dir not configured", domain.ErrValidation)
+	}
+	report, err := eval.RunShadow(ctx, s.projectRoot, s.outputDir, s.shadow, s.evaluator, s.clk.Now(), s.shadowWindow)
 	if err != nil {
 		return TuningShadowReport{}, fmt.Errorf("run shadow: %w", err)
 	}
@@ -378,16 +387,24 @@ func (s *TuningService) RunShadow(ctx context.Context) (TuningShadowReport, erro
 		Results:         make([]TuningShadowResultRow, 0, len(report.Results)),
 	}
 	for _, r := range report.Results {
+		if out.CriticProvider == "" && r.NewCriticProvider != "" {
+			out.CriticProvider = r.NewCriticProvider
+		}
+		if out.CriticModel == "" && r.NewCriticModel != "" {
+			out.CriticModel = r.NewCriticModel
+		}
 		out.Results = append(out.Results, TuningShadowResultRow{
-			RunID:           r.RunID,
-			CreatedAt:       r.CreatedAt,
-			BaselineVerdict: r.BaselineVerdict,
-			BaselineScore:   r.BaselineScore,
-			NewVerdict:      r.NewVerdict,
-			NewRetryReason:  r.NewRetryReason,
-			NewOverallScore: r.NewOverallScore,
-			OverallDiff:     r.Diff.Overall,
-			FalseRejection:  r.FalseRejection,
+			RunID:             r.RunID,
+			CreatedAt:         r.CreatedAt,
+			BaselineVerdict:   r.BaselineVerdict,
+			BaselineScore:     r.BaselineScore,
+			NewVerdict:        r.NewVerdict,
+			NewRetryReason:    r.NewRetryReason,
+			NewOverallScore:   r.NewOverallScore,
+			NewCriticModel:    r.NewCriticModel,
+			NewCriticProvider: r.NewCriticProvider,
+			OverallDiff:       r.Diff.Overall,
+			FalseRejection:    r.FalseRejection,
 		})
 	}
 	if tag := s.ActivePromptVersion(); tag != nil {
@@ -432,6 +449,12 @@ func (s *TuningService) FastFeedback(ctx context.Context) (FastFeedbackReport, e
 			out.RetryCount++
 		case domain.CriticVerdictAcceptWithNotes:
 			out.AcceptNotesCount++
+		}
+		if out.CriticProvider == "" && verdict.Provider != "" {
+			out.CriticProvider = verdict.Provider
+		}
+		if out.CriticModel == "" && verdict.Model != "" {
+			out.CriticModel = verdict.Model
 		}
 		out.Samples = append(out.Samples, FastFeedbackSample{
 			FixtureID:    f.FixtureID,

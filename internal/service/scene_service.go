@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -26,6 +27,16 @@ type SceneReader interface {
 // NarrationUpdater is the write surface SceneService needs for narration edits.
 type NarrationUpdater interface {
 	UpdateNarration(ctx context.Context, runID string, sceneIndex int, narration string) error
+}
+
+// NarrationSeeder is the optional defensive-backfill surface SceneService
+// uses when ListScenes finds an empty segments table at scenario_review.
+// *db.SegmentStore satisfies this structurally via SeedFromNarration.
+// Without a seeder, ListScenes returns the empty segment list and the UI
+// stays stuck on "scenes not yet available" for runs that transitioned
+// before Engine's segment-seed hook landed.
+type NarrationSeeder interface {
+	SeedFromNarration(ctx context.Context, runID string, scenes []domain.NarrationScene) (int64, error)
 }
 
 type SceneDecisionRecorder interface {
@@ -108,7 +119,18 @@ type SceneService struct {
 	}
 	decisions   SceneDecisionRecorder
 	regenerator SceneRegenerator
+	seeder      NarrationSeeder // optional; enables read-time backfill
+	outputDir   string          // optional; needed by backfill to resolve scenario.json path
 	clock       clock.Clock
+}
+
+// SetNarrationSeeder wires the optional read-time backfill seeder. When set
+// alongside outputDir, ListScenes will create segments rows from scenario.json
+// on the fly if it observes an empty segments table at scenario_review
+// (legacy runs that transitioned before Engine's segment-seed hook landed).
+func (s *SceneService) SetNarrationSeeder(seeder NarrationSeeder, outputDir string) {
+	s.seeder = seeder
+	s.outputDir = outputDir
 }
 
 // SetSceneRegenerator wires a regeneration dispatcher for batch-review scene
@@ -301,19 +323,81 @@ func NewSceneService(runs RunStore, segments interface {
 	return &SceneService{runs: runs, segments: segments, decisions: decisions, clock: clk}
 }
 
-// ListScenes returns all segments for a run in scene_index order. Reads are
-// unconditional: the master scene-list pane is rendered at every post-Phase-A
-// stage when segments exist (see SCL-5 in spec-production-master-detail.md).
-// Mutating endpoints such as EditNarration retain their stage gate.
+// ListScenes returns one row per narration scene in scenario.json, overlaying
+// any existing segments-table state (TTS path, shots, critic, review status)
+// onto the matching scene_index. The narration text comes from scenario.json
+// when present so that scene cards render correctly even for runs whose
+// segments rows were created by Phase B writes (which leave narration NULL)
+// rather than the Phase A → scenario_review seed hook. When the scenario file
+// is unavailable (no ScenarioPath, missing outputDir, or read error) the
+// listing falls back to the raw segments rows.
+//
+// Mutating endpoints such as EditNarration retain their stage gate and still
+// operate against the segments table directly.
 func (s *SceneService) ListScenes(ctx context.Context, runID string) ([]*domain.Episode, error) {
-	if _, err := s.runs.Get(ctx, runID); err != nil {
-		return nil, fmt.Errorf("scene list: %w", err)
-	}
-	scenes, err := s.segments.ListByRunID(ctx, runID)
+	run, err := s.runs.Get(ctx, runID)
 	if err != nil {
 		return nil, fmt.Errorf("scene list: %w", err)
 	}
-	return scenes, nil
+	segments, err := s.segments.ListByRunID(ctx, runID)
+	if err != nil {
+		return nil, fmt.Errorf("scene list: %w", err)
+	}
+
+	narrationScenes := s.loadRunNarrationScenes(run, runID)
+	if len(narrationScenes) == 0 {
+		return segments, nil
+	}
+
+	bySceneIndex := make(map[int]*domain.Episode, len(segments))
+	for _, ep := range segments {
+		bySceneIndex[ep.SceneIndex] = ep
+	}
+
+	out := make([]*domain.Episode, 0, len(narrationScenes))
+	for i, scene := range narrationScenes {
+		// scene_num is 1-based and order-preserving per the narration schema;
+		// fall back to the iteration index so non-contiguous scene_num gaps
+		// still produce a 0-based scene_index that matches the segments PK.
+		sceneIndex := scene.SceneNum - 1
+		if sceneIndex < 0 {
+			sceneIndex = i
+		}
+		narrationText := scene.Narration
+		ep, ok := bySceneIndex[sceneIndex]
+		if !ok {
+			out = append(out, &domain.Episode{
+				RunID:        runID,
+				SceneIndex:   sceneIndex,
+				Narration:    &narrationText,
+				Shots:        []domain.Shot{},
+				Status:       "pending",
+				ReviewStatus: domain.ReviewStatusWaitingForReview,
+			})
+			continue
+		}
+		merged := *ep
+		if merged.Narration == nil || strings.TrimSpace(*merged.Narration) == "" {
+			merged.Narration = &narrationText
+		}
+		out = append(out, &merged)
+	}
+	return out, nil
+}
+
+// loadRunNarrationScenes resolves and reads scenario.json's narration scenes
+// for a run. Returns nil on any failure so callers can fall back to the
+// segments-table view without surfacing the error to the operator.
+func (s *SceneService) loadRunNarrationScenes(run *domain.Run, runID string) []domain.NarrationScene {
+	if s.outputDir == "" || run == nil || run.ScenarioPath == nil || *run.ScenarioPath == "" {
+		return nil
+	}
+	resolved := filepath.Join(s.outputDir, runID, *run.ScenarioPath)
+	scenes, err := loadNarrationScenes(resolved)
+	if err != nil || len(scenes) == 0 {
+		return nil
+	}
+	return scenes
 }
 
 // ListReviewItems returns the batch-review surface payload.
@@ -330,7 +414,15 @@ func (s *SceneService) ListReviewItems(ctx context.Context, runID string) ([]*Re
 		return nil, fmt.Errorf("review items: run has no scenario path: %w", domain.ErrNotFound)
 	}
 
-	scenarioScenes, err := loadNarrationScenes(*run.ScenarioPath)
+	// ScenarioPath in DB is stored relative to {outputDir}/{runID}/ (see
+	// pipeline/resume.go's runPhaseA). Resolve to the absolute on-disk path
+	// before reading. Falling back to the raw value preserves test fixtures
+	// that pass an absolute path directly.
+	scenarioOnDisk := *run.ScenarioPath
+	if s.outputDir != "" && !filepath.IsAbs(scenarioOnDisk) {
+		scenarioOnDisk = filepath.Join(s.outputDir, runID, scenarioOnDisk)
+	}
+	scenarioScenes, err := loadNarrationScenes(scenarioOnDisk)
 	if err != nil {
 		return nil, fmt.Errorf("review items: %w", err)
 	}
@@ -344,6 +436,15 @@ func (s *SceneService) ListReviewItems(ctx context.Context, runID string) ([]*Re
 		runSCPID: run.SCPID,
 		scenes:   scenarioScenes,
 	})
+
+	narrationByIndex := make(map[int]string, len(scenarioScenes))
+	for i, scene := range scenarioScenes {
+		idx := scene.SceneNum - 1
+		if idx < 0 {
+			idx = i
+		}
+		narrationByIndex[idx] = scene.Narration
+	}
 
 	items := make([]*ReviewItem, 0, len(segments))
 	for _, segment := range segments {
@@ -370,9 +471,15 @@ func (s *SceneService) ListReviewItems(ctx context.Context, runID string) ([]*Re
 				}
 			}
 		}
+		narration := derefString(segment.Narration)
+		if strings.TrimSpace(narration) == "" {
+			if fallback, ok := narrationByIndex[segment.SceneIndex]; ok {
+				narration = fallback
+			}
+		}
 		items = append(items, &ReviewItem{
 			SceneIndex:             segment.SceneIndex,
-			Narration:              derefString(segment.Narration),
+			Narration:              narration,
 			Shots:                  normalizeShots(segment.Shots),
 			TTSPath:                segment.TTSPath,
 			TTSDurationMs:          segment.TTSDurationMs,

@@ -142,7 +142,7 @@ describe('App', () => {
             data: {
               config: {
                 writer_model: 'deepseek-chat',
-                critic_model: 'gemini-2.0-flash',
+                critic_model: 'gemini-3.1-flash-lite-preview',
                 image_model: 'qwen-max-vl',
                 tts_model: 'qwen3-tts',
                 tts_voice: 'longhua',

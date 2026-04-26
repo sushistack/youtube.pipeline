@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline"
+	"github.com/sushistack/youtube.pipeline/internal/pipeline/agents"
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
@@ -710,6 +712,58 @@ func TestResume_MetadataAck_MetadataBuilderWired(t *testing.T) {
 	if buildCalls != 1 {
 		t.Errorf("MetadataBuilder.Build called %d times, want 1", buildCalls)
 	}
+}
+
+// TestResume_PhaseAEntryStage_DispatchesPhaseAAsync verifies that Resume on a
+// failed Phase A stage (e.g. stage=write) asynchronously kicks off the Phase A
+// executor goroutine. Without the dispatch, the run stays status=running forever
+// after Resume returns 200 — the root cause of the zombie bug fixed in this PR.
+func TestResume_PhaseAEntryStage_DispatchesPhaseAAsync(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	outDir := t.TempDir()
+	runID := "scp-049-run-1"
+	runs := &fakeRunStore{run: &domain.Run{
+		ID: runID, SCPID: "049",
+		Stage:  domain.StageWrite,
+		Status: domain.StatusFailed,
+	}}
+	segs := newFakeSegmentStore()
+	mustMkdir(t, filepath.Join(outDir, runID))
+
+	dispatched := make(chan string, 1)
+	fakeExec := &fakePhaseAExecutor{
+		runFn: func(_ context.Context, state *agents.PipelineState) error {
+			dispatched <- state.RunID
+			return nil
+		},
+	}
+
+	eng := newEngine(t, runs, segs, outDir)
+	eng.SetPhaseAExecutor(fakeExec)
+
+	if _, err := eng.Resume(context.Background(), runID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	select {
+	case got := <-dispatched:
+		if got != runID {
+			t.Errorf("PhaseA dispatched with runID %q, want %q", got, runID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("PhaseA executor not dispatched within 2s after Resume")
+	}
+}
+
+type fakePhaseAExecutor struct {
+	runFn func(context.Context, *agents.PipelineState) error
+}
+
+func (f *fakePhaseAExecutor) Run(ctx context.Context, state *agents.PipelineState) error {
+	if f.runFn != nil {
+		return f.runFn(ctx, state)
+	}
+	return nil
 }
 
 // --- helpers ---------------------------------------------------------------

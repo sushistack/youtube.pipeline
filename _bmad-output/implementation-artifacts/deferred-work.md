@@ -32,6 +32,12 @@
 
 ---
 
+## Deferred from: dogfood session 2026-04-25
+
+- **UI substage activity indicator** — During Phase A (`stage=write`) the operator sees only the static "Pipeline is working through this stage" copy ([web/src/components/shells/ProductionShell.tsx:299](../../web/src/components/shells/ProductionShell.tsx)). The run can spend 30s–5min in any of: writer LLM call, critic LLM call, rate-limiter wait, retry decision, anti-progress check. Without distinction the operator cannot tell "still working" from "hung", which directly produced the P0 zombie-run confusion in this session. Surfacing this requires a new substage/activity domain model (enum: `WriterCalling`, `CriticEvaluating`, `RateLimited`, `RetryWaiting`, …), DB persistence (new column on `runs` or new `run_activity` table), API serialization on `/api/runs/{id}/status`, polling/SSE update path, and UI placement (likely below StageStepper or in StatusBar). Out of scope for the in-session fix; backend log enrichment landed instead so the operator can read the same signal from server stdout while UI catches up. Needs spec + design before implementation — naive "more text on screen" risks dead layer.
+
+---
+
 ## Deferred from: code review of 10-5-data-export-to-json (2026-04-24)
 
 - **Empty-string `scene_id` producing `TargetItem = "scene:"`** — `decisions.scene_id` schema allows `TEXT NULL` with no empty-string CHECK; no current writer emits `''`, but a future bug could. Prefer a DB-level `CHECK (scene_id IS NULL OR length(scene_id) > 0)` over a read-path guard in `buildDecisionRows` ([internal/service/export_service.go:154-157](../../internal/service/export_service.go), [migrations/001_init.sql](../../migrations/001_init.sql)).

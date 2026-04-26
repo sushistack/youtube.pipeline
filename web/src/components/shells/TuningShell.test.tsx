@@ -1,65 +1,67 @@
-import '@testing-library/jest-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { renderWithProviders } from '../../test/renderWithProviders'
-import { TuningShell } from './TuningShell'
+import "@testing-library/jest-dom";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { renderWithProviders } from "../../test/renderWithProviders";
+import { TuningShell } from "./TuningShell";
 
-function installTuningFetchMock(options: {
-  goldenFalseRejects?: number
-  shadowEmpty?: boolean
-  shadowVersionTag?: string
-} = {}) {
+function installTuningFetchMock(
+  options: {
+    goldenFalseRejects?: number;
+    shadowEmpty?: boolean;
+    shadowVersionTag?: string;
+  } = {},
+) {
   const {
     goldenFalseRejects = 0,
     shadowEmpty = true,
-    shadowVersionTag = '20260424T000000Z-abc1234',
-  } = options
-  let saveCount = 0
+    shadowVersionTag = "20260424T000000Z-abc1234",
+  } = options;
+  let saveCount = 0;
 
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url =
-      typeof input === 'string'
+      typeof input === "string"
         ? input
         : input instanceof URL
-        ? input.toString()
-        : input.url
-    const method = init?.method ?? 'GET'
+          ? input.toString()
+          : input.url;
+    const method = init?.method ?? "GET";
 
-    if (url.endsWith('/api/tuning/critic-prompt') && method === 'GET') {
+    if (url.endsWith("/api/tuning/critic-prompt") && method === "GET") {
       return new Response(
         JSON.stringify({
           version: 1,
           data: {
-            body: '# Critic prompt\n\nseed content.\n',
-            saved_at: '',
-            prompt_hash: 'abc123def456',
-            git_short_sha: 'abc1234',
-            version_tag: '',
+            body: "# Critic prompt\n\nseed content.\n",
+            saved_at: "",
+            prompt_hash: "abc123def456",
+            git_short_sha: "abc1234",
+            version_tag: "",
           },
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     }
 
-    if (url.endsWith('/api/tuning/critic-prompt') && method === 'PUT') {
-      saveCount += 1
+    if (url.endsWith("/api/tuning/critic-prompt") && method === "PUT") {
+      saveCount += 1;
       return new Response(
         JSON.stringify({
           version: 1,
           data: {
-            body: '# Critic prompt\n\nedited\n',
-            saved_at: '2026-04-24T03:15:22Z',
-            prompt_hash: 'def789',
-            git_short_sha: 'abc1234',
+            body: "# Critic prompt\n\nedited\n",
+            saved_at: "2026-04-24T03:15:22Z",
+            prompt_hash: "def789",
+            git_short_sha: "abc1234",
             version_tag: `20260424T0315${saveCount}Z-abc1234`,
           },
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     }
 
-    if (url.endsWith('/api/tuning/golden') && method === 'GET') {
+    if (url.endsWith("/api/tuning/golden") && method === "GET") {
       return new Response(
         JSON.stringify({
           version: 1,
@@ -70,16 +72,16 @@ function installTuningFetchMock(options: {
               warnings: [],
               days_since_refresh: 0,
               prompt_hash_changed: false,
-              current_prompt_hash: 'abc123def456',
+              current_prompt_hash: "abc123def456",
             },
             last_report: null,
           },
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     }
 
-    if (url.endsWith('/api/tuning/golden/run') && method === 'POST') {
+    if (url.endsWith("/api/tuning/golden/run") && method === "POST") {
       return new Response(
         JSON.stringify({
           version: 1,
@@ -90,11 +92,11 @@ function installTuningFetchMock(options: {
             false_rejects: goldenFalseRejects,
           },
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     }
 
-    if (url.endsWith('/api/tuning/shadow/run') && method === 'POST') {
+    if (url.endsWith("/api/tuning/shadow/run") && method === "POST") {
       return new Response(
         JSON.stringify({
           version: 1,
@@ -103,16 +105,19 @@ function installTuningFetchMock(options: {
             evaluated: shadowEmpty ? 0 : 3,
             false_rejections: 0,
             empty: shadowEmpty,
-            summary_line: 'shadow eval: window=20 evaluated=0 false_rejections=0',
+            summary_line:
+              "shadow eval: window=20 evaluated=0 false_rejections=0",
+            critic_provider: "deepseek",
+            critic_model: "deepseek-chat",
             results: [],
             version_tag: shadowVersionTag,
           },
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     }
 
-    if (url.includes('/api/tuning/calibration')) {
+    if (url.includes("/api/tuning/calibration")) {
       return new Response(
         JSON.stringify({
           version: 1,
@@ -123,116 +128,124 @@ function installTuningFetchMock(options: {
             latest: null,
           },
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     }
 
-    return new Response(JSON.stringify({ version: 1, error: { code: 'NOT_FOUND', message: 'no mock', recoverable: false } }), { status: 404 })
-  })
+    return new Response(
+      JSON.stringify({
+        version: 1,
+        error: { code: "NOT_FOUND", message: "no mock", recoverable: false },
+      }),
+      { status: 404 },
+    );
+  });
 }
 
 afterEach(() => {
-  vi.restoreAllMocks()
-})
+  vi.restoreAllMocks();
+});
 
-describe('TuningShell', () => {
-  it('renders the six section headings in the specified order', async () => {
-    installTuningFetchMock()
-    renderWithProviders(<TuningShell />)
+describe("TuningShell", () => {
+  it("renders the six section headings in the specified order", async () => {
+    installTuningFetchMock();
+    renderWithProviders(<TuningShell />);
 
     // Wait for prompt to load so CriticPromptSection fully renders.
-    await screen.findByLabelText('Critic prompt body')
+    await screen.findByLabelText("Critic prompt body");
 
-    const headings = screen.getAllByRole('heading', { level: 2 })
-    const order = headings.map((h) => h.textContent)
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    const order = headings.map((h) => h.textContent);
     expect(order).toEqual([
-      'Critic Prompt',
-      'Fast Feedback',
-      'Golden Eval',
-      'Shadow Eval',
-      'Fixture Management',
-      'Calibration',
-    ])
-  })
+      "Critic Prompt",
+      "Fast Feedback",
+      "Golden Eval",
+      "Shadow Eval",
+      "Fixture Management",
+      "Calibration",
+    ]);
+  });
 
-  it('exposes exactly one h1 for the tab', async () => {
-    installTuningFetchMock()
-    renderWithProviders(<TuningShell />)
+  it("exposes exactly one h1 for the tab", async () => {
+    installTuningFetchMock();
+    renderWithProviders(<TuningShell />);
 
-    await screen.findByLabelText('Critic prompt body')
+    await screen.findByLabelText("Critic prompt body");
 
-    const h1s = screen.getAllByRole('heading', { level: 1 })
-    expect(h1s).toHaveLength(1)
-    expect(h1s[0]).toHaveTextContent('Tuning')
-  })
+    const h1s = screen.getAllByRole("heading", { level: 1 });
+    expect(h1s).toHaveLength(1);
+    expect(h1s[0]).toHaveTextContent("Tuning");
+  });
 
-  it('shows a save recommendation banner after the prompt is saved', async () => {
-    installTuningFetchMock()
-    const user = userEvent.setup()
-    renderWithProviders(<TuningShell />)
+  it("shows a save recommendation banner after the prompt is saved", async () => {
+    installTuningFetchMock();
+    const user = userEvent.setup();
+    renderWithProviders(<TuningShell />);
 
-    const editor = await screen.findByLabelText('Critic prompt body')
-    await user.clear(editor)
-    await user.type(editor, 'new content')
+    const editor = await screen.findByLabelText("Critic prompt body");
+    await user.clear(editor);
+    await user.type(editor, "new content");
 
-    await user.click(screen.getByRole('button', { name: /save prompt/i }))
+    await user.click(screen.getByRole("button", { name: /save prompt/i }));
 
-    const banner = await screen.findByRole('status', { name: /save recommendation/i })
-    expect(banner).toHaveTextContent(/Prompt saved as/)
-  })
+    const banner = await screen.findByRole("status", {
+      name: /save recommendation/i,
+    });
+    expect(banner).toHaveTextContent(/Prompt saved as/);
+  });
 
-  it('keeps Shadow disabled until Golden passes in the current session', async () => {
-    installTuningFetchMock()
-    const user = userEvent.setup()
-    renderWithProviders(<TuningShell />)
+  it("keeps Shadow disabled until Golden passes in the current session", async () => {
+    installTuningFetchMock();
+    const user = userEvent.setup();
+    renderWithProviders(<TuningShell />);
 
-    await screen.findByLabelText('Critic prompt body')
+    await screen.findByLabelText("Critic prompt body");
 
-    const shadowHeading = screen.getByRole('heading', { name: 'Shadow Eval' })
-    const shadowSection = shadowHeading.closest('section') as HTMLElement
-    const shadowButton = within(shadowSection).getByRole('button', {
+    const shadowHeading = screen.getByRole("heading", { name: "Shadow Eval" });
+    const shadowSection = shadowHeading.closest("section") as HTMLElement;
+    const shadowButton = within(shadowSection).getByRole("button", {
       name: /run shadow eval/i,
-    })
-    expect(shadowButton).toBeDisabled()
+    });
+    expect(shadowButton).toBeDisabled();
     expect(
       within(shadowSection).getByText(
         /Golden must pass this session before Shadow can run/i,
       ),
-    ).toBeInTheDocument()
+    ).toBeInTheDocument();
 
     // Kick Golden off — it returns false_rejects=0, so the gate opens.
-    const goldenHeading = screen.getByRole('heading', { name: 'Golden Eval' })
-    const goldenSection = goldenHeading.closest('section') as HTMLElement
+    const goldenHeading = screen.getByRole("heading", { name: "Golden Eval" });
+    const goldenSection = goldenHeading.closest("section") as HTMLElement;
     await user.click(
-      within(goldenSection).getByRole('button', { name: /run golden eval/i }),
-    )
+      within(goldenSection).getByRole("button", { name: /run golden eval/i }),
+    );
 
     await waitFor(() => {
-      expect(shadowButton).not.toBeDisabled()
-    })
-  })
+      expect(shadowButton).not.toBeDisabled();
+    });
+  });
 
-  it('leaves Shadow disabled when Golden reports false rejections', async () => {
-    installTuningFetchMock({ goldenFalseRejects: 2 })
-    const user = userEvent.setup()
-    renderWithProviders(<TuningShell />)
+  it("leaves Shadow disabled when Golden reports false rejections", async () => {
+    installTuningFetchMock({ goldenFalseRejects: 2 });
+    const user = userEvent.setup();
+    renderWithProviders(<TuningShell />);
 
-    await screen.findByLabelText('Critic prompt body')
+    await screen.findByLabelText("Critic prompt body");
 
-    const goldenHeading = screen.getByRole('heading', { name: 'Golden Eval' })
-    const goldenSection = goldenHeading.closest('section') as HTMLElement
+    const goldenHeading = screen.getByRole("heading", { name: "Golden Eval" });
+    const goldenSection = goldenHeading.closest("section") as HTMLElement;
     await user.click(
-      within(goldenSection).getByRole('button', { name: /run golden eval/i }),
-    )
+      within(goldenSection).getByRole("button", { name: /run golden eval/i }),
+    );
 
     // Wait for the Golden report row so we know the mutation settled.
-    await within(goldenSection).findByText(/false rejects/i)
+    await within(goldenSection).findByText(/false rejects/i);
 
-    const shadowHeading = screen.getByRole('heading', { name: 'Shadow Eval' })
-    const shadowSection = shadowHeading.closest('section') as HTMLElement
-    const shadowButton = within(shadowSection).getByRole('button', {
+    const shadowHeading = screen.getByRole("heading", { name: "Shadow Eval" });
+    const shadowSection = shadowHeading.closest("section") as HTMLElement;
+    const shadowButton = within(shadowSection).getByRole("button", {
       name: /run shadow eval/i,
-    })
-    expect(shadowButton).toBeDisabled()
-  })
-})
+    });
+    expect(shadowButton).toBeDisabled();
+  });
+});

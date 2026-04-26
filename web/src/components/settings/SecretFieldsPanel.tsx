@@ -41,7 +41,7 @@ export function SecretFieldsPanel({
         from <code>.env</code> entirely.
       </p>
 
-      <div className='settings-form-grid'>
+      <div className='settings-form-grid settings-form-grid--single'>
         {fields.map(([key, label]) => {
           const draft = drafts[key] ?? { value: '', cleared: false }
           const is_configured = env[key]?.configured ?? false

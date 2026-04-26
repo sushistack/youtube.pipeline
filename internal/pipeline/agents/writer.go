@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -22,16 +23,21 @@ type TextAgentConfig struct {
 	Provider    string
 	MaxTokens   int
 	Temperature float64
-	// Concurrency caps the number of in-flight LLM calls when an agent
-	// fans out work (e.g. writer's per-act fan-out). Zero or negative
-	// values fall back to a safe default at the call site (currently 2,
-	// matching DashScope's 2-concurrent ceiling).
+	// Concurrency caps the number of in-flight LLM calls when an agent fans
+	// out work in parallel (writer per-act, visual_breakdowner per-scene).
+	// Zero or negative falls back to a per-agent default; sequential agents
+	// ignore it.
 	Concurrency int
 	// AuditLogger is the optional audit logger. When non-nil, text_generation
 	// audit entries are written after each successful Generate call. Nil is
 	// allowed (no-op guard) — all existing tests continue to pass without
 	// modification because they construct TextAgentConfig without this field.
 	AuditLogger domain.AuditLogger
+	// Logger is the optional structured logger. When non-nil, the agent emits
+	// per-attempt LLM-call boundary events ("attempt start", "attempt complete",
+	// retry decisions). Nil falls back to no-op so existing tests stay valid.
+	// Used to localize Phase A hangs to the inner LLM call vs. validation step.
+	Logger *slog.Logger
 }
 
 // writerActResponse is the per-act LLM response shape. The full
@@ -45,10 +51,10 @@ type writerActResponse struct {
 // writerActSpec captures everything the writer needs to render and
 // validate a single per-act LLM call.
 type writerActSpec struct {
-	Index       int // 0..3 in domain.ActOrder
-	Act         domain.Act
-	SceneNumLo  int
-	SceneNumHi  int
+	Index      int // 0..3 in domain.ActOrder
+	Act        domain.Act
+	SceneNumLo int
+	SceneNumHi int
 }
 
 const (
@@ -57,6 +63,12 @@ const (
 	writerPerActRetryBudget  = 1   // one retry per act on schema violation
 	priorActBeatRuneCap      = 240 // bound on the Act-1-tail snippet repeated into Acts 2/3/4 prompts
 )
+
+// defaultAgentConcurrency is the fan-out cap when TextAgentConfig.Concurrency
+// is unset for parallel agents that aren't writer-specific (e.g. visual
+// breakdowner). Picked to stay within DashScope's 10 RPM / 2 concurrent limit
+// while still gaining most of the wall-clock win over fully sequential calls.
+const defaultAgentConcurrency = 4
 
 func NewWriter(
 	gen domain.TextGenerator,
@@ -93,10 +105,15 @@ func NewWriter(
 			return err
 		}
 
+		// PriorCriticFeedback is injected identically into every act's prompt
+		// (see spec §4 Critic feedback). Future per-act targeting can split
+		// it; today we mirror the legacy single-call writer's behavior.
+		qualityFeedback := state.PriorCriticFeedback
+
 		// Run Act 1 (incident) serially — its output sets the tone summary
 		// injected into Acts 2/3/4 prompts and acts as a wall-clock
 		// dependency, not a parallel sibling.
-		act1Resp, act1Meta, err := runWriterAct(ctx, gen, cfg, prompts, terms, state, specs[0], "")
+		act1Resp, act1Meta, err := runWriterAct(ctx, gen, cfg, prompts, terms, state, specs[0], "", qualityFeedback)
 		if err != nil {
 			return err
 		}
@@ -123,7 +140,7 @@ func NewWriter(
 		for i := 1; i < len(specs); i++ {
 			i, spec := i, specs[i]
 			g.Go(func() error {
-				resp, meta, err := runWriterAct(gctx, gen, cfg, prompts, terms, state, spec, priorSummary)
+				resp, meta, err := runWriterAct(gctx, gen, cfg, prompts, terms, state, spec, priorSummary, qualityFeedback)
 				if err != nil {
 					return err
 				}
@@ -199,8 +216,9 @@ func runWriterAct(
 	state *PipelineState,
 	spec writerActSpec,
 	priorSummary string,
+	qualityFeedback string,
 ) (writerActResponse, actCallMeta, error) {
-	prompt, err := renderWriterActPrompt(state, prompts, terms, spec, priorSummary)
+	prompt, err := renderWriterActPrompt(state, prompts, terms, spec, priorSummary, qualityFeedback)
 	if err != nil {
 		return writerActResponse{}, actCallMeta{}, err
 	}
@@ -211,6 +229,18 @@ func runWriterAct(
 			return writerActResponse{}, actCallMeta{}, err
 		}
 
+		if cfg.Logger != nil {
+			cfg.Logger.Info("writer attempt start",
+				"run_id", state.RunID,
+				"act_id", spec.Act.ID,
+				"attempt", attempt,
+				"provider", cfg.Provider,
+				"model", cfg.Model,
+				"prompt_chars", utf8.RuneCountInString(prompt),
+				"has_quality_feedback", qualityFeedback != "",
+			)
+		}
+		callStart := time.Now()
 		resp, err := gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
@@ -218,7 +248,27 @@ func runWriterAct(
 			Temperature: cfg.Temperature,
 		})
 		if err != nil {
+			if cfg.Logger != nil {
+				cfg.Logger.Error("writer attempt failed",
+					"run_id", state.RunID,
+					"act_id", spec.Act.ID,
+					"attempt", attempt,
+					"duration_ms", time.Since(callStart).Milliseconds(),
+					"error", err.Error(),
+				)
+			}
 			return writerActResponse{}, actCallMeta{}, err
+		}
+		if cfg.Logger != nil {
+			cfg.Logger.Info("writer attempt complete",
+				"run_id", state.RunID,
+				"act_id", spec.Act.ID,
+				"attempt", attempt,
+				"duration_ms", time.Since(callStart).Milliseconds(),
+				"finish_reason", resp.FinishReason,
+				"tokens_in", resp.TokensIn,
+				"tokens_out", resp.TokensOut,
+			)
 		}
 
 		if cfg.AuditLogger != nil {
@@ -234,13 +284,42 @@ func runWriterAct(
 			})
 		}
 
+		// Truncated completions usually mean the act would not fit in the
+		// configured max_tokens. Decoding the half-written JSON would fail
+		// with a generic parse error; surface a clearer message and abort
+		// without burning the retry budget on the same broken response shape.
+		if isTruncatedFinishReason(resp.FinishReason) {
+			return writerActResponse{}, actCallMeta{}, fmt.Errorf(
+				"writer: act %s: provider truncated completion (finish_reason=%q); raise max_tokens or shorten the prompt: %w",
+				spec.Act.ID, resp.FinishReason, domain.ErrValidation,
+			)
+		}
+
 		var decoded writerActResponse
 		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
 			lastErr = fmt.Errorf("writer: act %s: %w", spec.Act.ID, err)
+			if cfg.Logger != nil {
+				cfg.Logger.Info("writer retry",
+					"run_id", state.RunID,
+					"act_id", spec.Act.ID,
+					"attempt", attempt,
+					"reason", "json_decode",
+					"error", err.Error(),
+				)
+			}
 			continue
 		}
 		if err := validateWriterActResponse(spec, decoded); err != nil {
 			lastErr = err
+			if cfg.Logger != nil {
+				cfg.Logger.Info("writer retry",
+					"run_id", state.RunID,
+					"act_id", spec.Act.ID,
+					"attempt", attempt,
+					"reason", "schema_validation",
+					"error", err.Error(),
+				)
+			}
 			continue
 		}
 		return decoded, actCallMeta{resp: resp}, nil
@@ -311,6 +390,7 @@ func renderWriterActPrompt(
 	terms *ForbiddenTerms,
 	spec writerActSpec,
 	priorSummary string,
+	qualityFeedback string,
 ) (string, error) {
 	visualJSON, err := json.MarshalIndent(state.Research.VisualIdentity, "", "  ")
 	if err != nil {
@@ -331,7 +411,7 @@ func renderWriterActPrompt(
 		"{format_guide}", prompts.FormatGuide,
 		"{forbidden_terms_section}", forbidden,
 		"{glossary_section}", "",
-		"{quality_feedback}", "",
+		"{quality_feedback}", qualityFeedback,
 	)
 	return replacer.Replace(prompts.WriterTemplate), nil
 }
@@ -379,6 +459,20 @@ func summarizePriorAct(act writerActResponse) string {
 	}
 	parts = append(parts, "Do NOT re-introduce the entity from scratch and do NOT recap the hook.")
 	return strings.Join(parts, " ")
+}
+
+// isTruncatedFinishReason reports whether a provider's finish_reason
+// indicates the response was cut off by the output token cap (vs. the
+// model genuinely finishing). Decoded JSON from a truncated response is
+// almost always invalid; surface a clear error early instead of letting
+// the per-act retry burn its budget on the same broken shape.
+func isTruncatedFinishReason(reason string) bool {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "length", "max_tokens":
+		return true
+	default:
+		return false
+	}
 }
 
 // truncatePrompt rune-aware truncates s to at most n runes.

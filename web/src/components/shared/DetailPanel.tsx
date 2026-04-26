@@ -139,7 +139,14 @@ export function DetailPanel({ is_regenerating = false, item }: DetailPanelProps)
             src={heroShot.image_path}
           />
         ) : (
-          <div className="detail-panel__hero-fallback">No clip or hero image yet</div>
+          <div className="detail-panel__hero-fallback">
+          <svg aria-hidden="true" className="detail-panel__hero-placeholder-icon" fill="none" height="40" viewBox="0 0 40 40" width="40">
+            <rect height="26" rx="3" stroke="currentColor" strokeWidth="1.5" width="34" x="3" y="9" />
+            <circle cx="13" cy="19" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M3 28l8-7 6 6 5-4 9 8" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.5" />
+          </svg>
+          <span>No image yet</span>
+        </div>
         )}
       </section>
 

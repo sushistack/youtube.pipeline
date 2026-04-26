@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ func TestIntegration_Shadow_ReplaysRecentPassedCases(t *testing.T) {
 		defaultVerdict: VerdictResult{Verdict: domain.CriticVerdictPass, OverallScore: 88},
 	}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 5)
+	report, err := RunShadow(context.Background(), root, filepath.Join(root, "testdata", "shadow_eval_seed"), src, ev, shadowTestNow, 5)
 	if err != nil {
 		t.Fatalf("RunShadow integration: %v", err)
 	}
@@ -63,7 +64,7 @@ func TestIntegration_Shadow_DetectsFalseRejectionRegression(t *testing.T) {
 		},
 	}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 10)
+	report, err := RunShadow(context.Background(), root, filepath.Join(root, "testdata", "shadow_eval_seed"), src, ev, shadowTestNow, 10)
 	if err != nil {
 		t.Fatalf("RunShadow integration: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestIntegration_Shadow_LogsScoreDiffs(t *testing.T) {
 		},
 	}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 5)
+	report, err := RunShadow(context.Background(), root, filepath.Join(root, "testdata", "shadow_eval_seed"), src, ev, shadowTestNow, 5)
 	if err != nil {
 		t.Fatalf("RunShadow integration: %v", err)
 	}

@@ -249,6 +249,22 @@ func TestDashScopeLimiterFactory_ImageAndTTSSharePointer(t *testing.T) {
 	}
 }
 
+func TestDashScopeLimiterFactory_TextSharesPointerWithImageAndTTS(t *testing.T) {
+	// Phase A wires the DashScope text client (Qwen) onto the same shared
+	// account-level budget as image/tts. A separate limiter would let three
+	// surfaces independently exhaust their own RPM caps and aggregate past
+	// DashScope's per-key throttle, defeating the budget contract image and
+	// tts already enforce by sharing.
+	testutil.BlockExternalHTTP(t)
+	factory := newProviderFactory(t)
+	if factory.DashScopeText() != factory.DashScopeImage() {
+		t.Fatal("dashscope text and image limiters must share the same pointer")
+	}
+	if factory.DashScopeText() != factory.DashScopeTTS() {
+		t.Fatal("dashscope text and tts limiters must share the same pointer")
+	}
+}
+
 func TestDashScopeLimiterFactory_NonDashScopeProvidersAreIsolated(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	factory := newProviderFactory(t)

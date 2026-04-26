@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
 
@@ -73,55 +75,69 @@ func NewVisualBreakdowner(
 
 		seen := make(map[int]struct{}, len(state.Narration.Scenes))
 		for _, scene := range state.Narration.Scenes {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
 			if _, dup := seen[scene.SceneNum]; dup {
 				return fmt.Errorf("visual breakdowner: %w: duplicate scene_num=%d", domain.ErrValidation, scene.SceneNum)
 			}
 			seen[scene.SceneNum] = struct{}{}
-
-			sceneDuration := estimator.Estimate(scene)
-			shotCount := ShotCountForDuration(sceneDuration)
-			prompt, err := renderVisualBreakdownPrompt(state, prompts, scene, frozen, sceneDuration, shotCount)
-			if err != nil {
-				return err
-			}
-
-			resp, err := gen.Generate(ctx, domain.TextRequest{
-				Prompt:      prompt,
-				Model:       cfg.Model,
-				MaxTokens:   cfg.MaxTokens,
-				Temperature: cfg.Temperature,
-			})
-			if err != nil {
-				return err
-			}
-
-			// Non-fatal audit write after each successful visual breakdown generation.
-			if cfg.AuditLogger != nil {
-				_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
-					Timestamp: time.Now(),
-					EventType: domain.AuditEventTextGeneration,
-					RunID:     state.RunID,
-					Stage:     "visual_breakdowner",
-					Provider:  resp.Provider,
-					Model:     resp.Model,
-					Prompt:    truncatePrompt(prompt, 2048),
-					CostUSD:   resp.CostUSD,
-				})
-			}
-
-			var decoded visualBreakdownResponse
-			if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
-				return fmt.Errorf("visual breakdowner: %w", err)
-			}
-			if err := validateVisualBreakdownResponse(scene.SceneNum, shotCount, decoded); err != nil {
-				return err
-			}
-
-			output.Scenes = append(output.Scenes, buildVisualBreakdownScene(scene, frozen, sceneDuration, decoded))
 		}
+
+		scenes := state.Narration.Scenes
+		results := make([]domain.VisualBreakdownScene, len(scenes))
+
+		concurrency := cfg.Concurrency
+		if concurrency <= 0 {
+			concurrency = defaultAgentConcurrency
+		}
+		g, gctx := errgroup.WithContext(ctx)
+		g.SetLimit(concurrency)
+		for i, scene := range scenes {
+			i, scene := i, scene
+			g.Go(func() error {
+				sceneDuration := estimator.Estimate(scene)
+				shotCount := ShotCountForDuration(sceneDuration)
+				prompt, err := renderVisualBreakdownPrompt(state, prompts, scene, frozen, sceneDuration, shotCount)
+				if err != nil {
+					return err
+				}
+
+				resp, err := gen.Generate(gctx, domain.TextRequest{
+					Prompt:      prompt,
+					Model:       cfg.Model,
+					MaxTokens:   cfg.MaxTokens,
+					Temperature: cfg.Temperature,
+				})
+				if err != nil {
+					return err
+				}
+
+				if cfg.AuditLogger != nil {
+					_ = cfg.AuditLogger.Log(gctx, domain.AuditEntry{
+						Timestamp: time.Now(),
+						EventType: domain.AuditEventTextGeneration,
+						RunID:     state.RunID,
+						Stage:     "visual_breakdowner",
+						Provider:  resp.Provider,
+						Model:     resp.Model,
+						Prompt:    truncatePrompt(prompt, 2048),
+						CostUSD:   resp.CostUSD,
+					})
+				}
+
+				var decoded visualBreakdownResponse
+				if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
+					return fmt.Errorf("visual breakdowner: %w", err)
+				}
+				if err := validateVisualBreakdownResponse(scene.SceneNum, shotCount, decoded); err != nil {
+					return err
+				}
+				results[i] = buildVisualBreakdownScene(scene, frozen, sceneDuration, decoded)
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return err
+		}
+		output.Scenes = results
 
 		if err := validator.Validate(output); err != nil {
 			return fmt.Errorf("visual breakdowner: %w", err)

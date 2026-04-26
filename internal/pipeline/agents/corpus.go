@@ -65,6 +65,17 @@ func NewFilesystemCorpus(dataDir string) CorpusReader {
 	return filesystemCorpus{dataDir: dataDir}
 }
 
+// normalizeScpID prepends "SCP-" when the input lacks a "SCP-" prefix (any
+// case), so "049" and "049-J" resolve to "SCP-049" and "SCP-049-J".
+// When the prefix is already present the input is returned unchanged so that
+// the filesystem case-sensitivity contract (SCP-049 ≠ scp-049) is preserved.
+func normalizeScpID(scpID string) string {
+	if strings.HasPrefix(strings.ToUpper(scpID), "SCP-") {
+		return scpID
+	}
+	return "SCP-" + scpID
+}
+
 func (c filesystemCorpus) Read(ctx context.Context, scpID string) (CorpusDocument, error) {
 	if err := ctx.Err(); err != nil {
 		return CorpusDocument{}, err
@@ -77,7 +88,7 @@ func (c filesystemCorpus) Read(ctx context.Context, scpID string) (CorpusDocumen
 		return CorpusDocument{}, ErrCorpusNotFound
 	}
 
-	dir := filepath.Join(c.dataDir, scpID)
+	dir := filepath.Join(c.dataDir, normalizeScpID(scpID))
 	info, err := os.Stat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {

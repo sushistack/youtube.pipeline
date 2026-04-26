@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
@@ -39,6 +40,15 @@ type SegmentStore interface {
 	ClearTTSArtifactsByRunID(ctx context.Context, runID string) (int64, error)
 }
 
+// NarrationSeeder is the narrow persistence surface the Engine uses to
+// seed segments rows from a NarrationScript at the Phase A → scenario_review
+// boundary. *db.SegmentStore satisfies this structurally via SeedFromNarration.
+// Without seeding, segments stays empty until Phase B runs, leaving the
+// scenario_review UI with no scenes to render.
+type NarrationSeeder interface {
+	SeedFromNarration(ctx context.Context, runID string, scenes []domain.NarrationScene) (int64, error)
+}
+
 // HITLSessionCleaner is the narrow persistence surface the Engine uses to
 // drop stale hitl_sessions rows when a run exits HITL state on Resume.
 // *db.DecisionStore satisfies this interface structurally. Story 2.6
@@ -47,6 +57,17 @@ type SegmentStore interface {
 // state must clean the row.
 type HITLSessionCleaner interface {
 	DeleteSession(ctx context.Context, runID string) error
+}
+
+// CriticReportStore persists Phase A critic checkpoint reports and the
+// narration attempts they evaluated. Every attempt (pass/retry/accept) is
+// recorded so retry verdicts can be audited and writer prompts iterated
+// against concrete failure cases. *db.CriticReportStore satisfies this
+// interface structurally. Nil is tolerated: if no store is wired, Phase A
+// proceeds without persisting diagnostics (used by tests/tools).
+type CriticReportStore interface {
+	InsertCriticReport(ctx context.Context, runID string, attemptNumber int, report domain.CriticCheckpointReport) error
+	InsertNarrationAttempt(ctx context.Context, runID string, attemptNumber int, narration *domain.NarrationScript) error
 }
 
 // ResumeOptions controls optional Resume behavior.
@@ -70,6 +91,8 @@ type Engine struct {
 	// row missing on transition (manifests as the UI seeing "no session" and
 	// failing to render scenes).
 	hitlSessions   HITLSessionStore
+	narrationSeed  NarrationSeeder
+	criticReports  CriticReportStore
 	phaseA         PhaseAExecutor
 	phaseB         PhaseBExecutor
 	phaseC         *PhaseCRunner
@@ -114,6 +137,40 @@ func (e *Engine) SetPhaseCRunner(runner *PhaseCRunner) {
 // written), which skips the metadata entry call.
 func (e *Engine) SetPhaseCMetadataBuilder(builder MetadataBuilder) {
 	e.phaseCMetadata = builder
+}
+
+// SetNarrationSeeder wires the segments seeder invoked at the Phase A →
+// scenario_review boundary. Without this, /api/runs/{id}/scenes returns
+// empty during scenario_review because no production code creates segments
+// rows until Phase B starts. Nil disables seeding (acceptable for
+// tests/tools that operate strictly post-Phase-B).
+func (e *Engine) SetNarrationSeeder(s NarrationSeeder) {
+	e.narrationSeed = s
+}
+
+// SetCriticReportStore wires the persistence target for Phase A critic
+// checkpoints and narration attempts. Nil disables persistence (acceptable
+// for tests/tools).
+func (e *Engine) SetCriticReportStore(s CriticReportStore) {
+	e.criticReports = s
+}
+
+// seedSegmentsAtScenarioReview is the post-Phase-A hook that creates the
+// segments rows from the in-memory NarrationScript. Best-effort: a seed
+// failure is logged but the transition still completes (scenes will simply
+// stay empty until manual intervention; the run is not stuck).
+func (e *Engine) seedSegmentsAtScenarioReview(ctx context.Context, runID string, narration *domain.NarrationScript) {
+	if e.narrationSeed == nil || narration == nil || len(narration.Scenes) == 0 {
+		return
+	}
+	inserted, err := e.narrationSeed.SeedFromNarration(ctx, runID, narration.Scenes)
+	if err != nil {
+		e.logger.Warn("seed segments at scenario_review failed",
+			"run_id", runID, "scenes", len(narration.Scenes), "error", err.Error())
+		return
+	}
+	e.logger.Info("seeded segments from narration",
+		"run_id", runID, "rows_inserted", inserted, "scenes_total", len(narration.Scenes))
 }
 
 // SetHITLSessionStore wires the full HITL session store used to upsert
@@ -244,6 +301,11 @@ func (e *Engine) advancePhaseA(ctx context.Context, runID string, run *domain.Ru
 	if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
 		return fmt.Errorf("advance %s: apply phase a success result: %w", runID, err)
 	}
+	// Seed segments BEFORE the HITL session upsert so that a status poll
+	// arriving immediately after the transition sees both the session row
+	// and the per-scene rows the UI renders. Best-effort: a seed failure
+	// is logged but does not block the transition.
+	e.seedSegmentsAtScenarioReview(ctx, runID, state.Narration)
 	// HITL-row upsert MUST follow ApplyPhaseAResult: the runs row drives
 	// hitl_service's IsHITLStage check, so the session row is meaningless
 	// until the run is actually in scenario_review/waiting.
@@ -538,6 +600,26 @@ func (e *Engine) ExecuteResume(ctx context.Context, runID string) error {
 		}
 	}
 
+	// Phase A entry stages (research/structure/write/visual_break/review/critic)
+	// have no synchronous executor in this Resume path because Phase A is the
+	// long-running multi-LLM chain — running it inline would block the request
+	// past WriteTimeout. Mirror Advance's async dispatch pattern: kick off the
+	// chain in a goroutine using context.Background() (request ctx is cancelled
+	// when Resume returns 200), persist artifacts on completion, and rely on
+	// the engine's stage transitions to surface progress to the UI via polling.
+	if isPhaseAEntryStage(run.Stage) && e.phaseA != nil {
+		runCopy := *run
+		go func() {
+			if err := e.advancePhaseA(context.Background(), runID, &runCopy); err != nil {
+				e.logger.Error("phase a after resume failed",
+					"run_id", runID, "stage", runCopy.Stage, "error", err.Error())
+				return
+			}
+			e.logger.Info("phase a after resume complete",
+				"run_id", runID, "stage", runCopy.Stage)
+		}()
+	}
+
 	// Story 2.6 cleanup: drop the hitl_sessions row when the run exits HITL
 	// state. If still waiting (retry within the same HITL stage), the session
 	// row stays and is updated by the next decision event.
@@ -654,4 +736,36 @@ func stringPtrOrNil(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// formatPriorCriticFeedback builds the quality_feedback block injected into
+// the writer prompt on Resume. It includes (a) rubric scores so the writer
+// knows which dimensions to preserve and (b) the critic's specific feedback.
+func formatPriorCriticFeedback(report *domain.CriticCheckpointReport) string {
+	if report == nil {
+		return ""
+	}
+	scoreLabel := func(score int) string {
+		switch {
+		case score >= 80:
+			return "✅ GOOD — 유지하세요"
+		case score >= 60:
+			return "⚠️ 보통 — 개선 여지 있음"
+		default:
+			return "❌ 부족 — 반드시 개선"
+		}
+	}
+	lines := []string{
+		"## 이전 시도 품질 피드백",
+		"",
+		"이전 버전의 루브릭 점수입니다. **점수가 높은 항목은 반드시 유지하고, 낮은 항목만 개선하세요.**",
+		fmt.Sprintf("- Hook: %d/100 %s", report.Rubric.Hook, scoreLabel(report.Rubric.Hook)),
+		fmt.Sprintf("- Fact Accuracy: %d/100 %s", report.Rubric.FactAccuracy, scoreLabel(report.Rubric.FactAccuracy)),
+		fmt.Sprintf("- Emotional Variation: %d/100 %s", report.Rubric.EmotionalVariation, scoreLabel(report.Rubric.EmotionalVariation)),
+		fmt.Sprintf("- Immersion: %d/100 %s", report.Rubric.Immersion, scoreLabel(report.Rubric.Immersion)),
+		"",
+		"**구체적 피드백:**",
+		report.Feedback,
+	}
+	return strings.Join(lines, "\n")
 }

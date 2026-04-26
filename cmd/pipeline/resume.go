@@ -58,6 +58,7 @@ func runResume(cmd *cobra.Command, runID string, force bool) error {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
 	engine.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore))
+	engine.SetNarrationSeeder(segStore)
 	limiterFactory, limiterErr := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
 		DashScope: llmclient.LimitConfig{RequestsPerMinute: 10, MaxConcurrent: 2, AcquireTimeout: 30 * time.Second},
 		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},

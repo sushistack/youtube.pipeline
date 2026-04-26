@@ -12,6 +12,102 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
+func TestSegmentStore_SeedFromNarration_BulkInsertsRows(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+	ctx := context.Background()
+
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO runs (id, scp_id) VALUES (?, ?)`, "scp-049-run-1", "049"); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	scenes := []domain.NarrationScene{
+		{SceneNum: 1, ActID: domain.ActIncident, Narration: "scene one"},
+		{SceneNum: 2, ActID: domain.ActIncident, Narration: "scene two"},
+		{SceneNum: 3, ActID: domain.ActMystery, Narration: "scene three"},
+	}
+	inserted, err := store.SeedFromNarration(ctx, "scp-049-run-1", scenes)
+	if err != nil {
+		t.Fatalf("SeedFromNarration: %v", err)
+	}
+	if inserted != 3 {
+		t.Fatalf("inserted = %d, want 3", inserted)
+	}
+
+	got, err := store.ListByRunID(ctx, "scp-049-run-1")
+	if err != nil {
+		t.Fatalf("ListByRunID: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3", len(got))
+	}
+	for i, ep := range got {
+		if ep.SceneIndex != i {
+			t.Errorf("got[%d].SceneIndex = %d, want %d", i, ep.SceneIndex, i)
+		}
+		if ep.Narration == nil || *ep.Narration != scenes[i].Narration {
+			t.Errorf("got[%d].Narration = %v, want %q", i, ep.Narration, scenes[i].Narration)
+		}
+	}
+}
+
+func TestSegmentStore_SeedFromNarration_IsIdempotentOnConflict(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+	ctx := context.Background()
+
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO runs (id, scp_id) VALUES (?, ?)`, "scp-049-run-1", "049"); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	scenes := []domain.NarrationScene{
+		{SceneNum: 1, Narration: "v1 narration"},
+		{SceneNum: 2, Narration: "v1 narration two"},
+	}
+	if _, err := store.SeedFromNarration(ctx, "scp-049-run-1", scenes); err != nil {
+		t.Fatalf("SeedFromNarration first call: %v", err)
+	}
+	// Operator edits scene 0's narration after seeding.
+	if err := store.UpdateNarration(ctx, "scp-049-run-1", 0, "edited narration"); err != nil {
+		t.Fatalf("UpdateNarration: %v", err)
+	}
+	// Re-seed (e.g. Phase A retried). ON CONFLICT DO NOTHING must preserve
+	// the edited row.
+	scenes[0].Narration = "v2 reseed text"
+	inserted, err := store.SeedFromNarration(ctx, "scp-049-run-1", scenes)
+	if err != nil {
+		t.Fatalf("SeedFromNarration second call: %v", err)
+	}
+	if inserted != 0 {
+		t.Fatalf("second seed inserted = %d, want 0 (idempotent)", inserted)
+	}
+	got, err := store.ListByRunID(ctx, "scp-049-run-1")
+	if err != nil {
+		t.Fatalf("ListByRunID: %v", err)
+	}
+	if got[0].Narration == nil || *got[0].Narration != "edited narration" {
+		t.Fatalf("scene 0 narration = %v, want preserved 'edited narration'", got[0].Narration)
+	}
+}
+
+func TestSegmentStore_SeedFromNarration_EmptyScenesNoOp(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewSegmentStore(database)
+
+	inserted, err := store.SeedFromNarration(context.Background(), "scp-049-run-1", nil)
+	if err != nil {
+		t.Fatalf("SeedFromNarration nil: %v", err)
+	}
+	if inserted != 0 {
+		t.Fatalf("inserted = %d, want 0", inserted)
+	}
+}
+
 func TestSegmentStore_ListByRunID_Empty(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)

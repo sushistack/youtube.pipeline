@@ -4,7 +4,6 @@ export const SUPPORTED_SHORTCUT_KEYS = [
   'escape',
   'tab',
   'ctrl+z',
-  'mod+n',
   'space',
   's',
   'j',
@@ -66,19 +65,7 @@ const EDITABLE_INPUT_TYPES = new Set([
   'week',
 ])
 
-export function isMacPlatform() {
-  if (typeof navigator === 'undefined') {
-    return false
-  }
-
-  return /mac/i.test(navigator.platform)
-}
-
 export function formatShortcutHint(key: ShortcutKey) {
-  if (key === 'mod+n') {
-    return isMacPlatform() ? '⌘N' : 'Ctrl+N'
-  }
-
   return key
 }
 
@@ -141,21 +128,6 @@ export function normalizeShortcut(event: KeyboardEvent): NormalizedShortcut | nu
     return {
       digit: null,
       key: 'ctrl+z',
-    }
-  }
-
-  const primary_modifier_active = isMacPlatform() ? event.metaKey : event.ctrlKey
-  const secondary_modifier_active = isMacPlatform() ? event.ctrlKey : event.metaKey
-  if (
-    primary_modifier_active &&
-    !secondary_modifier_active &&
-    !event.altKey &&
-    !event.shiftKey &&
-    lowered === 'n'
-  ) {
-    return {
-      digit: null,
-      key: 'mod+n',
     }
   }
 

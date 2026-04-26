@@ -220,8 +220,9 @@ func TestSceneHandler_List_ReturnsRichPayloadAtNonReviewStage(t *testing.T) {
 	if len(item.Shots) != 1 {
 		t.Fatalf("want 1 shot, got %d", len(item.Shots))
 	}
-	if item.TTSPath == nil || *item.TTSPath != "/audio/scene-0.wav" {
-		t.Fatalf("tts_path mismatch: %+v", item.TTSPath)
+	expectedAudioURL := "/api/runs/" + run.ID + "/scenes/0/audio"
+	if item.TTSPath == nil || *item.TTSPath != expectedAudioURL {
+		t.Fatalf("tts_path mismatch: got %+v, want %s", item.TTSPath, expectedAudioURL)
 	}
 	if item.CriticScore == nil || *item.CriticScore != 82 {
 		t.Fatalf("critic_score mismatch (want 82 after 0..1→0..100 normalization): %+v", item.CriticScore)

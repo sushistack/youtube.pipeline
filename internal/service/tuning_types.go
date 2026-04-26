@@ -68,15 +68,17 @@ type TuningCalibration struct {
 // Field names match ShadowResult but the struct lives here so the API
 // contract is decoupled from the internal package shape.
 type TuningShadowResultRow struct {
-	RunID           string  `json:"run_id"`
-	CreatedAt       string  `json:"created_at"`
-	BaselineVerdict string  `json:"baseline_verdict"`
-	BaselineScore   float64 `json:"baseline_score"`
-	NewVerdict      string  `json:"new_verdict"`
-	NewRetryReason  string  `json:"new_retry_reason,omitempty"`
-	NewOverallScore int     `json:"new_overall_score"`
-	OverallDiff     float64 `json:"overall_diff"`
-	FalseRejection  bool    `json:"false_rejection"`
+	RunID             string  `json:"run_id"`
+	CreatedAt         string  `json:"created_at"`
+	BaselineVerdict   string  `json:"baseline_verdict"`
+	BaselineScore     float64 `json:"baseline_score"`
+	NewVerdict        string  `json:"new_verdict"`
+	NewRetryReason    string  `json:"new_retry_reason,omitempty"`
+	NewOverallScore   int     `json:"new_overall_score"`
+	NewCriticModel    string  `json:"new_critic_model,omitempty"`
+	NewCriticProvider string  `json:"new_critic_provider,omitempty"`
+	OverallDiff       float64 `json:"overall_diff"`
+	FalseRejection    bool    `json:"false_rejection"`
 }
 
 // TuningShadowReport is the full report body returned by POST /api/tuning/shadow/run.
@@ -86,6 +88,8 @@ type TuningShadowReport struct {
 	FalseRejections int                     `json:"false_rejections"`
 	Empty           bool                    `json:"empty"`
 	SummaryLine     string                  `json:"summary_line"`
+	CriticProvider  string                  `json:"critic_provider,omitempty"`
+	CriticModel     string                  `json:"critic_model,omitempty"`
 	Results         []TuningShadowResultRow `json:"results"`
 	VersionTag      string                  `json:"version_tag,omitempty"`
 }
@@ -105,6 +109,8 @@ type FastFeedbackReport struct {
 	RetryCount       int                  `json:"retry_count"`
 	AcceptNotesCount int                  `json:"accept_with_notes_count"`
 	DurationMs       int64                `json:"duration_ms"`
+	CriticProvider   string               `json:"critic_provider,omitempty"`
+	CriticModel      string               `json:"critic_model,omitempty"`
 	VersionTag       string               `json:"version_tag,omitempty"`
 	Samples          []FastFeedbackSample `json:"samples"`
 }

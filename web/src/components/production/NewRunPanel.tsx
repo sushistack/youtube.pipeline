@@ -4,7 +4,9 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { createRun, ApiClientError } from '../../lib/apiClient'
 import {
   SCP_ID_PATTERN,
@@ -79,11 +81,25 @@ export function NewRunPanel({
     }
   }, [])
 
+  useEffect(() => {
+    const previous_overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previous_overflow
+    }
+  }, [])
+
   function dismiss() {
     if (is_submitting) {
       return
     }
     on_cancel()
+  }
+
+  function handleBackdropClick(event: MouseEvent<HTMLDivElement>) {
+    if (event.target === event.currentTarget) {
+      dismiss()
+    }
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -163,72 +179,84 @@ export function NewRunPanel({
     }
   }
 
-  return (
+  const modal = (
     <div
-      ref={panel_ref}
-      aria-describedby={description_id}
-      aria-labelledby={title_id}
-      className="new-run-panel"
+      className="new-run-modal"
+      onClick={handleBackdropClick}
       onKeyDown={handleKeyDown}
-      role="alertdialog"
-      tabIndex={-1}
     >
-      <p className="new-run-panel__eyebrow">Production workflow</p>
-      <h3 className="new-run-panel__title" id={title_id}>
-        Create a new pipeline run
-      </h3>
-      <p className="new-run-panel__copy" id={description_id}>
-        Enter an SCP ID. Alphanumeric, hyphen, or underscore. Example: `049`
-      </p>
-
-      <label className="new-run-panel__field">
-        <span className="new-run-panel__label">SCP ID</span>
-        <input
-          ref={input_ref}
-          aria-describedby={
-            validation_error || server_error
-              ? `${description_id} ${error_id}`
-              : description_id
-          }
-          aria-invalid={validation_error != null || server_error != null}
-          className="new-run-panel__input"
-          onChange={(event) => {
-            set_scp_id(event.target.value)
-            set_server_error(null)
-          }}
-          placeholder="049"
-          readOnly={is_submitting}
-          type="text"
-          value={scp_id}
-        />
-      </label>
-
-      {validation_error || server_error ? (
-        <p className="new-run-panel__error" id={error_id} role="alert">
-          {validation_error ?? server_error}
+      <div
+        ref={panel_ref}
+        aria-describedby={description_id}
+        aria-labelledby={title_id}
+        aria-modal="true"
+        className="new-run-panel new-run-panel--modal"
+        role="alertdialog"
+        tabIndex={-1}
+      >
+        <p className="new-run-panel__eyebrow">Production workflow</p>
+        <h3 className="new-run-panel__title" id={title_id}>
+          Create a new pipeline run
+        </h3>
+        <p className="new-run-panel__copy" id={description_id}>
+          Enter an SCP ID. Alphanumeric, hyphen, or underscore. Example: `049`
         </p>
-      ) : null}
 
-      <div className="new-run-panel__actions">
-        <button
-          type="button"
-          className="sidebar__new-run-submit"
-          disabled={submit_disabled}
-          onClick={() => {
-            void handleSubmit()
-          }}
-        >
-          {is_submitting ? 'Creating…' : 'Create'}
-        </button>
-        <button
-          type="button"
-          className="sidebar__new-run-cancel"
-          disabled={is_submitting}
-          onClick={dismiss}
-        >
-          Cancel
-        </button>
+        <label className="new-run-panel__field">
+          <span className="new-run-panel__label">SCP ID</span>
+          <input
+            ref={input_ref}
+            aria-describedby={
+              validation_error || server_error
+                ? `${description_id} ${error_id}`
+                : description_id
+            }
+            aria-invalid={validation_error != null || server_error != null}
+            className="new-run-panel__input"
+            onChange={(event) => {
+              set_scp_id(event.target.value)
+              set_server_error(null)
+            }}
+            placeholder="049"
+            readOnly={is_submitting}
+            type="text"
+            value={scp_id}
+          />
+        </label>
+
+        {validation_error || server_error ? (
+          <p className="new-run-panel__error" id={error_id} role="alert">
+            {validation_error ?? server_error}
+          </p>
+        ) : null}
+
+        <div className="new-run-panel__actions">
+          <button
+            type="button"
+            className="sidebar__new-run-cancel"
+            disabled={is_submitting}
+            onClick={dismiss}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="sidebar__new-run-submit"
+            disabled={submit_disabled}
+            onClick={() => {
+              void handleSubmit()
+            }}
+          >
+            {is_submitting ? 'Creating…' : 'Create'}
+          </button>
+        </div>
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') {
+    return modal
+  }
+
+  return createPortal(modal, document.body)
 }

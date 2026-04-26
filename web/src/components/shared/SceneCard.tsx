@@ -33,7 +33,7 @@ function reviewStateLabel(review_status: ReviewItem['review_status'], is_regener
   }
   switch (review_status) {
     case 'waiting_for_review':
-      return 'Waiting'
+      return 'Pending'
     case 'auto_approved':
       return 'Auto-approved'
     case 'approved':
@@ -46,7 +46,7 @@ function reviewStateLabel(review_status: ReviewItem['review_status'], is_regener
 }
 
 export function SceneCard({ is_regenerating = false, item, on_select, selected }: SceneCardProps) {
-  const thumbnails = item.shots.slice(0, 5)
+  const status_key = is_regenerating ? 'regenerating' : item.review_status
 
   return (
     <button
@@ -59,20 +59,20 @@ export function SceneCard({ is_regenerating = false, item, on_select, selected }
       aria-selected={selected}
       role="option"
     >
-      <div className="scene-card__header">
-        <div>
-          <p className="scene-card__eyebrow">Scene {item.scene_index + 1}</p>
-          <p className="scene-card__state">{reviewStateLabel(item.review_status, is_regenerating)}</p>
-        </div>
-        <div className="scene-card__badges">
+      <div className="scene-card__index" aria-hidden="true">
+        S{item.scene_index + 1}
+      </div>
+      <div className="scene-card__body">
+        <div className="scene-card__title-row">
+          <p className="scene-card__title">Scene {item.scene_index + 1}</p>
           {item.high_leverage ? (
-            <span className="scene-card__badge scene-card__badge--high-leverage">
+            <span className="scene-card__chip scene-card__chip--high-leverage">
               High-Leverage
             </span>
           ) : null}
           {is_regenerating ? (
             <span
-              className="scene-card__badge scene-card__badge--regenerating"
+              className="scene-card__chip scene-card__chip--regenerating"
               aria-label="Regenerating"
             >
               Regenerating…
@@ -80,38 +80,23 @@ export function SceneCard({ is_regenerating = false, item, on_select, selected }
           ) : null}
           {item.retry_exhausted ? (
             <span
-              className="scene-card__badge scene-card__badge--exhausted"
+              className="scene-card__chip scene-card__chip--exhausted"
               aria-label="Retry exhausted"
             >
               Retry exhausted
             </span>
           ) : null}
-          <span
-            className="scene-card__badge"
-            data-tone={scoreTone(item.critic_score)}
-          >
-            {formatScore(item.critic_score)}
-          </span>
         </div>
+        <p className="scene-card__excerpt">{item.narration || 'No narration available.'}</p>
       </div>
-
-      <div className="scene-card__thumbnails" aria-hidden="true">
-        {thumbnails.map((shot, index) => (
-          <div key={`${item.scene_index}-${index}`} className="scene-card__thumb">
-            {shot.image_path ? (
-              <img
-                alt=""
-                className="scene-card__thumb-image"
-                src={shot.image_path}
-              />
-            ) : (
-              <div className="scene-card__thumb-fallback">Shot {index + 1}</div>
-            )}
-          </div>
-        ))}
+      <div className="scene-card__meta">
+        <span className="scene-card__score" data-tone={scoreTone(item.critic_score)}>
+          {formatScore(item.critic_score)}
+        </span>
+        <span className="scene-card__status" data-status={status_key}>
+          {reviewStateLabel(item.review_status, is_regenerating)}
+        </span>
       </div>
-
-      <p className="scene-card__excerpt">{item.narration || 'No narration available.'}</p>
     </button>
   )
 }

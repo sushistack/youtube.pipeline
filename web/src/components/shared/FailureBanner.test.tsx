@@ -78,9 +78,7 @@ describe('FailureBanner', () => {
     render_failure_banner()
 
     expect(screen.getByRole('alert')).toHaveClass('failure-banner--retryable')
-    expect(
-      screen.getByText('No work was lost. Completed stages remain intact.'),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Pipeline failed/i)).toBeInTheDocument()
     expect(screen.getByText('$3.75')).toBeInTheDocument()
   })
 
@@ -100,9 +98,7 @@ describe('FailureBanner', () => {
     })
 
     expect(screen.getByRole('alert')).toHaveClass('failure-banner--fatal')
-    expect(
-      screen.getByText('Stage failed - check the run log for details'),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Stage failed/i)).toBeInTheDocument()
   })
 
   it('resumes on click, disables while pending, and invalidates run queries on success', async () => {

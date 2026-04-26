@@ -167,7 +167,7 @@ func TestLoadShadowInput_AbsolutePath(t *testing.T) {
 	projectRoot := t.TempDir()
 	copyContractsSchema(t, projectRoot, inputSchemaFile)
 
-	f, err := LoadShadowInput(projectRoot, ShadowCase{
+	f, err := LoadShadowInput(projectRoot, projectRoot, ShadowCase{
 		RunID:        "scp-shadow-run-abs",
 		ScenarioPath: abs,
 	})
@@ -197,7 +197,7 @@ func TestLoadShadowInput_RejectsNullNarration(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err := LoadShadowInput(root, ShadowCase{
+	_, err := LoadShadowInput(root, root, ShadowCase{
 		RunID:        "null-narration",
 		ScenarioPath: rel,
 	})
@@ -225,7 +225,7 @@ func TestLoadShadowInput_RejectsSchemaViolatingNarration(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err := LoadShadowInput(root, ShadowCase{
+	_, err := LoadShadowInput(root, root, ShadowCase{
 		RunID:        "bad-shape",
 		ScenarioPath: rel,
 	})
@@ -242,7 +242,7 @@ func TestLoadShadowInput_ProjectRelativePath(t *testing.T) {
 	root := newShadowTestRoot(t, "scp-shadow-run-rel")
 
 	rel := filepath.Join("testdata", "shadow_test", "scp-shadow-run-rel", "scenario.json")
-	f, err := LoadShadowInput(root, ShadowCase{
+	f, err := LoadShadowInput(root, root, ShadowCase{
 		RunID:        "scp-shadow-run-rel",
 		ScenarioPath: rel,
 	})
@@ -261,6 +261,31 @@ func TestLoadShadowInput_ProjectRelativePath(t *testing.T) {
 	}
 }
 
+func TestLoadShadowInput_RejectsParentTraversal(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	root := newShadowTestRoot(t)
+
+	// A scenario_path with `..` segments must be rejected before any join,
+	// even if a file happens to exist at the resolved location: a malicious
+	// or corrupted runs.scenario_path could otherwise read arbitrary files.
+	for _, traversal := range []string{
+		"../escape.json",
+		"foo/../../bar.json",
+		"..",
+	} {
+		_, err := LoadShadowInput(root, root, ShadowCase{
+			RunID:        "evil-run",
+			ScenarioPath: traversal,
+		})
+		if err == nil {
+			t.Fatalf("LoadShadowInput accepted traversal path %q", traversal)
+		}
+		if !errors.Is(err, domain.ErrValidation) {
+			t.Errorf("path %q: expected ErrValidation, got %v", traversal, err)
+		}
+	}
+}
+
 func TestLoadShadowInput_InvalidJSON(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	tmp := t.TempDir()
@@ -275,7 +300,7 @@ func TestLoadShadowInput_InvalidJSON(t *testing.T) {
 
 	// Invalid JSON must surface as a hard error. Silent skipping would hide
 	// the regression signal Shadow exists to detect.
-	_, err := LoadShadowInput(tmp, ShadowCase{
+	_, err := LoadShadowInput(tmp, tmp, ShadowCase{
 		RunID:        "broken",
 		ScenarioPath: rel,
 	})
@@ -289,7 +314,7 @@ func TestLoadShadowInput_ReusesGoldenFixtureShape(t *testing.T) {
 	root := newShadowTestRoot(t, "scp-shadow-run-shape")
 
 	rel := filepath.Join("testdata", "shadow_test", "scp-shadow-run-shape", "scenario.json")
-	f, err := LoadShadowInput(root, ShadowCase{
+	f, err := LoadShadowInput(root, root, ShadowCase{
 		RunID:        "scp-shadow-run-shape",
 		ScenarioPath: rel,
 	})
@@ -326,15 +351,15 @@ func TestRunShadow_Happy(t *testing.T) {
 	}}
 	ev := &fakeShadowEvaluator{}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 10)
+	report, err := RunShadow(context.Background(), root, root, src, ev, shadowTestNow, 10)
 	if err != nil {
 		t.Fatalf("RunShadow: %v", err)
 	}
 	testutil.AssertEqual(t, 10, report.Window)
 	testutil.AssertEqual(t, 3, report.Evaluated)
 	testutil.AssertEqual(t, 0, report.FalseRejections)
-	testutil.AssertEqual(t, 1, src.calls)   // source called exactly once.
-	testutil.AssertEqual(t, 3, ev.calls)    // each candidate replayed exactly once.
+	testutil.AssertEqual(t, 1, src.calls) // source called exactly once.
+	testutil.AssertEqual(t, 3, ev.calls)  // each candidate replayed exactly once.
 	testutil.AssertEqual(t, 3, len(report.Results))
 }
 
@@ -354,7 +379,7 @@ func TestRunShadow_CountsFalseRejections(t *testing.T) {
 		"scp-run-02": {Verdict: domain.CriticVerdictRetry, RetryReason: "fact_error", OverallScore: 55},
 	}}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 10)
+	report, err := RunShadow(context.Background(), root, root, src, ev, shadowTestNow, 10)
 	if err != nil {
 		t.Fatalf("RunShadow: %v", err)
 	}
@@ -386,7 +411,7 @@ func TestRunShadow_AcceptWithNotesIsNotFalseRejection(t *testing.T) {
 		"scp-run-01": {Verdict: domain.CriticVerdictAcceptWithNotes, OverallScore: 78},
 	}}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 10)
+	report, err := RunShadow(context.Background(), root, root, src, ev, shadowTestNow, 10)
 	if err != nil {
 		t.Fatalf("RunShadow: %v", err)
 	}
@@ -405,7 +430,7 @@ func TestRunShadow_OverallDiffUsesNormalizedScore(t *testing.T) {
 		"scp-run-01": {Verdict: domain.CriticVerdictRetry, RetryReason: "weak_hook", OverallScore: 62},
 	}}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 10)
+	report, err := RunShadow(context.Background(), root, root, src, ev, shadowTestNow, 10)
 	if err != nil {
 		t.Fatalf("RunShadow: %v", err)
 	}
@@ -423,7 +448,7 @@ func TestRunShadow_EmptyResultSetMarksEmpty(t *testing.T) {
 	src := &fakeShadowSource{cases: nil}
 	ev := &fakeShadowEvaluator{}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 10)
+	report, err := RunShadow(context.Background(), root, root, src, ev, shadowTestNow, 10)
 	if err != nil {
 		t.Fatalf("RunShadow: %v", err)
 	}
@@ -439,7 +464,7 @@ func TestRunShadow_NonEmptyResultSetLeavesEmptyFalse(t *testing.T) {
 	src := &fakeShadowSource{cases: []ShadowCase{shadowCase("scp-run-01", 0.85)}}
 	ev := &fakeShadowEvaluator{}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 10)
+	report, err := RunShadow(context.Background(), root, root, src, ev, shadowTestNow, 10)
 	if err != nil {
 		t.Fatalf("RunShadow: %v", err)
 	}
@@ -462,7 +487,7 @@ func TestRunShadow_UnknownVerdictFlaggedAsFalseRejection(t *testing.T) {
 		"scp-run-02": {Verdict: "hard_fail", OverallScore: 30},
 	}}
 
-	report, err := RunShadow(context.Background(), root, src, ev, shadowTestNow, 10)
+	report, err := RunShadow(context.Background(), root, root, src, ev, shadowTestNow, 10)
 	if err != nil {
 		t.Fatalf("RunShadow: %v", err)
 	}
@@ -491,7 +516,7 @@ func TestRunShadow_HonorsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := RunShadow(ctx, root, src, ev, shadowTestNow, 10)
+	_, err := RunShadow(ctx, root, root, src, ev, shadowTestNow, 10)
 	if err == nil {
 		t.Fatal("expected cancellation error, got nil")
 	}
@@ -505,7 +530,7 @@ func TestRunShadow_RejectsInvalidWindow(t *testing.T) {
 	src := &fakeShadowSource{}
 	ev := &fakeShadowEvaluator{}
 
-	_, err := RunShadow(context.Background(), "", src, ev, shadowTestNow, 0)
+	_, err := RunShadow(context.Background(), "", "", src, ev, shadowTestNow, 0)
 	if err == nil {
 		t.Fatal("expected validation error for window=0")
 	}
@@ -513,7 +538,7 @@ func TestRunShadow_RejectsInvalidWindow(t *testing.T) {
 		t.Errorf("expected ErrValidation, got %v", err)
 	}
 
-	_, err = RunShadow(context.Background(), "", src, ev, shadowTestNow, -1)
+	_, err = RunShadow(context.Background(), "", "", src, ev, shadowTestNow, -1)
 	if err == nil {
 		t.Fatal("expected validation error for negative window")
 	}

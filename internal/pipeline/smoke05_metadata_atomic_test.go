@@ -26,10 +26,10 @@ func smoke05Bundle(runID string) (domain.MetadataBundle, domain.SourceManifest) 
 		AIGenerated: domain.AIGeneratedFlags{Narration: true, Imagery: true, TTS: true},
 		ModelsUsed: map[string]domain.ModelRecord{
 			"writer":           {Provider: "deepseek", Model: "deepseek-chat"},
-			"critic":           {Provider: "gemini", Model: "gemini-2.0-flash"},
+			"critic":           {Provider: "gemini", Model: "gemini-3.1-flash-lite-preview"},
 			"image":            {Provider: "dashscope", Model: "qwen-max-vl"},
 			"tts":              {Provider: "dashscope", Model: "qwen3-tts-flash-2025-09-18", Voice: "longhua"},
-			"visual_breakdown": {Provider: "gemini", Model: "gemini-2.0-flash"},
+			"visual_breakdown": {Provider: "gemini", Model: "gemini-3.1-flash-lite-preview"},
 		},
 	}
 	manifest := domain.SourceManifest{

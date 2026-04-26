@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
@@ -279,11 +281,26 @@ func TestVisualBreakdowner_Run_DoesNotMutateStateOnFailure(t *testing.T) {
 }
 
 type sequenceTextGenerator struct {
+	mu        sync.Mutex
 	responses []string
 	calls     int
 }
 
+// Generate routes by parsing the "Scene N" header from the rendered prompt
+// when it matches the visual_breakdowner template, so parallel fan-out gets
+// the correct scene response. Falls back to call-order indexing for prompts
+// that don't carry a scene_num token (preserved for any non-visual tests).
 func (s *sequenceTextGenerator) Generate(_ context.Context, req domain.TextRequest) (domain.TextResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sceneNum, ok := parseScenePromptNum(req.Prompt); ok {
+		idx := sceneNum - 1
+		if idx < 0 || idx >= len(s.responses) {
+			return domain.TextResponse{}, fmt.Errorf("no response for scene_num=%d", sceneNum)
+		}
+		s.calls++
+		return domain.TextResponse{NormalizedResponse: domain.NormalizedResponse{Content: s.responses[idx], Model: req.Model, Provider: "openai"}}, nil
+	}
 	if s.calls >= len(s.responses) {
 		return domain.TextResponse{}, fmt.Errorf("unexpected extra call")
 	}
@@ -292,21 +309,54 @@ func (s *sequenceTextGenerator) Generate(_ context.Context, req domain.TextReque
 	return domain.TextResponse{NormalizedResponse: domain.NormalizedResponse{Content: resp, Model: req.Model, Provider: "openai"}}, nil
 }
 
+// parseScenePromptNum extracts the scene number from the "Scene N\n..."
+// header rendered by the visual_breakdowner prompt template.
+func parseScenePromptNum(prompt string) (int, bool) {
+	const prefix = "Scene "
+	if !strings.HasPrefix(prompt, prefix) {
+		return 0, false
+	}
+	rest := prompt[len(prefix):]
+	end := strings.IndexAny(rest, "\n\r ")
+	if end <= 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest[:end])
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
+}
+
 type driftingTextGenerator struct {
+	mu        sync.Mutex
 	responses []string
 	calls     int
 }
 
-func (d *driftingTextGenerator) Generate(_ context.Context, _ domain.TextRequest) (domain.TextResponse, error) {
-	if d.calls >= len(d.responses) {
+func (d *driftingTextGenerator) Generate(_ context.Context, req domain.TextRequest) (domain.TextResponse, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.calls++
+	driftN := d.calls
+	if sceneNum, ok := parseScenePromptNum(req.Prompt); ok {
+		idx := sceneNum - 1
+		if idx < 0 || idx >= len(d.responses) {
+			return domain.TextResponse{}, fmt.Errorf("no response for scene_num=%d", sceneNum)
+		}
+		return domain.TextResponse{NormalizedResponse: domain.NormalizedResponse{
+			Content:  d.responses[idx],
+			Model:    fmt.Sprintf("drift-model-%d", driftN),
+			Provider: fmt.Sprintf("drift-provider-%d", driftN),
+		}}, nil
+	}
+	if driftN > len(d.responses) {
 		return domain.TextResponse{}, fmt.Errorf("unexpected extra call")
 	}
-	resp := d.responses[d.calls]
-	d.calls++
 	return domain.TextResponse{NormalizedResponse: domain.NormalizedResponse{
-		Content:  resp,
-		Model:    fmt.Sprintf("drift-model-%d", d.calls),
-		Provider: fmt.Sprintf("drift-provider-%d", d.calls),
+		Content:  d.responses[driftN-1],
+		Model:    fmt.Sprintf("drift-model-%d", driftN),
+		Provider: fmt.Sprintf("drift-provider-%d", driftN),
 	}}, nil
 }
 

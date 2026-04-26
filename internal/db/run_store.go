@@ -768,6 +768,36 @@ func (s *RunStore) Cancel(ctx context.Context, id string) error {
 	return nil
 }
 
+// ReconcileOrphanedRuns flips runs left in status='running' to status='failed'
+// with retry_reason='server restarted while run was in progress'. Intended to
+// be called once at server startup.
+//
+// Workers are in-process goroutines that do not survive a restart. Any row
+// still marked 'running' at startup is by definition orphaned: the goroutine
+// that owned it is gone, but the row has no terminal status. Without this
+// reconciliation, the row sticks at 'running' forever — UI shows
+// "STAGE IN PROGRESS" with no recovery surface, and Resume rejects with
+// CONFLICT ("run already in progress"). Flipping to 'failed' makes the
+// FailureBanner appear and Resume usable.
+//
+// Returns the number of rows reconciled.
+func (s *RunStore) ReconcileOrphanedRuns(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE runs SET status = ?, retry_reason = ? WHERE status = ?`,
+		string(domain.StatusFailed),
+		"server restarted while run was in progress",
+		string(domain.StatusRunning),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("reconcile orphaned runs: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("reconcile orphaned runs rows affected: %w", err)
+	}
+	return n, nil
+}
+
 // AntiProgressStats summarizes anti-progress events over the N most recent
 // runs that tripped the detector. Inputs to NFR-R2's V1.5 ≤5% gate.
 type AntiProgressStats struct {

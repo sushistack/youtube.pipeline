@@ -97,9 +97,9 @@ func DefaultConfig() PipelineConfig {
 
 	return PipelineConfig{
 		WriterModel:           "deepseek-chat",
-		CriticModel:           "gemini-2.0-flash",
+		CriticModel:           "gemini-3.1-flash-lite-preview",
 		TTSModel:              "qwen3-tts-flash-2025-09-18",
-		TTSVoice:              "longhua",
+		TTSVoice:              "Ethan",
 		TTSAudioFormat:        "wav",
 		ImageModel:            "qwen-max-vl",
 		WriterProvider:        "deepseek",

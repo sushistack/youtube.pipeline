@@ -41,6 +41,7 @@ func newTestRunHandlerWithEngine(t testing.TB, scpID, stage, status string) (*ap
 
 	engine := pipeline.NewEngine(store, segStore, nil, clock.RealClock{}, outDir, logger)
 	svc := service.NewRunService(store, engine)
+	svc.SetAdvancer(engine)
 	decisionStore := db.NewDecisionStore(database)
 	hitl := service.NewHITLService(store, decisionStore, logger)
 
@@ -180,6 +181,8 @@ func TestRunHandler_Resume_UnknownField_Rejected(t *testing.T) {
 
 func TestRunHandler_Resume_EmptyBody_TreatedAsDefault(t *testing.T) {
 	// Empty body is valid — defaults to confirm_inconsistent=false.
+	// Resume returns 202: PrepareResume runs synchronously, ExecuteResume is
+	// dispatched on a goroutine to escape the 30s WriteTimeout for Phase B.
 	testutil.BlockExternalHTTP(t)
 	h, _ := newTestRunHandlerWithEngine(t, "049", "tts", "failed")
 
@@ -188,7 +191,36 @@ func TestRunHandler_Resume_EmptyBody_TreatedAsDefault(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Resume(rec, req)
 
-	testutil.AssertEqual(t, rec.Code, http.StatusOK)
+	testutil.AssertEqual(t, rec.Code, http.StatusAccepted)
+}
+
+func TestRunHandler_Advance_NoEngine_Validation(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	// newTestRunHandler wires a service WITHOUT an advancer; Advance should
+	// classify as ErrValidation (400). The pending Start-run UI relies on
+	// this path so users get a typed error instead of a 500/panic.
+	h, _ := newTestRunHandler(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/scp-049-run-1/advance", nil)
+	req.SetPathValue("id", "scp-049-run-1")
+	rec := httptest.NewRecorder()
+	h.Advance(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusBadRequest)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	testutil.AssertEqual(t, env.Error.Code, "VALIDATION_ERROR")
+}
+
+func TestRunHandler_Advance_NotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, _ := newTestRunHandlerWithEngine(t, "049", "pending", "pending")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/scp-999-run-1/advance", nil)
+	req.SetPathValue("id", "scp-999-run-1")
+	rec := httptest.NewRecorder()
+	h.Advance(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusNotFound)
 }
 
 func TestRunHandler_Resume_NoEngine_Validation(t *testing.T) {
@@ -217,7 +249,7 @@ func TestRunHandler_Resume_Success(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Resume(rec, req)
 
-	testutil.AssertEqual(t, rec.Code, http.StatusOK)
+	testutil.AssertEqual(t, rec.Code, http.StatusAccepted)
 	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
 	if env.Data == nil {
 		t.Fatal("data is nil")

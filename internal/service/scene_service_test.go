@@ -307,6 +307,77 @@ func TestSceneService_ListScenes_ReturnsNotFoundForMissingRun(t *testing.T) {
 	}
 }
 
+// TestSceneService_ListScenes_OverlayFromScenario locks in the narration-based
+// list contract: scene count tracks scenario.json's narration scenes (not the
+// segments-table row count), and existing segments rows whose narration column
+// is NULL still surface the scenario's narration text. Reproduces the bug
+// where Phase-B-created rows (UpsertTTSArtifact INSERT) starved the master
+// pane to the count of completed TTS scenes instead of the full scenario.
+func TestSceneService_ListScenes_OverlayFromScenario(t *testing.T) {
+	scenarioPath := "scenario.json"
+	outputDir := t.TempDir()
+	runDir := filepath.Join(outputDir, "run-1")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	scenes := []domain.NarrationScene{
+		{SceneNum: 1, Narration: "장면 1 내레이션"},
+		{SceneNum: 2, Narration: "장면 2 내레이션"},
+		{SceneNum: 3, Narration: "장면 3 내레이션"},
+	}
+	payload := map[string]any{
+		"narration": map[string]any{
+			"scp_id":         "049",
+			"title":          "Scenario",
+			"scenes":         scenes,
+			"metadata":       map[string]any{"language": "ko", "scene_count": len(scenes)},
+			"source_version": "v1-llm-writer",
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal scenario: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, scenarioPath), raw, 0o644); err != nil {
+		t.Fatalf("write scenario: %v", err)
+	}
+
+	runs := &fakeRunStore{runs: map[string]*domain.Run{
+		"run-1": {
+			ID:           "run-1",
+			Stage:        domain.StageImage,
+			Status:       domain.StatusRunning,
+			ScenarioPath: &scenarioPath,
+		},
+	}}
+	ttsPath0 := "tts/scene_01.wav"
+	ttsPath1 := "tts/scene_02.wav"
+	segments := &fakeSegmentStore{scenes: []*domain.Episode{
+		{SceneIndex: 0, Narration: nil, TTSPath: &ttsPath0, Status: "pending"},
+		{SceneIndex: 1, Narration: nil, TTSPath: &ttsPath1, Status: "pending"},
+	}}
+	svc := service.NewSceneService(runs, segments, nil, clock.RealClock{})
+	svc.SetNarrationSeeder(nil, outputDir)
+
+	out, err := svc.ListScenes(context.Background(), "run-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	testutil.AssertEqual(t, len(out), 3)
+	testutil.AssertEqual(t, *out[0].Narration, "장면 1 내레이션")
+	testutil.AssertEqual(t, *out[1].Narration, "장면 2 내레이션")
+	testutil.AssertEqual(t, *out[2].Narration, "장면 3 내레이션")
+	if out[0].TTSPath == nil || *out[0].TTSPath != ttsPath0 {
+		t.Fatalf("scene 0 tts overlay missing: %+v", out[0].TTSPath)
+	}
+	if out[1].TTSPath == nil || *out[1].TTSPath != ttsPath1 {
+		t.Fatalf("scene 1 tts overlay missing: %+v", out[1].TTSPath)
+	}
+	if out[2].TTSPath != nil {
+		t.Fatalf("scene 2 should have no tts overlay, got %q", *out[2].TTSPath)
+	}
+}
+
 func TestSceneService_ListReviewItems_ComputesHighLeverageAndQueueOrdering(t *testing.T) {
 	scenarioPath := writeReviewScenarioFixture(t, []domain.NarrationScene{
 		{SceneNum: 1, ActID: "act_hook", EntityVisible: true, CharactersPresent: []string{"연구원"}},
@@ -343,6 +414,57 @@ func TestSceneService_ListReviewItems_ComputesHighLeverageAndQueueOrdering(t *te
 	testutil.AssertEqual(t, items[2].HighLeverage, true)
 	testutil.AssertEqual(t, items[2].HighLeverageReason, "Act boundary: act_2")
 }
+
+// TestSceneService_ListReviewItems_ResolvesRelativeScenarioPath locks in the
+// path-resolution contract. Production stores `scenario_path = "scenario.json"`
+// (relative to {outputDir}/{runID}/), so ListReviewItems must join with
+// outputDir + runID before reading the file. Skipping the join made the
+// batch_review surface error with "scenario.json missing" once a run
+// transitioned out of pending — even though the segments rows existed and the
+// file was on disk.
+func TestSceneService_ListReviewItems_ResolvesRelativeScenarioPath(t *testing.T) {
+	relScenarioPath := "scenario.json"
+	outputDir := t.TempDir()
+	runDir := filepath.Join(outputDir, "run-1")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	payload := map[string]any{
+		"narration": map[string]any{
+			"scp_id":         "049",
+			"title":          "Scenario",
+			"scenes":         []domain.NarrationScene{{SceneNum: 1, ActID: "act_hook", Narration: "장면 1 내레이션"}},
+			"metadata":       map[string]any{"language": "ko", "scene_count": 1},
+			"source_version": "v1-llm-writer",
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal scenario: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, relScenarioPath), raw, 0o644); err != nil {
+		t.Fatalf("write scenario: %v", err)
+	}
+
+	runs := &fakeRunStore{runs: map[string]*domain.Run{
+		"run-1": batchReviewRun("run-1", relScenarioPath),
+	}}
+	segments := &fakeSegmentStore{scenes: []*domain.Episode{
+		// Phase B-created row: narration NULL, only tts_path populated.
+		{SceneIndex: 0, Narration: nil, TTSPath: stringPtr("tts/scene_01.wav"), ReviewStatus: domain.ReviewStatusWaitingForReview},
+	}}
+	svc := service.NewSceneService(runs, segments, nil, clock.RealClock{})
+	svc.SetNarrationSeeder(nil, outputDir)
+
+	items, err := svc.ListReviewItems(context.Background(), "run-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	testutil.AssertEqual(t, len(items), 1)
+	testutil.AssertEqual(t, items[0].Narration, "장면 1 내레이션")
+}
+
+func stringPtr(s string) *string { return &s }
 
 func TestSceneService_ListReviewItems_RetryExhaustedAtCapBoundary(t *testing.T) {
 	// AC-4 boundary: when a scene has reached MaxSceneRegenAttempts (=2),

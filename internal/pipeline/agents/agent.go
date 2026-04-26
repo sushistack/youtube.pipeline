@@ -59,6 +59,12 @@ type PipelineState struct {
 	Quality         *PhaseAQualitySummary         `json:"quality,omitempty"`          // Final Phase A quality summary (3.5)
 	Contracts       *PhaseAContractManifest       `json:"contracts,omitempty"`        // Final Phase A schema manifest (3.5)
 
+	// PriorCriticFeedback carries the Korean feedback text from the last
+	// failed critic report for this run. Non-empty on Resume after a
+	// critic retry — injected into the writer prompt so the LLM knows
+	// specifically what to fix rather than repeating the same mistake.
+	PriorCriticFeedback string `json:"-"`
+
 	// Provenance — runner-populated bookkeeping for NFR-M2 (version-
 	// controlled artifacts must record their own generator).
 	StartedAt  string `json:"started_at"`  // RFC3339 from clock.Clock

@@ -122,6 +122,8 @@ func TestSchema_TablesExist(t *testing.T) {
 		"character_search_cache",
 		"settings_versions",
 		"settings_state",
+		"critic_reports",
+		"narration_attempts",
 	}
 	for _, table := range tables {
 		var name string
