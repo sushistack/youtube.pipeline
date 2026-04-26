@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
@@ -17,12 +22,41 @@ type TextAgentConfig struct {
 	Provider    string
 	MaxTokens   int
 	Temperature float64
+	// Concurrency caps the number of in-flight LLM calls when an agent
+	// fans out work (e.g. writer's per-act fan-out). Zero or negative
+	// values fall back to a safe default at the call site (currently 2,
+	// matching DashScope's 2-concurrent ceiling).
+	Concurrency int
 	// AuditLogger is the optional audit logger. When non-nil, text_generation
 	// audit entries are written after each successful Generate call. Nil is
 	// allowed (no-op guard) — all existing tests continue to pass without
 	// modification because they construct TextAgentConfig without this field.
 	AuditLogger domain.AuditLogger
 }
+
+// writerActResponse is the per-act LLM response shape. The full
+// NarrationScript is assembled by the writer agent after merging
+// every act's response.
+type writerActResponse struct {
+	ActID  string                  `json:"act_id"`
+	Scenes []domain.NarrationScene `json:"scenes"`
+}
+
+// writerActSpec captures everything the writer needs to render and
+// validate a single per-act LLM call.
+type writerActSpec struct {
+	Index       int // 0..3 in domain.ActOrder
+	Act         domain.Act
+	SceneNumLo  int
+	SceneNumHi  int
+}
+
+const (
+	writerDefaultConcurrency = 2
+	writerMaxConcurrency     = 3
+	writerPerActRetryBudget  = 1   // one retry per act on schema violation
+	priorActBeatRuneCap      = 240 // bound on the Act-1-tail snippet repeated into Acts 2/3/4 prompts
+)
 
 func NewWriter(
 	gen domain.TextGenerator,
@@ -54,41 +88,62 @@ func NewWriter(
 			return err
 		}
 
-		prompt, err := renderWriterPrompt(state, prompts, terms)
+		specs, err := planWriterActs(state.Structure)
 		if err != nil {
 			return err
 		}
 
-		resp, err := gen.Generate(ctx, domain.TextRequest{
-			Prompt:      prompt,
-			Model:       cfg.Model,
-			MaxTokens:   cfg.MaxTokens,
-			Temperature: cfg.Temperature,
-		})
+		// Run Act 1 (incident) serially — its output sets the tone summary
+		// injected into Acts 2/3/4 prompts and acts as a wall-clock
+		// dependency, not a parallel sibling.
+		act1Resp, act1Meta, err := runWriterAct(ctx, gen, cfg, prompts, terms, state, specs[0], "")
 		if err != nil {
 			return err
 		}
 
-		// Non-fatal audit write after successful text generation.
-		if cfg.AuditLogger != nil {
-			_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
-				Timestamp: time.Now(),
-				EventType: domain.AuditEventTextGeneration,
-				RunID:     state.RunID,
-				Stage:     "writer",
-				Provider:  resp.Provider,
-				Model:     resp.Model,
-				Prompt:    truncatePrompt(prompt, 2048),
-				CostUSD:   resp.CostUSD,
+		priorSummary := summarizePriorAct(act1Resp)
+
+		// Acts 2/3/4 fan out under cfg.Concurrency.
+		responses := make([]writerActResponse, len(specs))
+		metas := make([]actCallMeta, len(specs))
+		responses[0] = act1Resp
+		metas[0] = act1Meta
+
+		limit := cfg.Concurrency
+		if limit <= 0 {
+			limit = writerDefaultConcurrency
+		}
+		if limit > writerMaxConcurrency {
+			limit = writerMaxConcurrency
+		}
+
+		g, gctx := errgroup.WithContext(ctx)
+		g.SetLimit(limit)
+		var mu sync.Mutex
+		for i := 1; i < len(specs); i++ {
+			i, spec := i, specs[i]
+			g.Go(func() error {
+				resp, meta, err := runWriterAct(gctx, gen, cfg, prompts, terms, state, spec, priorSummary)
+				if err != nil {
+					return err
+				}
+				mu.Lock()
+				responses[i] = resp
+				metas[i] = meta
+				mu.Unlock()
+				return nil
 			})
 		}
-
-		var script domain.NarrationScript
-		if err := decodeJSONResponse(resp.Content, &script); err != nil {
-			return fmt.Errorf("writer: %w", err)
+		if err := g.Wait(); err != nil {
+			return err
 		}
 
-		fillNarrationMetadata(&script, resp, cfg, terms)
+		script, err := mergeWriterActs(state, specs, responses)
+		if err != nil {
+			return err
+		}
+
+		fillNarrationMetadata(&script, metas[0].resp, cfg, terms)
 		if err := validator.Validate(script); err != nil {
 			return fmt.Errorf("writer: %w", err)
 		}
@@ -103,19 +158,175 @@ func NewWriter(
 	}
 }
 
-func renderWriterPrompt(state *PipelineState, prompts PromptAssets, terms *ForbiddenTerms) (string, error) {
-	structureJSON, err := json.MarshalIndent(state.Structure, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("writer: marshal structure: %w", domain.ErrValidation)
+// actCallMeta carries the upstream response metadata (model/provider) for
+// the metadata-fill step. Only the first successful response's metadata
+// is used (drift across acts is silently tolerated, matching the legacy
+// single-call writer).
+type actCallMeta struct {
+	resp domain.TextResponse
+}
+
+func planWriterActs(structure *domain.StructurerOutput) ([]writerActSpec, error) {
+	if structure == nil || len(structure.Acts) != len(domain.ActOrder) {
+		return nil, fmt.Errorf("writer: %w: structure must have %d acts", domain.ErrValidation, len(domain.ActOrder))
 	}
+	specs := make([]writerActSpec, len(structure.Acts))
+	offset := 1
+	for i, act := range structure.Acts {
+		if act.ID != domain.ActOrder[i] {
+			return nil, fmt.Errorf("writer: %w: act %d id=%s, want %s", domain.ErrValidation, i, act.ID, domain.ActOrder[i])
+		}
+		if act.SceneBudget < 1 {
+			return nil, fmt.Errorf("writer: %w: act %s scene_budget=%d (must be >=1)", domain.ErrValidation, act.ID, act.SceneBudget)
+		}
+		specs[i] = writerActSpec{
+			Index:      i,
+			Act:        act,
+			SceneNumLo: offset,
+			SceneNumHi: offset + act.SceneBudget - 1,
+		}
+		offset += act.SceneBudget
+	}
+	return specs, nil
+}
+
+func runWriterAct(
+	ctx context.Context,
+	gen domain.TextGenerator,
+	cfg TextAgentConfig,
+	prompts PromptAssets,
+	terms *ForbiddenTerms,
+	state *PipelineState,
+	spec writerActSpec,
+	priorSummary string,
+) (writerActResponse, actCallMeta, error) {
+	prompt, err := renderWriterActPrompt(state, prompts, terms, spec, priorSummary)
+	if err != nil {
+		return writerActResponse{}, actCallMeta{}, err
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= writerPerActRetryBudget; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return writerActResponse{}, actCallMeta{}, err
+		}
+
+		resp, err := gen.Generate(ctx, domain.TextRequest{
+			Prompt:      prompt,
+			Model:       cfg.Model,
+			MaxTokens:   cfg.MaxTokens,
+			Temperature: cfg.Temperature,
+		})
+		if err != nil {
+			return writerActResponse{}, actCallMeta{}, err
+		}
+
+		if cfg.AuditLogger != nil {
+			_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+				Timestamp: time.Now(),
+				EventType: domain.AuditEventTextGeneration,
+				RunID:     state.RunID,
+				Stage:     "writer",
+				Provider:  resp.Provider,
+				Model:     resp.Model,
+				Prompt:    truncatePrompt(prompt, 2048),
+				CostUSD:   resp.CostUSD,
+			})
+		}
+
+		var decoded writerActResponse
+		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
+			lastErr = fmt.Errorf("writer: act %s: %w", spec.Act.ID, err)
+			continue
+		}
+		if err := validateWriterActResponse(spec, decoded); err != nil {
+			lastErr = err
+			continue
+		}
+		return decoded, actCallMeta{resp: resp}, nil
+	}
+	return writerActResponse{}, actCallMeta{}, lastErr
+}
+
+func validateWriterActResponse(spec writerActSpec, decoded writerActResponse) error {
+	if decoded.ActID != spec.Act.ID {
+		return fmt.Errorf("writer: act %s: response act_id=%q: %w", spec.Act.ID, decoded.ActID, domain.ErrValidation)
+	}
+	if len(decoded.Scenes) != spec.Act.SceneBudget {
+		return fmt.Errorf("writer: act %s: scene count=%d want=%d: %w", spec.Act.ID, len(decoded.Scenes), spec.Act.SceneBudget, domain.ErrValidation)
+	}
+	prev := spec.SceneNumLo - 1
+	for i, scene := range decoded.Scenes {
+		if scene.SceneNum < spec.SceneNumLo || scene.SceneNum > spec.SceneNumHi {
+			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d out of range [%d,%d]: %w",
+				spec.Act.ID, i, scene.SceneNum, spec.SceneNumLo, spec.SceneNumHi, domain.ErrValidation)
+		}
+		if scene.SceneNum <= prev {
+			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d not strictly ascending after %d: %w",
+				spec.Act.ID, i, scene.SceneNum, prev, domain.ErrValidation)
+		}
+		if scene.ActID != spec.Act.ID {
+			return fmt.Errorf("writer: act %s: scene[%d] act_id=%q: %w",
+				spec.Act.ID, i, scene.ActID, domain.ErrValidation)
+		}
+		prev = scene.SceneNum
+	}
+	return nil
+}
+
+func mergeWriterActs(state *PipelineState, specs []writerActSpec, responses []writerActResponse) (domain.NarrationScript, error) {
+	totalScenes := 0
+	for _, spec := range specs {
+		totalScenes += spec.Act.SceneBudget
+	}
+	scenes := make([]domain.NarrationScene, 0, totalScenes)
+	for _, resp := range responses {
+		scenes = append(scenes, resp.Scenes...)
+	}
+	sort.Slice(scenes, func(i, j int) bool {
+		return scenes[i].SceneNum < scenes[j].SceneNum
+	})
+	for i, scene := range scenes {
+		want := i + 1
+		if scene.SceneNum != want {
+			return domain.NarrationScript{}, fmt.Errorf("writer: merged scene[%d] scene_num=%d want=%d: %w",
+				i, scene.SceneNum, want, domain.ErrValidation)
+		}
+	}
+
+	title := state.Research.Title
+	if title == "" {
+		title = state.SCPID
+	}
+	return domain.NarrationScript{
+		SCPID:  state.SCPID,
+		Title:  title,
+		Scenes: scenes,
+	}, nil
+}
+
+func renderWriterActPrompt(
+	state *PipelineState,
+	prompts PromptAssets,
+	terms *ForbiddenTerms,
+	spec writerActSpec,
+	priorSummary string,
+) (string, error) {
 	visualJSON, err := json.MarshalIndent(state.Research.VisualIdentity, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("writer: marshal visual identity: %w", domain.ErrValidation)
 	}
 	forbidden := renderForbiddenTermsSection(terms.Raw)
+	keyPoints := renderKeyPoints(spec.Act.KeyPoints)
+	sceneRange := fmt.Sprintf("%d..%d", spec.SceneNumLo, spec.SceneNumHi)
 	replacer := strings.NewReplacer(
 		"{scp_id}", state.SCPID,
-		"{scene_structure}", string(structureJSON),
+		"{act_id}", spec.Act.ID,
+		"{scene_num_range}", sceneRange,
+		"{scene_budget}", strconv.Itoa(spec.Act.SceneBudget),
+		"{act_synopsis}", spec.Act.Synopsis,
+		"{act_key_points}", keyPoints,
+		"{prior_act_summary}", priorSummary,
 		"{scp_visual_reference}", string(visualJSON),
 		"{format_guide}", prompts.FormatGuide,
 		"{forbidden_terms_section}", forbidden,
@@ -123,6 +334,17 @@ func renderWriterPrompt(state *PipelineState, prompts PromptAssets, terms *Forbi
 		"{quality_feedback}", "",
 	)
 	return replacer.Replace(prompts.WriterTemplate), nil
+}
+
+func renderKeyPoints(points []string) string {
+	if len(points) == 0 {
+		return "- (none)"
+	}
+	lines := make([]string, 0, len(points))
+	for _, p := range points {
+		lines = append(lines, "- "+p)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderForbiddenTermsSection(patterns []string) string {
@@ -135,6 +357,28 @@ func renderForbiddenTermsSection(patterns []string) string {
 		lines = append(lines, "- "+pattern)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// summarizePriorAct condenses Act 1's narration tail into a continuity
+// hint for Acts 2/3/4. Empty for Act 1 itself (no prior). Acts 2/3/4 all
+// receive the same Act-1-derived summary — see spec Design Notes.
+//
+// The last-scene narration is rune-capped so that the same summary is
+// repeated 3× across the fan-out without ballooning prompt tokens.
+func summarizePriorAct(act writerActResponse) string {
+	if len(act.Scenes) == 0 {
+		return ""
+	}
+	last := act.Scenes[len(act.Scenes)-1]
+	beat := truncatePrompt(strings.TrimSpace(last.Narration), priorActBeatRuneCap)
+	parts := []string{
+		fmt.Sprintf("Previous act ended on this beat: %s", beat),
+	}
+	if last.Mood != "" {
+		parts = append(parts, fmt.Sprintf("Maintain the tone established there (mood: %s).", last.Mood))
+	}
+	parts = append(parts, "Do NOT re-introduce the entity from scratch and do NOT recap the hook.")
+	return strings.Join(parts, " ")
 }
 
 // truncatePrompt rune-aware truncates s to at most n runes.
