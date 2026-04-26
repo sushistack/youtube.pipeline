@@ -5,9 +5,21 @@ import { ScenarioInspector } from './ScenarioInspector'
 import { renderWithProviders } from '../../test/renderWithProviders'
 
 function buildScenesResponse(items: { scene_index: number; narration: string }[]) {
+  // /scenes now carries the rich review-item envelope (SCL-5). Fill the
+  // minimum required fields so reviewItemSchema validation passes; the
+  // narration editor still consumes only narration + scene_index.
+  const enriched = items.map((it) => ({
+    ...it,
+    shots: [],
+    review_status: 'waiting_for_review' as const,
+    high_leverage: false,
+    regen_attempts: 0,
+    retry_exhausted: false,
+    content_flags: [],
+  }))
   return new Response(
     JSON.stringify({
-      data: { items, total: items.length },
+      data: { items: enriched, total: enriched.length },
       version: 1,
     }),
     {

@@ -119,17 +119,13 @@ export const runStatusResponseSchema = z.object({
   version: z.literal(1),
 });
 
+// sceneSchema is the slim envelope returned by the inline narration editor.
+// /scenes (list) returns the richer reviewItemSchema so non-batch surfaces can
+// render the read-only DetailPanel without a second fetch — see SCL-5 in
+// spec-production-master-detail.md.
 export const sceneSchema = z.object({
   narration: z.string(),
   scene_index: z.number().int().nonnegative(),
-});
-
-export const sceneListResponseSchema = z.object({
-  data: z.object({
-    items: z.array(sceneSchema),
-    total: z.number().int().nonnegative(),
-  }),
-  version: z.literal(1),
 });
 
 export const sceneEditResponseSchema = z.object({
@@ -192,6 +188,16 @@ export const reviewItemSchema = z.object({
 });
 
 export const reviewItemListResponseSchema = z.object({
+  data: z.object({
+    items: z.array(reviewItemSchema),
+    total: z.number().int().nonnegative(),
+  }),
+  version: z.literal(1),
+});
+
+// /scenes returns the same rich envelope as /review-items so the read-only
+// master/detail panes render at every post-Phase-A stage.
+export const sceneListResponseSchema = z.object({
   data: z.object({
     items: z.array(reviewItemSchema),
     total: z.number().int().nonnegative(),

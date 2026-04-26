@@ -151,7 +151,93 @@ func TestSceneHandler_List_ReturnsScenes(t *testing.T) {
 	testutil.AssertEqual(t, env.Data.Items[1].SceneIndex, 1)
 }
 
-func TestSceneHandler_List_ReturnsConflictWhenRunNotAtScenarioReview(t *testing.T) {
+func TestSceneHandler_List_ReturnsRichPayloadAtNonReviewStage(t *testing.T) {
+	// SCL-5: /scenes carries the same envelope as /review-items so the
+	// read-only master/detail panes can render shots, critic_score, and
+	// critic_breakdown at any stage with populated segments.
+	h, database, outDir := newTestSceneHandler(t)
+	runStore := db.NewRunStore(database)
+	run, err := runStore.Create(context.Background(), "049", outDir)
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := database.ExecContext(context.Background(),
+		`UPDATE runs SET stage = 'image', status = 'running' WHERE id = ?`, run.ID); err != nil {
+		t.Fatalf("seed stage: %v", err)
+	}
+	if _, err := database.ExecContext(context.Background(), `
+		INSERT INTO segments (
+			run_id, scene_index, narration, shot_count, shots, tts_path,
+			critic_score, critic_sub, status, review_status
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)`,
+		run.ID,
+		0,
+		"이미지 단계 장면",
+		1,
+		`[{"image_path":"/images/scene-0.png","duration_s":4.0,"transition":"cut","visual_descriptor":"opening"}]`,
+		"/audio/scene-0.wav",
+		0.82,
+		`{"hook_strength":0.91,"fact_accuracy":0.88,"emotional_variation":0.6,"immersion":0.45}`,
+		string(domain.ReviewStatusWaitingForReview),
+	); err != nil {
+		t.Fatalf("seed segment: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs/"+run.ID+"/scenes", nil)
+	req.SetPathValue("id", run.ID)
+	rec := httptest.NewRecorder()
+	h.List(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusOK)
+	var env struct {
+		Data *struct {
+			Items []struct {
+				SceneIndex      int      `json:"scene_index"`
+				Narration       string   `json:"narration"`
+				Shots           []any    `json:"shots"`
+				TTSPath         *string  `json:"tts_path,omitempty"`
+				CriticScore     *float64 `json:"critic_score,omitempty"`
+				CriticBreakdown *struct {
+					AggregateScore     *float64 `json:"aggregate_score,omitempty"`
+					HookStrength       *float64 `json:"hook_strength,omitempty"`
+					FactAccuracy       *float64 `json:"fact_accuracy,omitempty"`
+					EmotionalVariation *float64 `json:"emotional_variation,omitempty"`
+					Immersion          *float64 `json:"immersion,omitempty"`
+				} `json:"critic_breakdown,omitempty"`
+				ReviewStatus string `json:"review_status"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(env.Data.Items) != 1 {
+		t.Fatalf("want 1 item, got %d", len(env.Data.Items))
+	}
+	item := env.Data.Items[0]
+	testutil.AssertEqual(t, item.SceneIndex, 0)
+	testutil.AssertEqual(t, item.Narration, "이미지 단계 장면")
+	if len(item.Shots) != 1 {
+		t.Fatalf("want 1 shot, got %d", len(item.Shots))
+	}
+	if item.TTSPath == nil || *item.TTSPath != "/audio/scene-0.wav" {
+		t.Fatalf("tts_path mismatch: %+v", item.TTSPath)
+	}
+	if item.CriticScore == nil || *item.CriticScore != 82 {
+		t.Fatalf("critic_score mismatch (want 82 after 0..1→0..100 normalization): %+v", item.CriticScore)
+	}
+	if item.CriticBreakdown == nil || item.CriticBreakdown.HookStrength == nil ||
+		*item.CriticBreakdown.HookStrength != 91 {
+		t.Fatalf("critic_breakdown.hook_strength mismatch (want 91 after normalization): %+v", item.CriticBreakdown)
+	}
+	testutil.AssertEqual(t, item.ReviewStatus, string(domain.ReviewStatusWaitingForReview))
+}
+
+func TestSceneHandler_List_AllowsAnyStageReturnsEmptyWithoutSegments(t *testing.T) {
+	// SCL-5: List is unconditional once the run exists. A run that has not yet
+	// produced segments returns 200 with an empty list so the master pane can
+	// render its placeholder, instead of 409 which the UI would surface as an
+	// error.
 	h, database, outDir := newTestSceneHandler(t)
 	runStore := db.NewRunStore(database)
 	run, err := runStore.Create(context.Background(), "049", outDir)
@@ -164,7 +250,18 @@ func TestSceneHandler_List_ReturnsConflictWhenRunNotAtScenarioReview(t *testing.
 	rec := httptest.NewRecorder()
 	h.List(rec, req)
 
-	testutil.AssertEqual(t, rec.Code, http.StatusConflict)
+	testutil.AssertEqual(t, rec.Code, http.StatusOK)
+	var env struct {
+		Data *struct {
+			Items []any `json:"items"`
+			Total int   `json:"total"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	testutil.AssertEqual(t, env.Data.Total, 0)
+	testutil.AssertEqual(t, len(env.Data.Items), 0)
 }
 
 func TestSceneHandler_List_ReturnsNotFoundForUnknownRun(t *testing.T) {

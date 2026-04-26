@@ -708,4 +708,187 @@ describe('ProductionShell integration', () => {
       'scp-049-run-1',
     )
   })
+
+  // SCL-5: master scene-list pane must render at every post-Phase-A stage
+  // when segments exist, not only at batch_review/waiting.
+  describe('SCL-5: scene list visible at every post-Phase-A stage', () => {
+    function imageStageRun() {
+      return {
+        ...run_list_response.data.items[1],
+        stage: 'image' as const,
+        status: 'running' as const,
+      }
+    }
+
+    function buildScenesResponse(count: number) {
+      return {
+        data: {
+          items: Array.from({ length: count }, (_, i) => ({
+            clip_path: null,
+            content_flags: [],
+            critic_breakdown: {
+              hook_strength: 80 + i,
+              fact_accuracy: 75,
+              emotional_variation: 60,
+              immersion: 70,
+            },
+            critic_score: 80 + i,
+            high_leverage: false,
+            narration: `Scene ${i} narration text`,
+            regen_attempts: 0,
+            retry_exhausted: false,
+            review_status: 'waiting_for_review',
+            scene_index: i,
+            shots: [
+              {
+                image_path: `/images/scene-${i}.png`,
+                duration_s: 4,
+                transition: 'cut',
+                visual_descriptor: `scene ${i}`,
+              },
+            ],
+          })),
+          total: count,
+        },
+        version: 1,
+      }
+    }
+
+    function mockFetchForImageStage(scenes_count: number) {
+      const run = imageStageRun()
+      const status_response = {
+        ...run_status_response,
+        data: { ...run_status_response.data, run },
+      }
+      return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = requestUrl(input)
+        if (url.endsWith('/api/runs')) {
+          return new Response(
+            JSON.stringify({
+              ...run_list_response,
+              data: { ...run_list_response.data, items: [run_list_response.data.items[0], run] },
+            }),
+            { headers: { 'Content-Type': 'application/json' }, status: 200 },
+          )
+        }
+        if (url.endsWith('/api/runs/scp-049-run-2/status')) {
+          return new Response(JSON.stringify(status_response), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          })
+        }
+        if (url.endsWith('/api/runs/scp-049-run-2/scenes')) {
+          return new Response(JSON.stringify(buildScenesResponse(scenes_count)), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          })
+        }
+        throw new Error(`Unexpected fetch in test: ${url}`)
+      })
+    }
+
+    it('renders the scene list and read-only DetailPanel at image/running with populated scenes', async () => {
+      mockFetchForImageStage(3)
+
+      renderWithProviders(
+        <KeyboardShortcutsProvider>
+          <Routes>
+            <Route path="/" element={<AppShell />}>
+              <Route path="production" element={<ProductionShell />} />
+            </Route>
+          </Routes>
+        </KeyboardShortcutsProvider>,
+        { initialEntries: ['/production?run=scp-049-run-2'] },
+      )
+
+      const master = await screen.findByRole('listbox', { name: /scenes/i })
+      const cards = within(master).getAllByRole('option')
+      expect(cards).toHaveLength(3)
+      expect(cards[0]).toHaveAttribute('aria-selected', 'true')
+      // Detail pane shows the first scene's read-only DetailPanel.
+      expect(await screen.findByLabelText(/scene 1 detail/i)).toBeInTheDocument()
+    })
+
+    it('falls back to the stage-in-progress placeholder when no scenes exist yet', async () => {
+      mockFetchForImageStage(0)
+
+      renderWithProviders(
+        <KeyboardShortcutsProvider>
+          <Routes>
+            <Route path="/" element={<AppShell />}>
+              <Route path="production" element={<ProductionShell />} />
+            </Route>
+          </Routes>
+        </KeyboardShortcutsProvider>,
+        { initialEntries: ['/production?run=scp-049-run-2'] },
+      )
+
+      expect(await screen.findByLabelText('Stage in progress')).toBeInTheDocument()
+      expect(screen.queryByRole('listbox', { name: /scenes/i })).not.toBeInTheDocument()
+    })
+
+    it('shows the scene list alongside ScenarioInspector at scenario_review/waiting', async () => {
+      const scenarioRun = {
+        ...run_list_response.data.items[1],
+        stage: 'scenario_review' as const,
+        status: 'waiting' as const,
+      }
+      const status_response = {
+        ...run_status_response,
+        data: { ...run_status_response.data, run: scenarioRun },
+      }
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = requestUrl(input)
+        if (url.endsWith('/api/runs')) {
+          return new Response(
+            JSON.stringify({
+              ...run_list_response,
+              data: {
+                ...run_list_response.data,
+                items: [run_list_response.data.items[0], scenarioRun],
+              },
+            }),
+            { headers: { 'Content-Type': 'application/json' }, status: 200 },
+          )
+        }
+        if (url.endsWith('/api/runs/scp-049-run-2/status')) {
+          return new Response(JSON.stringify(status_response), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          })
+        }
+        if (url.endsWith('/api/runs/scp-049-run-2/scenes')) {
+          return new Response(JSON.stringify(buildScenesResponse(2)), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          })
+        }
+        if (url.endsWith('/api/runs/scp-049-run-2/scenario/approve')) {
+          return new Response(JSON.stringify({ data: { ok: true }, version: 1 }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          })
+        }
+        throw new Error(`Unexpected fetch in test: ${url}`)
+      })
+
+      renderWithProviders(
+        <KeyboardShortcutsProvider>
+          <Routes>
+            <Route path="/" element={<AppShell />}>
+              <Route path="production" element={<ProductionShell />} />
+            </Route>
+          </Routes>
+        </KeyboardShortcutsProvider>,
+        { initialEntries: ['/production?run=scp-049-run-2'] },
+      )
+
+      const master = await screen.findByRole('listbox', { name: /scenes/i })
+      expect(within(master).getAllByRole('option')).toHaveLength(2)
+      // Right pane: ScenarioInspector continues to render unchanged at this stage.
+      expect(
+        await screen.findByText(/Narration inspector — 2 scenes/i),
+      ).toBeInTheDocument()
+    })
+  })
 })

@@ -301,15 +301,13 @@ func NewSceneService(runs RunStore, segments interface {
 	return &SceneService{runs: runs, segments: segments, decisions: decisions, clock: clk}
 }
 
-// ListScenes returns all segments for a run in scene_index order.
-// Returns CONFLICT if the run is not currently paused at scenario_review.
+// ListScenes returns all segments for a run in scene_index order. Reads are
+// unconditional: the master scene-list pane is rendered at every post-Phase-A
+// stage when segments exist (see SCL-5 in spec-production-master-detail.md).
+// Mutating endpoints such as EditNarration retain their stage gate.
 func (s *SceneService) ListScenes(ctx context.Context, runID string) ([]*domain.Episode, error) {
-	run, err := s.runs.Get(ctx, runID)
-	if err != nil {
+	if _, err := s.runs.Get(ctx, runID); err != nil {
 		return nil, fmt.Errorf("scene list: %w", err)
-	}
-	if run.Stage != domain.StageScenarioReview || run.Status != domain.StatusWaiting {
-		return nil, fmt.Errorf("scene list: run is not paused at scenario_review: %w", domain.ErrConflict)
 	}
 	scenes, err := s.segments.ListByRunID(ctx, runID)
 	if err != nil {
@@ -380,7 +378,7 @@ func (s *SceneService) ListReviewItems(ctx context.Context, runID string) ([]*Re
 			TTSDurationMs:          segment.TTSDurationMs,
 			ClipPath:               normalizeOptionalPath(segment.ClipPath),
 			CriticScore:            normalizeOptionalScore(segment.CriticScore),
-			CriticBreakdown:        parseCriticBreakdown(segment.CriticScore, segment.CriticSub),
+			CriticBreakdown:        ParseCriticBreakdown(segment.CriticScore, segment.CriticSub),
 			ReviewStatus:           normalizedReviewStatus(segment.ReviewStatus),
 			ContentFlags:           append([]string(nil), segment.SafeguardFlags...),
 			HighLeverage:           classification.HighLeverage,
@@ -953,7 +951,7 @@ func (s *SceneService) buildSkipSnapshot(ctx context.Context, runID string, scen
 		"action_source":        "batch_review",
 		"content_flags":        contentFlags,
 		"critic_score":         normalizeOptionalScore(segment.CriticScore),
-		"critic_sub":           parseCriticBreakdown(segment.CriticScore, segment.CriticSub),
+		"critic_sub":           ParseCriticBreakdown(segment.CriticScore, segment.CriticSub),
 		"review_status_before": string(segment.ReviewStatus),
 		"scene_index":          sceneIndex,
 	}
@@ -964,7 +962,11 @@ func (s *SceneService) buildSkipSnapshot(ctx context.Context, runID string, scen
 	return string(raw), nil
 }
 
-func parseCriticBreakdown(aggregate *float64, raw *string) *ReviewItemCriticBreakdown {
+// ParseCriticBreakdown lifts the critic_sub JSON column into the structured
+// ReviewItemCriticBreakdown shape consumed by the API. Exported so non-batch
+// scene-list responses can carry per-metric scores without re-running the full
+// batch_review assembly pipeline.
+func ParseCriticBreakdown(aggregate *float64, raw *string) *ReviewItemCriticBreakdown {
 	if aggregate == nil && raw == nil {
 		return nil
 	}
@@ -986,7 +988,7 @@ func parseCriticBreakdown(aggregate *float64, raw *string) *ReviewItemCriticBrea
 		// Downstream analytics (skip_and_remember snapshots) cannot
 		// distinguish "no sub-scores" from "corrupted sub-scores"
 		// without a log; emit a warning so ops can spot bad rows.
-		slog.Warn("parseCriticBreakdown: invalid critic_sub JSON", "error", err)
+		slog.Warn("ParseCriticBreakdown: invalid critic_sub JSON", "error", err)
 		return breakdown
 	}
 
@@ -1021,6 +1023,13 @@ func normalizeOptionalPath(value *string) *string {
 // ambiguous at the exact 1.0 boundary; resolve when upstream writers agree
 // on a single scale. Do NOT change this silently — it will skew every
 // stored critic score for legacy rows.
+// NormalizeOptionalScore rescales a 0..1 critic score to the 0..100 range used
+// by the API and clamps out-of-range inputs. Exported so non-batch scene-list
+// responses present the same scale as /review-items.
+func NormalizeOptionalScore(value *float64) *float64 {
+	return normalizeOptionalScore(value)
+}
+
 func normalizeOptionalScore(value *float64) *float64 {
 	if value == nil {
 		return nil

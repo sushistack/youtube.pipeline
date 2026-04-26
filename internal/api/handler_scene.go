@@ -21,8 +21,11 @@ func NewSceneHandler(svc *service.SceneService) *SceneHandler {
 	return &SceneHandler{svc: svc}
 }
 
-// sceneResponse is the API representation of a single scene/segment.
-type sceneResponse struct {
+// narrationEditResponse is the slim envelope returned by the inline narration
+// edit endpoint. The list endpoint returns the richer reviewItemResponse so
+// non-batch surfaces can render scene cards and the read-only DetailPanel
+// without a second fetch (see SCL-5 in spec-production-master-detail.md).
+type narrationEditResponse struct {
 	SceneIndex int    `json:"scene_index"`
 	Narration  string `json:"narration"`
 }
@@ -60,10 +63,12 @@ type reviewItemResponse struct {
 	PriorRejection         *priorRejectionWarningResponse     `json:"prior_rejection,omitempty"`
 }
 
-// sceneListResponse is the API list envelope for scene rows.
+// sceneListResponse is the API list envelope for scene rows. The shape is
+// shared with the batch_review surface (reviewItemResponse) so scene cards
+// and the read-only DetailPanel can be rendered at any post-Phase-A stage.
 type sceneListResponse struct {
-	Items []*sceneResponse `json:"items"`
-	Total int              `json:"total"`
+	Items []*reviewItemResponse `json:"items"`
+	Total int                   `json:"total"`
 }
 
 type reviewItemListResponse struct {
@@ -154,9 +159,9 @@ func (h *SceneHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, err)
 		return
 	}
-	items := make([]*sceneResponse, len(scenes))
+	items := make([]*reviewItemResponse, len(scenes))
 	for i, ep := range scenes {
-		items[i] = toSceneResponse(ep)
+		items[i] = toReviewItemResponseFromEpisode(ep)
 	}
 	writeJSON(w, http.StatusOK, sceneListResponse{Items: items, Total: len(items)})
 }
@@ -293,7 +298,7 @@ func (h *SceneHandler) Edit(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, &sceneResponse{SceneIndex: sceneIndex, Narration: req.Narration})
+	writeJSON(w, http.StatusOK, &narrationEditResponse{SceneIndex: sceneIndex, Narration: req.Narration})
 }
 
 // RecordDecision handles POST /api/runs/{id}/decisions.
@@ -441,15 +446,50 @@ func (h *SceneHandler) Undo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func toSceneResponse(ep *domain.Episode) *sceneResponse {
+// toReviewItemResponseFromEpisode maps a raw segments-table row to the
+// reviewItemResponse shape used at every post-Phase-A surface. Fields that
+// require batch_review-only assembly (high_leverage classification, previous
+// versions of regenerated scenes, prior-rejection warnings) are intentionally
+// left at their zero values — the read-only master/detail panes do not depend
+// on them.
+func toReviewItemResponseFromEpisode(ep *domain.Episode) *reviewItemResponse {
 	narration := ""
 	if ep.Narration != nil {
 		narration = *ep.Narration
 	}
-	return &sceneResponse{
-		SceneIndex: ep.SceneIndex,
-		Narration:  narration,
+	shots := ep.Shots
+	if shots == nil {
+		shots = []domain.Shot{}
 	}
+	flags := ep.SafeguardFlags
+	if flags == nil {
+		flags = []string{}
+	}
+	reviewStatus := ep.ReviewStatus
+	if reviewStatus == "" {
+		reviewStatus = domain.ReviewStatusWaitingForReview
+	}
+	response := &reviewItemResponse{
+		SceneIndex:    ep.SceneIndex,
+		Narration:     narration,
+		Shots:         shots,
+		TTSPath:       ep.TTSPath,
+		TTSDurationMs: ep.TTSDurationMs,
+		ClipPath:      ep.ClipPath,
+		CriticScore:   service.NormalizeOptionalScore(ep.CriticScore),
+		ReviewStatus:  reviewStatus,
+		ContentFlags:  flags,
+	}
+	if breakdown := service.ParseCriticBreakdown(ep.CriticScore, ep.CriticSub); breakdown != nil {
+		response.CriticBreakdown = &reviewItemCriticBreakdownResponse{
+			AggregateScore:     breakdown.AggregateScore,
+			HookStrength:       breakdown.HookStrength,
+			FactAccuracy:       breakdown.FactAccuracy,
+			EmotionalVariation: breakdown.EmotionalVariation,
+			Immersion:          breakdown.Immersion,
+		}
+	}
+	return response
 }
 
 func isTimelineDecisionType(value string) bool {

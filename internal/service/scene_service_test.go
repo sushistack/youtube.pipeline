@@ -254,16 +254,47 @@ func TestSceneService_ListScenes_ReturnsScenes(t *testing.T) {
 	testutil.AssertEqual(t, *scenes[0].Narration, "장면 0")
 }
 
-func TestSceneService_ListScenes_ReturnsConflictWhenNotAtScenarioReview(t *testing.T) {
+func TestSceneService_ListScenes_AllowsAnyStageWhenSegmentsExist(t *testing.T) {
+	cases := []struct {
+		name   string
+		stage  domain.Stage
+		status domain.Status
+	}{
+		{"image_running", domain.StageImage, domain.StatusRunning},
+		{"complete_completed", domain.StageComplete, domain.StatusCompleted},
+		{"assemble_running", domain.StageAssemble, domain.StatusRunning},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runs := &fakeRunStore{runs: map[string]*domain.Run{
+				"run-1": {ID: "run-1", Stage: tc.stage, Status: tc.status},
+			}}
+			segments := &fakeSegmentStore{scenes: []*domain.Episode{
+				{SceneIndex: 0, Narration: narrationPtr("scene 0")},
+				{SceneIndex: 1, Narration: narrationPtr("scene 1")},
+			}}
+			svc := service.NewSceneService(runs, segments, nil, clock.RealClock{})
+
+			scenes, err := svc.ListScenes(context.Background(), "run-1")
+			if err != nil {
+				t.Fatalf("unexpected error at %s/%s: %v", tc.stage, tc.status, err)
+			}
+			testutil.AssertEqual(t, len(scenes), 2)
+		})
+	}
+}
+
+func TestSceneService_ListScenes_ReturnsEmptyListWhenNoSegments(t *testing.T) {
 	runs := &fakeRunStore{runs: map[string]*domain.Run{
-		"run-1": {ID: "run-1", Stage: domain.StageResearch, Status: domain.StatusRunning},
+		"run-1": {ID: "run-1", Stage: domain.StageImage, Status: domain.StatusRunning},
 	}}
 	svc := service.NewSceneService(runs, &fakeSegmentStore{}, nil, clock.RealClock{})
 
-	_, err := svc.ListScenes(context.Background(), "run-1")
-	if !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("want ErrConflict, got %v", err)
+	scenes, err := svc.ListScenes(context.Background(), "run-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+	testutil.AssertEqual(t, len(scenes), 0)
 }
 
 func TestSceneService_ListScenes_ReturnsNotFoundForMissingRun(t *testing.T) {

@@ -12,6 +12,7 @@ import {
 } from '../../lib/formatters'
 import { queryKeys } from '../../lib/queryKeys'
 import { useUIStore, type ProductionLastSeenSnapshot } from '../../stores/useUIStore'
+import { useRunScenes } from '../../hooks/useRunScenes'
 import { useRunStatus } from '../../hooks/useRunStatus'
 import { BatchReview } from '../production/BatchReview'
 import { CharacterPick } from '../production/CharacterPick'
@@ -20,9 +21,11 @@ import { CompletionReward } from '../production/CompletionReward'
 import { useNewRunCoordinator } from '../production/useNewRunCoordinator'
 import { ScenarioInspector } from '../production/ScenarioInspector'
 import { ContinuityBanner } from '../shared/ContinuityBanner'
+import { DetailPanel } from '../shared/DetailPanel'
 import { FailureBanner } from '../shared/FailureBanner'
 import { ProductionAppHeader } from '../shared/ProductionAppHeader'
 import { ProductionMasterDetail } from '../shared/ProductionMasterDetail'
+import { SceneCard } from '../shared/SceneCard'
 import { StatusBar } from '../shared/StatusBar'
 
 function toLastSeenSnapshot(
@@ -292,6 +295,11 @@ export function ProductionShell() {
     if (current_run.stage === 'complete' && current_run.status === 'completed') {
       return <CompletionReward key={current_run.id} run={current_run} />
     }
+    // SCL-5: at non-HITL stages with populated segments, show the read-only
+    // DetailPanel for the selected scene instead of a generic placeholder.
+    if (active_scene != null) {
+      return <DetailPanel key={`${current_run.id}-${active_scene.scene_index}`} item={active_scene} />
+    }
     return (
       <section className="production__stage-placeholder" aria-label="Stage in progress">
         <p className="production-dashboard__eyebrow">Stage in progress</p>
@@ -303,8 +311,45 @@ export function ProductionShell() {
     )
   }
 
+  function renderMasterPane() {
+    if (!has_scenes) {
+      return null
+    }
+    const selected_index = clamped_active_index
+    return (
+      <ol className="production-master-detail__scene-list" role="listbox" aria-label="Scenes">
+        {scenes.map((scene, index) => (
+          <li key={scene.scene_index} className="production-master-detail__scene-list-item">
+            <SceneCard
+              item={scene}
+              on_select={() => set_active_scene_index(index)}
+              selected={index === selected_index}
+            />
+          </li>
+        ))}
+      </ol>
+    )
+  }
+
   const is_batch_review_surface =
     current_run?.stage === 'batch_review' && current_run.status === 'waiting'
+
+  // SCL-5: master scene list renders at every post-Phase-A surface (not just
+  // batch_review). pending stage is excluded because Phase A has not produced
+  // segments yet; batch_review continues to render its own full-bleed master.
+  const should_fetch_scenes =
+    current_run != null &&
+    current_run.stage !== 'pending' &&
+    !is_batch_review_surface
+  const scenes_query = useRunScenes(should_fetch_scenes ? current_run!.id : null)
+  const scenes = scenes_query.data ?? []
+  const [active_scene_index, set_active_scene_index] = useState(0)
+  useEffect(() => {
+    set_active_scene_index(0)
+  }, [current_run?.id])
+  const has_scenes = scenes.length > 0
+  const clamped_active_index = scenes.length > 0 ? Math.min(active_scene_index, scenes.length - 1) : 0
+  const active_scene = has_scenes ? scenes[clamped_active_index] : null
 
   function getMasterEmptyMessage() {
     if (!current_run) {
@@ -344,6 +389,7 @@ export function ProductionShell() {
             <BatchReview key={current_run.id} run={current_run} />
           ) : (
             <ProductionMasterDetail
+              master={renderMasterPane()}
               detail={renderStageDetail()}
               master_empty_message={getMasterEmptyMessage()}
             />

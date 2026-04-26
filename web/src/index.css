@@ -3538,3 +3538,19 @@
   font-size: 0.85rem;
   color: rgba(226, 232, 240, 0.85);
 }
+
+/* SCL-5: scene-list master pane shown at every post-Phase-A surface that is
+   not the batch_review full-bleed view. Layout mirrors .batch-review__list so
+   SceneCard renders with the same vertical-stack rhythm. */
+.production-master-detail__scene-list {
+  display: grid;
+  gap: 0.8rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.production-master-detail__scene-list-item {
+  list-style: none;
+}

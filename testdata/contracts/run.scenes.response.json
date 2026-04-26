@@ -4,11 +4,23 @@
     "items": [
       {
         "scene_index": 0,
-        "narration": "SCP-049는 흑사병 의사의 의상을 입은 인간형 존재입니다."
+        "narration": "SCP-049는 흑사병 의사의 의상을 입은 인간형 존재입니다.",
+        "shots": [],
+        "review_status": "waiting_for_review",
+        "high_leverage": false,
+        "regen_attempts": 0,
+        "retry_exhausted": false,
+        "content_flags": []
       },
       {
         "scene_index": 1,
-        "narration": "그의 손길이 닿는 모든 것은 '역병'이라 불리는 상태에 빠집니다."
+        "narration": "그의 손길이 닿는 모든 것은 '역병'이라 불리는 상태에 빠집니다.",
+        "shots": [],
+        "review_status": "waiting_for_review",
+        "high_leverage": false,
+        "regen_attempts": 0,
+        "retry_exhausted": false,
+        "content_flags": []
       }
     ],
     "total": 2

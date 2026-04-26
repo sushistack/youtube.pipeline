@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Scene } from '../contracts/runContracts'
+import type { ReviewItem, Scene } from '../contracts/runContracts'
 import { ApiClientError, editSceneNarration, fetchRunScenes } from '../lib/apiClient'
 import { queryKeys } from '../lib/queryKeys'
 
@@ -18,9 +18,15 @@ export function useEditNarration(run_id: string) {
     mutationFn: ({ narration, scene_index }: { narration: string; scene_index: number }) =>
       editSceneNarration(run_id, scene_index, narration),
     onSuccess: (saved, { scene_index }) => {
-      client.setQueryData<Scene[]>(
+      // Edit returns a slim {narration, scene_index} envelope; merge into the
+      // rich cached entry so shots/critic/clip fields survive the optimistic
+      // update until the follow-up invalidation refetches.
+      client.setQueryData<ReviewItem[]>(
         queryKeys.runs.scenes(run_id),
-        (old) => old?.map((s) => (s.scene_index === scene_index ? saved : s)),
+        (old) =>
+          old?.map((item) =>
+            item.scene_index === scene_index ? { ...item, narration: saved.narration } : item,
+          ),
       )
       client.invalidateQueries({ queryKey: queryKeys.runs.scenes(run_id) })
     },
