@@ -13,28 +13,48 @@ import (
 )
 
 const (
-	// defaultTTSEndpoint is the DashScope qwen3-tts HTTP endpoint.
-	// The region-specific URL may be overridden via TTSClientConfig.Endpoint.
-	defaultTTSEndpoint = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-to-speech/generation"
+	// DefaultTTSEndpointIntl is the Singapore (international) qwen3-tts URL.
+	// Use this when the API key was issued at modelstudio.console.alibabacloud.com.
+	DefaultTTSEndpointIntl = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
-	// ttsProvider is the canonical provider label written to TTSResponse.
+	// DefaultTTSEndpointCN is the China (Beijing) qwen3-tts URL.
+	// Use this when the API key was issued at bailian.console.alibabacloud.com.
+	// API keys for the two regions are not interchangeable.
+	DefaultTTSEndpointCN = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+
 	ttsProvider = "dashscope"
 
 	// costPerChar is the per-character cost estimate (USD) for qwen3-tts-flash.
-	// This is an approximation; real billing is determined by DashScope.
+	// Approximation; real billing is determined by DashScope.
 	costPerChar = 0.000005
+
+	// audioDownloadLimit caps the bytes pulled from the audio URL so a
+	// runaway response cannot OOM the process. 50 MiB easily covers a
+	// per-scene WAV — multi-minute narration at 44.1 kHz / 16-bit mono is
+	// ~10 MiB/min — while still surfacing absurd payloads as a hard error.
+	audioDownloadLimit = 50 << 20
 )
 
 // TTSClientConfig carries the construction-time parameters for TTSClient.
 type TTSClientConfig struct {
-	// Endpoint overrides the default DashScope TTS URL (for regional routing or mocking in tests).
+	// Endpoint overrides the default DashScope TTS URL. When empty the
+	// international (Singapore) endpoint is used. Region-aware callers should
+	// pass DefaultTTSEndpointCN explicitly when targeting Beijing.
 	Endpoint string
 
-	// APIKey is the DashScope access key. Required.
+	// APIKey is the DashScope access key. Required. Must match the region
+	// of Endpoint — keys issued for Singapore are rejected by the Beijing
+	// endpoint with HTTP 401 InvalidApiKey, and vice versa.
 	APIKey string
+
+	// LanguageType is forwarded as input.language_type. Empty means omit
+	// the field and let the model auto-detect. For Korean narration, set
+	// "Korean" so pronunciation and intonation match the text.
+	LanguageType string
 }
 
-// TTSClient implements domain.TTSSynthesizer for DashScope qwen3-tts-flash.
+// TTSClient implements domain.TTSSynthesizer for DashScope qwen3-tts via the
+// MultiModalConversation HTTP surface (multimodal-generation/generation).
 // It does not own retry, backoff, or rate-limiting — those are composed by
 // the TTS track via CallLimiter.Do + llmclient.WithRetry.
 type TTSClient struct {
@@ -52,30 +72,49 @@ func NewTTSClient(httpClient *http.Client, cfg TTSClientConfig) (*TTSClient, err
 		return nil, fmt.Errorf("dashscope tts: %w: api key is empty", domain.ErrValidation)
 	}
 	if cfg.Endpoint == "" {
-		cfg.Endpoint = defaultTTSEndpoint
+		cfg.Endpoint = DefaultTTSEndpointIntl
 	}
 	return &TTSClient{httpClient: httpClient, cfg: cfg}, nil
 }
 
-// ttsRequestBody is the JSON payload sent to DashScope.
 type ttsRequestBody struct {
-	Model      string         `json:"model"`
-	Input      ttsInput       `json:"input"`
-	Parameters ttsParameters  `json:"parameters"`
+	Model string   `json:"model"`
+	Input ttsInput `json:"input"`
 }
 
 type ttsInput struct {
-	Text  string `json:"text"`
-	Voice string `json:"voice"`
+	Text         string `json:"text"`
+	Voice        string `json:"voice"`
+	LanguageType string `json:"language_type,omitempty"`
 }
 
-type ttsParameters struct {
-	Format string `json:"format"`
+type ttsResponseBody struct {
+	Output    ttsResponseOutput `json:"output"`
+	Usage     *ttsResponseUsage `json:"usage,omitempty"`
+	RequestID string            `json:"request_id,omitempty"`
+	Code      string            `json:"code,omitempty"`
+	Message   string            `json:"message,omitempty"`
 }
 
-// Synthesize issues a POST to DashScope, writes the returned audio bytes to
+type ttsResponseOutput struct {
+	Audio        ttsResponseAudio `json:"audio"`
+	FinishReason string           `json:"finish_reason,omitempty"`
+}
+
+type ttsResponseAudio struct {
+	URL       string `json:"url"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
+}
+
+type ttsResponseUsage struct {
+	InputTokensTotal  int `json:"input_tokens_total,omitempty"`
+	OutputTokensTotal int `json:"output_tokens_total,omitempty"`
+}
+
+// Synthesize POSTs to the MultiModalConversation endpoint, downloads the
+// returned audio URL (valid 24h per DashScope), writes the bytes to
 // req.OutputPath, and returns a populated TTSResponse. The client does NOT
-// perform transliteration; req.Text must already be the final form to synthesize.
+// perform transliteration; req.Text must already be the final form.
 //
 // HTTP status taxonomy (mirrors retry.go):
 //
@@ -98,11 +137,9 @@ func (c *TTSClient) Synthesize(ctx context.Context, req domain.TTSRequest) (doma
 	body := ttsRequestBody{
 		Model: req.Model,
 		Input: ttsInput{
-			Text:  req.Text,
-			Voice: req.Voice,
-		},
-		Parameters: ttsParameters{
-			Format: format,
+			Text:         req.Text,
+			Voice:        req.Voice,
+			LanguageType: c.cfg.LanguageType,
 		},
 	}
 
@@ -128,9 +165,17 @@ func (c *TTSClient) Synthesize(ctx context.Context, req domain.TTSRequest) (doma
 		return domain.TTSResponse{}, err
 	}
 
-	audioBytes, err := io.ReadAll(resp.Body)
+	var payload ttsResponseBody
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return domain.TTSResponse{}, fmt.Errorf("dashscope tts: decode response: %w: %v", domain.ErrStageFailed, err)
+	}
+	if payload.Output.Audio.URL == "" {
+		return domain.TTSResponse{}, fmt.Errorf("dashscope tts: %w: response missing output.audio.url (code=%q message=%q)", domain.ErrStageFailed, payload.Code, payload.Message)
+	}
+
+	audioBytes, err := c.fetchAudio(ctx, payload.Output.Audio.URL)
 	if err != nil {
-		return domain.TTSResponse{}, fmt.Errorf("dashscope tts: read body: %w: %v", domain.ErrStageFailed, err)
+		return domain.TTSResponse{}, err
 	}
 	if len(audioBytes) == 0 {
 		return domain.TTSResponse{}, fmt.Errorf("dashscope tts: %w: provider returned empty audio body", domain.ErrStageFailed)
@@ -159,6 +204,31 @@ func (c *TTSClient) Synthesize(ctx context.Context, req domain.TTSRequest) (doma
 		Provider:   ttsProvider,
 		CostUSD:    costUSD,
 	}, nil
+}
+
+// fetchAudio GETs the transient audio URL DashScope returned and reads the
+// body. Errors map to ErrStageFailed (retryable) since the URL is short-
+// lived: a transient failure here is recoverable by re-issuing the synth
+// request, which mints a fresh URL.
+func (c *TTSClient) fetchAudio(ctx context.Context, url string) ([]byte, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("dashscope tts: create audio download request: %w", err)
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("dashscope tts: download audio: %w: %v", domain.ErrStageFailed, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("dashscope tts: download audio: %w: status %d: %s", domain.ErrStageFailed, resp.StatusCode, body)
+	}
+	audio, err := io.ReadAll(io.LimitReader(resp.Body, audioDownloadLimit))
+	if err != nil {
+		return nil, fmt.Errorf("dashscope tts: read audio body: %w: %v", domain.ErrStageFailed, err)
+	}
+	return audio, nil
 }
 
 // checkStatus maps HTTP status codes to canonical domain errors.
