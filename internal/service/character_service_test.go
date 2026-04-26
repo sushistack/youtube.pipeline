@@ -315,14 +315,17 @@ func TestCharacterService_GetDescriptorPrefill_FallsBackToAutoWhenNoPrior(t *tes
 		t.Fatalf("Create: %v", err)
 	}
 	runDir := filepath.Join(outDir, run.ID)
-	scenarioPath := writeScenarioFixture(t, runDir, "auto-descriptor-from-artifact")
+	writeScenarioFixture(t, runDir, "auto-descriptor-from-artifact")
+	// Store the literal "scenario.json" relative path that resume.go writes
+	// in production — the service must resolve it against outputDir + runID.
 	if _, err := database.ExecContext(ctx,
-		`UPDATE runs SET scenario_path = ? WHERE id = ?`, scenarioPath, run.ID,
+		`UPDATE runs SET scenario_path = 'scenario.json' WHERE id = ?`, run.ID,
 	); err != nil {
 		t.Fatalf("seed scenario_path: %v", err)
 	}
 
 	svc := service.NewCharacterService(runStore, cacheStore, &fakeCharacterSearchClient{})
+	svc.SetOutputDir(outDir)
 	prefill, err := svc.GetDescriptorPrefill(ctx, run.ID)
 	if err != nil {
 		t.Fatalf("GetDescriptorPrefill: %v", err)
@@ -330,6 +333,37 @@ func TestCharacterService_GetDescriptorPrefill_FallsBackToAutoWhenNoPrior(t *tes
 	testutil.AssertEqual(t, prefill.Auto, "auto-descriptor-from-artifact")
 	if prefill.Prior != nil {
 		t.Fatalf("expected nil prior, got %q", *prefill.Prior)
+	}
+}
+
+// Regression: production stores runs.scenario_path as the relative literal
+// "scenario.json"; without a configured outputDir the service tried to open
+// "./scenario.json" from the server CWD and 404'd in the UI.
+func TestCharacterService_GetDescriptorPrefill_ReturnsNotFoundWhenOutputDirMissing(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	runStore := db.NewRunStore(database)
+	cacheStore := db.NewCharacterCacheStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	run, err := runStore.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	writeScenarioFixture(t, filepath.Join(outDir, run.ID), "auto-from-artifact")
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET scenario_path = 'scenario.json' WHERE id = ?`, run.ID,
+	); err != nil {
+		t.Fatalf("seed scenario_path: %v", err)
+	}
+
+	svc := service.NewCharacterService(runStore, cacheStore, &fakeCharacterSearchClient{})
+	// Intentionally omit SetOutputDir — verifies the "scenario.json" literal
+	// is treated as relative-to-CWD and surfaces NotFound rather than
+	// silently succeeding by coincidence.
+	if _, err := svc.GetDescriptorPrefill(ctx, run.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("GetDescriptorPrefill error = %v, want domain.ErrNotFound", err)
 	}
 }
 
@@ -357,14 +391,15 @@ func TestCharacterService_GetDescriptorPrefill_PrefersPriorRunWhenAvailable(t *t
 		t.Fatalf("seed prior: %v", err)
 	}
 
-	scenarioPath := writeScenarioFixture(t, filepath.Join(outDir, currentRun.ID), "auto-descriptor")
+	writeScenarioFixture(t, filepath.Join(outDir, currentRun.ID), "auto-descriptor")
 	if _, err := database.ExecContext(ctx,
-		`UPDATE runs SET scenario_path = ? WHERE id = ?`, scenarioPath, currentRun.ID,
+		`UPDATE runs SET scenario_path = 'scenario.json' WHERE id = ?`, currentRun.ID,
 	); err != nil {
 		t.Fatalf("seed scenario_path: %v", err)
 	}
 
 	svc := service.NewCharacterService(runStore, cacheStore, &fakeCharacterSearchClient{})
+	svc.SetOutputDir(outDir)
 	prefill, err := svc.GetDescriptorPrefill(ctx, currentRun.ID)
 	if err != nil {
 		t.Fatalf("GetDescriptorPrefill: %v", err)

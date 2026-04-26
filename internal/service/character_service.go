@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -50,6 +51,12 @@ type CharacterService struct {
 	cache     CharacterCacheStore
 	client    CharacterSearchClient
 	decisions DescriptorDecisionRecorder
+	// outputDir resolves runs.scenario_path. resume.go stores it as the
+	// relative literal "scenario.json" (presence flag), so consumers must
+	// join it onto {outputDir}/{runID}/. When empty, GetDescriptorPrefill
+	// reads the path verbatim — only safe in tests that seed an absolute
+	// path.
+	outputDir string
 	settings  interface {
 		PromotePendingAtSafeSeam(ctx context.Context) (bool, error)
 	}
@@ -63,6 +70,12 @@ func NewCharacterService(runs CharacterRunStore, cache CharacterCacheStore, clie
 // undo tracking. If not set, descriptor edits are not recorded.
 func (s *CharacterService) SetDescriptorRecorder(r DescriptorDecisionRecorder) {
 	s.decisions = r
+}
+
+// SetOutputDir wires the pipeline output root used to resolve runs.scenario_path
+// from its stored "scenario.json" literal to the actual on-disk file.
+func (s *CharacterService) SetOutputDir(outputDir string) {
+	s.outputDir = outputDir
 }
 
 func (s *CharacterService) SetSettingsRuntime(settings interface {
@@ -218,10 +231,14 @@ func (s *CharacterService) GetDescriptorPrefill(ctx context.Context, runID strin
 	if run.ScenarioPath == nil || *run.ScenarioPath == "" {
 		return nil, fmt.Errorf("descriptor prefill: run has no scenario path: %w", domain.ErrNotFound)
 	}
-	raw, err := os.ReadFile(*run.ScenarioPath)
+	resolved := *run.ScenarioPath
+	if s.outputDir != "" && !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(s.outputDir, runID, resolved)
+	}
+	raw, err := os.ReadFile(resolved)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("descriptor prefill: scenario.json missing at %s: %w", *run.ScenarioPath, domain.ErrNotFound)
+			return nil, fmt.Errorf("descriptor prefill: scenario.json missing at %s: %w", resolved, domain.ErrNotFound)
 		}
 		return nil, fmt.Errorf("descriptor prefill: read scenario: %w", err)
 	}
