@@ -77,10 +77,13 @@ start_dev() {
   log "Starting Go server on http://127.0.0.1:${APP_PORT} (proxying frontend to Vite)"
   (
     cd "$REPO_ROOT"
-    DATA_DIR="$DATA_DIR" \
-    DB_PATH="$DB_PATH" \
-    OUTPUT_DIR="$OUTPUT_DIR" \
-    go run ./cmd/pipeline serve --dev --port "$APP_PORT"
+    if command -v humanlog >/dev/null 2>&1; then
+      DATA_DIR="$DATA_DIR" DB_PATH="$DB_PATH" OUTPUT_DIR="$OUTPUT_DIR" \
+        go run ./cmd/pipeline serve --dev --port "$APP_PORT" 2>&1 | humanlog
+    else
+      DATA_DIR="$DATA_DIR" DB_PATH="$DB_PATH" OUTPUT_DIR="$OUTPUT_DIR" \
+        go run ./cmd/pipeline serve --dev --port "$APP_PORT"
+    fi
   ) &
   PIDS+=("$!")
 
@@ -105,10 +108,13 @@ start_prod() {
 
   log "Starting embedded Go server on http://127.0.0.1:${APP_PORT}"
   cd "$REPO_ROOT"
-  DATA_DIR="$DATA_DIR" \
-  DB_PATH="$DB_PATH" \
-  OUTPUT_DIR="$OUTPUT_DIR" \
-  go run ./cmd/pipeline serve --port "$APP_PORT"
+  if command -v humanlog >/dev/null 2>&1; then
+    DATA_DIR="$DATA_DIR" DB_PATH="$DB_PATH" OUTPUT_DIR="$OUTPUT_DIR" \
+      go run ./cmd/pipeline serve --port "$APP_PORT" 2>&1 | humanlog
+  else
+    DATA_DIR="$DATA_DIR" DB_PATH="$DB_PATH" OUTPUT_DIR="$OUTPUT_DIR" \
+      go run ./cmd/pipeline serve --port "$APP_PORT"
+  fi
 }
 
 trap cleanup INT TERM EXIT

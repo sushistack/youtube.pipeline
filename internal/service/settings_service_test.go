@@ -205,7 +205,7 @@ func validSettingsInput() SettingsUpdateInput {
 	return SettingsUpdateInput{
 		Config: SettingsConfigInput{
 			WriterModel:     "deepseek-chat-v2",
-			CriticModel:     "gemini-2.0-flash",
+			CriticModel:     "gemini-3.1-flash-lite-preview",
 			ImageModel:      "qwen-image",
 			ImageEditModel:  "qwen-image-edit",
 			TTSModel:        "qwen3-tts",

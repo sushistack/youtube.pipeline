@@ -102,9 +102,12 @@ func TestRunService_List_Empty(t *testing.T) {
 // --- Resume --------------------------------------------------------------
 
 type fakeResumer struct {
-	calls     []resumeCall
-	returnErr error
-	report    *domain.InconsistencyReport
+	calls        []resumeCall
+	prepareCalls []resumeCall
+	executeCalls []string
+	returnErr    error
+	report       *domain.InconsistencyReport
+	prepareRun   *domain.Run
 }
 
 type resumeCall struct {
@@ -115,6 +118,16 @@ type resumeCall struct {
 func (f *fakeResumer) ResumeWithOptions(ctx context.Context, runID string, opts pipeline.ResumeOptions) (*domain.InconsistencyReport, error) {
 	f.calls = append(f.calls, resumeCall{runID: runID, opts: opts})
 	return f.report, f.returnErr
+}
+
+func (f *fakeResumer) PrepareResume(ctx context.Context, runID string, opts pipeline.ResumeOptions) (*domain.Run, *domain.InconsistencyReport, error) {
+	f.prepareCalls = append(f.prepareCalls, resumeCall{runID: runID, opts: opts})
+	return f.prepareRun, f.report, f.returnErr
+}
+
+func (f *fakeResumer) ExecuteResume(ctx context.Context, runID string) error {
+	f.executeCalls = append(f.executeCalls, runID)
+	return f.returnErr
 }
 
 func TestRunService_Resume_NoResumer_Validation(t *testing.T) {

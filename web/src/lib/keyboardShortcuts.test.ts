@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  formatShortcutHint,
   isEditableEventTarget,
   normalizeShortcut,
 } from './keyboardShortcuts'
@@ -61,38 +60,6 @@ describe('normalizeShortcut — supported combinations', () => {
     })
   })
 
-  it('normalizes mod+n on macOS and non-macOS platforms', () => {
-    const original_platform = navigator.platform
-
-    Object.defineProperty(window.navigator, 'platform', {
-      configurable: true,
-      value: 'MacIntel',
-    })
-    expect(
-      normalizeShortcut(createKeyboardEvent('n', { metaKey: true })),
-    ).toEqual({
-      digit: null,
-      key: 'mod+n',
-    })
-    expect(formatShortcutHint('mod+n')).toBe('⌘N')
-
-    Object.defineProperty(window.navigator, 'platform', {
-      configurable: true,
-      value: 'Win32',
-    })
-    expect(
-      normalizeShortcut(createKeyboardEvent('n', { ctrlKey: true })),
-    ).toEqual({
-      digit: null,
-      key: 'mod+n',
-    })
-    expect(formatShortcutHint('mod+n')).toBe('Ctrl+N')
-
-    Object.defineProperty(window.navigator, 'platform', {
-      configurable: true,
-      value: original_platform,
-    })
-  })
 })
 
 describe('normalizeShortcut — negative guards', () => {
@@ -162,13 +129,19 @@ describe('normalizeShortcut — negative guards', () => {
     ).toBeNull()
   })
 
-  it('returns null for plain n, Shift+N, and Alt+N', () => {
+  it('returns null for plain n and modified n (shortcut removed)', () => {
     expect(normalizeShortcut(createKeyboardEvent('n'))).toBeNull()
     expect(
       normalizeShortcut(createKeyboardEvent('N', { shiftKey: true })),
     ).toBeNull()
     expect(
       normalizeShortcut(createKeyboardEvent('n', { altKey: true })),
+    ).toBeNull()
+    expect(
+      normalizeShortcut(createKeyboardEvent('n', { ctrlKey: true })),
+    ).toBeNull()
+    expect(
+      normalizeShortcut(createKeyboardEvent('n', { metaKey: true })),
     ).toBeNull()
   })
 })

@@ -14,9 +14,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
@@ -49,15 +52,17 @@ type ScoreDiff struct {
 
 // ShadowResult is the per-case outcome of a Shadow replay.
 type ShadowResult struct {
-	RunID           string
-	CreatedAt       string
-	BaselineVerdict string
-	BaselineScore   float64
-	NewVerdict      string
-	NewRetryReason  string
-	NewOverallScore int
-	Diff            ScoreDiff
-	FalseRejection  bool
+	RunID             string
+	CreatedAt         string
+	BaselineVerdict   string
+	BaselineScore     float64
+	NewVerdict        string
+	NewRetryReason    string
+	NewOverallScore   int
+	NewCriticModel    string
+	NewCriticProvider string
+	Diff              ScoreDiff
+	FalseRejection    bool
 }
 
 // ShadowReport aggregates replay results for the full window.
@@ -82,6 +87,7 @@ type ShadowReport struct {
 func RunShadow(
 	ctx context.Context,
 	projectRoot string,
+	outputDir string,
 	source ShadowSource,
 	evaluator Evaluator,
 	now time.Time,
@@ -113,7 +119,7 @@ func RunShadow(
 				report.Evaluated, len(cases), err)
 		}
 
-		fixture, err := LoadShadowInput(projectRoot, c)
+		fixture, err := LoadShadowInput(projectRoot, outputDir, c)
 		if err != nil {
 			return ShadowReport{}, fmt.Errorf("shadow load input for %s: %w", c.RunID, err)
 		}
@@ -149,13 +155,15 @@ func buildShadowResult(c ShadowCase, v VerdictResult) ShadowResult {
 		(v.Verdict == domain.CriticVerdictRetry || !known)
 
 	return ShadowResult{
-		RunID:           c.RunID,
-		CreatedAt:       c.CreatedAt,
-		BaselineVerdict: c.BaselineVerdict,
-		BaselineScore:   c.BaselineScore,
-		NewVerdict:      v.Verdict,
-		NewRetryReason:  v.RetryReason,
-		NewOverallScore: overallScore,
+		RunID:             c.RunID,
+		CreatedAt:         c.CreatedAt,
+		BaselineVerdict:   c.BaselineVerdict,
+		BaselineScore:     c.BaselineScore,
+		NewVerdict:        v.Verdict,
+		NewRetryReason:    v.RetryReason,
+		NewOverallScore:   overallScore,
+		NewCriticModel:    v.Model,
+		NewCriticProvider: v.Provider,
 		Diff: ScoreDiff{
 			Overall: normalized - c.BaselineScore,
 		},
@@ -173,14 +181,48 @@ func buildShadowResult(c ShadowCase, v VerdictResult) ShadowResult {
 // the same schema Golden's ValidateFixture enforces — so a corrupted
 // artifact fails loudly at load time instead of feeding noise into the
 // evaluator.
-func LoadShadowInput(projectRoot string, c ShadowCase) (Fixture, error) {
+func LoadShadowInput(projectRoot, outputDir string, c ShadowCase) (Fixture, error) {
 	if c.ScenarioPath == "" {
 		return Fixture{}, fmt.Errorf("shadow case %s: empty scenario_path: %w", c.RunID, domain.ErrValidation)
 	}
 
 	path := c.ScenarioPath
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(projectRoot, path)
+		// Reject `..` segments before joining: a malicious or corrupted
+		// runs.scenario_path containing `../../..` would otherwise escape
+		// outputDir / projectRoot and read arbitrary files.
+		cleaned := filepath.Clean(path)
+		for _, seg := range strings.Split(filepath.ToSlash(cleaned), "/") {
+			if seg == ".." {
+				return Fixture{}, fmt.Errorf("shadow case %s: scenario_path %q contains parent traversal: %w",
+					c.RunID, c.ScenarioPath, domain.ErrValidation)
+			}
+		}
+		path = cleaned
+
+		// Live-run layout first ({outputDir}/{runID}/<path>); fall back to
+		// projectRoot only when the run-relative artifact is genuinely
+		// missing. A real I/O error (permission denied, broken volume) must
+		// surface — silently swapping in a projectRoot path would either fail
+		// schema validation loudly or, worse, validate against an unrelated
+		// file and produce a meaningless verdict diff.
+		if outputDir != "" {
+			runRelative := filepath.Join(outputDir, c.RunID, path)
+			info, err := os.Stat(runRelative)
+			switch {
+			case err == nil && !info.IsDir():
+				path = runRelative
+			case err == nil && info.IsDir():
+				return Fixture{}, fmt.Errorf("shadow case %s: scenario_path %q resolved to a directory: %w",
+					c.RunID, runRelative, domain.ErrValidation)
+			case errors.Is(err, fs.ErrNotExist):
+				path = filepath.Join(projectRoot, path)
+			default:
+				return Fixture{}, fmt.Errorf("stat scenario artifact %s: %w", runRelative, err)
+			}
+		} else {
+			path = filepath.Join(projectRoot, path)
+		}
 	}
 
 	raw, err := os.ReadFile(path)

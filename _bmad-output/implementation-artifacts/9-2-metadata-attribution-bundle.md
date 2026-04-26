@@ -130,10 +130,10 @@ type LicenseEntry struct {
   "ai_generated": {"narration": true, "imagery": true, "tts": true},
   "models_used": {
     "writer":            {"provider": "deepseek", "model": "deepseek-chat"},
-    "critic":            {"provider": "gemini",   "model": "gemini-2.0-flash"},
+    "critic":            {"provider": "gemini",   "model": "gemini-3.1-flash-lite-preview"},
     "image":             {"provider": "dashscope","model": "qwen-max-vl"},
     "tts":               {"provider": "dashscope","model": "qwen3-tts-flash-2025-09-18", "voice": "longhua"},
-    "visual_breakdown":  {"provider": "gemini",   "model": "gemini-2.0-flash"}
+    "visual_breakdown":  {"provider": "gemini",   "model": "gemini-3.1-flash-lite-preview"}
   }
 }
 ```

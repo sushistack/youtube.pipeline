@@ -4,16 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useRunStatus } from './useRunStatus'
 import { renderWithProviders } from '../test/renderWithProviders'
 
-function requestUrl(input: string | URL | Request) {
-  if (typeof input === 'string') {
-    return input
-  }
-  if (input instanceof URL) {
-    return input.href
-  }
-  return input.url
-}
-
 const running_status = {
   data: {
     run: {
@@ -57,47 +47,57 @@ function HookHarness() {
   )
 }
 
+type MockES = {
+  close: ReturnType<typeof vi.fn>
+  onmessage: ((e: { data: string }) => void) | null
+  onerror: (() => void) | null
+  done_handler: (() => void) | null
+  addEventListener: ReturnType<typeof vi.fn>
+}
+
 describe('useRunStatus', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
-  it('polls every 5 seconds and stops once the run is no longer live', async () => {
-    let status_calls = 0
+  it('streams status via SSE and closes on terminal state', async () => {
+    let mock_es: MockES | null = null
 
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = requestUrl(input)
-      if (url.endsWith('/api/runs/scp-049-run-2/status')) {
-        status_calls += 1
-        const payload = status_calls === 1 ? running_status : completed_status
-        return new Response(JSON.stringify(payload), {
-          headers: { 'Content-Type': 'application/json' },
-          status: 200,
-        })
-      }
+    vi.stubGlobal(
+      'EventSource',
+      vi.fn().mockImplementation(function () {
+        mock_es = {
+          close: vi.fn(),
+          onmessage: null,
+          onerror: null,
+          done_handler: null,
+          addEventListener: vi.fn((event: string, fn: () => void) => {
+            if (event === 'done') mock_es!.done_handler = fn
+          }),
+        }
+        return mock_es
+      }),
+    )
 
-      throw new Error(`Unexpected fetch in test: ${url}`)
-    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(running_status), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      }),
+    )
 
     renderWithProviders(<HookHarness />)
 
+    await waitFor(() => expect(mock_es).not.toBeNull())
+
+    mock_es!.onmessage!({ data: JSON.stringify(running_status) })
     expect(await screen.findByText('running')).toBeInTheDocument()
-    expect(status_calls).toBe(1)
 
-    await new Promise((resolve) => {
-      setTimeout(resolve, 5200)
-    })
+    mock_es!.onmessage!({ data: JSON.stringify(completed_status) })
+    await waitFor(() => expect(screen.getByText('completed')).toBeInTheDocument())
 
-    await waitFor(() => {
-      expect(screen.getByText('completed')).toBeInTheDocument()
-      expect(status_calls).toBe(2)
-    })
-
-    await new Promise((resolve) => {
-      setTimeout(resolve, 5200)
-    })
-
-    expect(status_calls).toBe(2)
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
-  }, 15_000)
+    mock_es!.done_handler?.()
+    expect(mock_es!.close).toHaveBeenCalled()
+  })
 })

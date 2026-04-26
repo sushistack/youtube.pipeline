@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +25,8 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient/dashscope"
+	"github.com/sushistack/youtube.pipeline/internal/llmclient/deepseek"
+	"github.com/sushistack/youtube.pipeline/internal/llmclient/gemini"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline/agents"
 	"github.com/sushistack/youtube.pipeline/internal/service"
@@ -32,6 +36,32 @@ import (
 )
 
 const viteDevServerURL = "http://localhost:5173"
+
+// ttsEndpointForRegion maps a DashScopeRegion config value to the qwen3-tts
+// MultiModalConversation endpoint. API keys are region-bound: a Singapore key
+// rejected by the Beijing endpoint surfaces as 401 InvalidApiKey, so callers
+// must pass the region that matches their issued key. Unknown values fall back
+// to the international endpoint to match the most common deployment outside
+// mainland China.
+func ttsEndpointForRegion(region string) string {
+	switch region {
+	case "cn-beijing":
+		return dashscope.DefaultTTSEndpointCN
+	default:
+		return dashscope.DefaultTTSEndpointIntl
+	}
+}
+
+// imageEndpointForRegion mirrors ttsEndpointForRegion for the qwen-image /
+// qwen-image-edit text2image surface. Same key-region binding applies.
+func imageEndpointForRegion(region string) string {
+	switch region {
+	case "cn-beijing":
+		return dashscope.DefaultImageEndpointCN
+	default:
+		return dashscope.DefaultImageEndpointIntl
+	}
+}
 
 // buildPhaseBRunner constructs a PhaseBRunner with real DashScope-backed
 // image and TTS tracks. Returns an error if the API key is missing or any
@@ -62,18 +92,12 @@ func buildPhaseBRunner(
 		return nil, fmt.Errorf("phase b runner: nil character resolver")
 	}
 
-	imageEndpoint := dashscope.DefaultImageEndpointIntl
-	ttsEndpoint := ""
-	if cfg.DashScopeRegion == "cn-beijing" {
-		imageEndpoint = dashscope.DefaultImageEndpointCN
-		ttsEndpoint = dashscope.DefaultTTSEndpointCN
-	}
-
 	httpClient := &http.Client{Timeout: 120 * time.Second}
 
 	ttsClient, err := dashscope.NewTTSClient(httpClient, dashscope.TTSClientConfig{
-		APIKey:   dashScopeAPIKey,
-		Endpoint: ttsEndpoint,
+		APIKey:       dashScopeAPIKey,
+		Endpoint:     ttsEndpointForRegion(cfg.DashScopeRegion),
+		LanguageType: "Korean",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build tts client: %w", err)
@@ -81,7 +105,7 @@ func buildPhaseBRunner(
 
 	imageClient, err := dashscope.NewImageClient(httpClient, dashscope.ImageClientConfig{
 		APIKey:   dashScopeAPIKey,
-		Endpoint: imageEndpoint,
+		Endpoint: imageEndpointForRegion(cfg.DashScopeRegion),
 		Clock:    clock.RealClock{},
 	})
 	if err != nil {
@@ -135,6 +159,227 @@ func buildPhaseBRunner(
 	// load-bearing at the Phase B entry point — no future wiring can forget
 	// to thread the operator's edited descriptor.
 	return pipeline.NewPhaseBRunner(imageTrack, ttsTrack, nil, clock.RealClock{}, logger, nil, runStore), nil
+}
+
+// makeTextGenerator routes a provider name to a concrete domain.TextGenerator.
+// Supported: dashscope, deepseek, gemini. Returns an error for unknown providers
+// or when the required API key is empty.
+func makeTextGenerator(
+	provider, apiKey string,
+	limiterFactory *llmclient.ProviderLimiterFactory,
+	httpClient *http.Client,
+	logger *slog.Logger,
+) (domain.TextGenerator, error) {
+	switch provider {
+	case "dashscope":
+		return dashscope.NewTextClient(httpClient, dashscope.TextClientConfig{
+			APIKey:  apiKey,
+			Limiter: limiterFactory.DashScopeText(),
+			Logger:  logger,
+		})
+	case "deepseek":
+		return deepseek.NewTextClient(httpClient, deepseek.TextClientConfig{
+			APIKey:  apiKey,
+			Limiter: limiterFactory.DeepSeekText(),
+		})
+	case "gemini":
+		return gemini.NewTextClient(httpClient, gemini.TextClientConfig{
+			APIKey:  apiKey,
+			Limiter: limiterFactory.GeminiText(),
+		})
+	default:
+		return nil, fmt.Errorf("unsupported text provider %q", provider)
+	}
+}
+
+// apiKeyForProvider returns the API key for a provider from the loaded env map.
+func apiKeyForProvider(provider string, env map[string]string) string {
+	switch provider {
+	case "dashscope":
+		return env[domain.SettingsSecretDashScope]
+	case "deepseek":
+		return env[domain.SettingsSecretDeepSeek]
+	case "gemini":
+		return env[domain.SettingsSecretGemini]
+	default:
+		return ""
+	}
+}
+
+// mergeProjectEnv supplements the loaded env map with values from
+// <projectRoot>/.env for any key that is empty in the loaded map.
+// This allows developers to keep secrets in the repo .env without
+// copying them to ~/.youtube-pipeline/.env.
+func mergeProjectEnv(loaded map[string]string, projectRoot string) map[string]string {
+	projectEnvPath := filepath.Join(projectRoot, ".env")
+	raw, err := os.ReadFile(projectEnvPath)
+	if err != nil {
+		return loaded
+	}
+	merged := make(map[string]string, len(loaded))
+	for k, v := range loaded {
+		merged[k] = v
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx < 0 {
+			continue
+		}
+		k, v := line[:idx], line[idx+1:]
+		if merged[k] == "" && v != "" {
+			merged[k] = v
+		}
+	}
+	return merged
+}
+
+// buildPhaseARunner constructs a PhaseARunner wired with real agent
+// implementations. projectRoot must be the repo root so schema files and
+// prompt assets can be resolved. Returns an error if any required API key is
+// missing or a schema/prompt file cannot be read.
+func buildPhaseARunner(
+	cfg domain.PipelineConfig,
+	env map[string]string,
+	projectRoot string,
+	limiterFactory *llmclient.ProviderLimiterFactory,
+	httpClient *http.Client,
+	logger *slog.Logger,
+) (*pipeline.PhaseARunner, error) {
+	writerKey := apiKeyForProvider(cfg.WriterProvider, env)
+	criticKey := apiKeyForProvider(cfg.CriticProvider, env)
+
+	writerGen, err := makeTextGenerator(cfg.WriterProvider, writerKey, limiterFactory, httpClient, logger)
+	if err != nil {
+		return nil, fmt.Errorf("build phase a runner: writer generator (%s): %w", cfg.WriterProvider, err)
+	}
+	criticGen, err := makeTextGenerator(cfg.CriticProvider, criticKey, limiterFactory, httpClient, logger)
+	if err != nil {
+		return nil, fmt.Errorf("build phase a runner: critic generator (%s): %w", cfg.CriticProvider, err)
+	}
+
+	prompts, err := agents.LoadPromptAssets(projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("build phase a runner: load prompts: %w", err)
+	}
+	terms, err := agents.LoadForbiddenTerms(projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("build phase a runner: load forbidden terms: %w", err)
+	}
+
+	newV := func(schema string) (*agents.Validator, error) {
+		v, verr := agents.NewValidator(projectRoot, schema)
+		if verr != nil {
+			return nil, fmt.Errorf("build phase a runner: validator %s: %w", schema, verr)
+		}
+		return v, nil
+	}
+
+	researchV, err := newV("researcher_output.schema.json")
+	if err != nil {
+		return nil, err
+	}
+	structureV, err := newV("structurer_output.schema.json")
+	if err != nil {
+		return nil, err
+	}
+	writerV, err := newV("writer_output.schema.json")
+	if err != nil {
+		return nil, err
+	}
+	visualV, err := newV("visual_breakdown.schema.json")
+	if err != nil {
+		return nil, err
+	}
+	reviewV, err := newV("reviewer_report.schema.json")
+	if err != nil {
+		return nil, err
+	}
+	criticPostWriterV, err := newV("critic_post_writer.schema.json")
+	if err != nil {
+		return nil, err
+	}
+	criticPostReviewerV, err := newV("critic_post_reviewer.schema.json")
+	if err != nil {
+		return nil, err
+	}
+
+	corpus := agents.NewFilesystemCorpus(cfg.DataDir)
+	auditLogger := pipeline.NewFileAuditLogger(cfg.OutputDir)
+
+	writerCfg := agents.TextAgentConfig{
+		Model:       cfg.WriterModel,
+		Provider:    cfg.WriterProvider,
+		MaxTokens:   8192,
+		Temperature: 0.7,
+		AuditLogger: auditLogger,
+		Logger:      logger,
+	}
+	criticCfg := agents.TextAgentConfig{
+		Model:       cfg.CriticModel,
+		Provider:    cfg.CriticProvider,
+		MaxTokens:   2048,
+		Temperature: 0.0,
+		AuditLogger: auditLogger,
+		Logger:      logger,
+	}
+
+	researcher := agents.NewResearcher(corpus, researchV)
+	structurer := agents.NewStructurer(structureV)
+	writer := agents.NewWriter(writerGen, writerCfg, prompts, writerV, terms)
+	postWriterCritic := agents.NewPostWriterCritic(criticGen, criticCfg, prompts, writerV, criticPostWriterV, terms, cfg.WriterProvider)
+	visualBreakdowner := agents.NewVisualBreakdowner(writerGen, writerCfg, prompts, visualV, agents.NewHeuristicDurationEstimator())
+	reviewer := agents.NewReviewer(criticGen, criticCfg, prompts, visualV, reviewV)
+	postReviewerCritic := agents.NewPostReviewerCritic(criticGen, criticCfg, prompts, writerV, visualV, reviewV, criticPostReviewerV, terms, cfg.WriterProvider)
+
+	return pipeline.NewPhaseARunner(
+		researcher, structurer, writer, postWriterCritic,
+		visualBreakdowner, reviewer, postReviewerCritic,
+		cfg.WriterProvider, cfg.CriticProvider,
+		cfg.OutputDir, clock.RealClock{}, logger,
+	)
+}
+
+type dynamicPhaseAExecutor struct {
+	settings       *service.SettingsService
+	projectRoot    string
+	outputDir      string
+	limiterFactory *llmclient.ProviderLimiterFactory
+	httpClient     *http.Client
+	logger         *slog.Logger
+}
+
+func (e *dynamicPhaseAExecutor) Run(ctx context.Context, state *agents.PipelineState) error {
+	files, err := e.settings.LoadEffectiveRuntimeFiles(ctx)
+	if err != nil {
+		return fmt.Errorf("load settings for phase a run %s: %w", state.RunID, err)
+	}
+	// The settings DB stores config.yaml values which may not include the
+	// OUTPUT_DIR env-var override applied at server startup. Pin the runner's
+	// output dir to the engine's authoritative outputDir so scenario.json is
+	// written to the same path that advancePhaseA checks via os.Stat.
+	if e.outputDir != "" {
+		files.Config.OutputDir = e.outputDir
+	}
+	// Merge project-root .env as a fallback for any key missing from the
+	// user-config .env (~/.youtube-pipeline/.env). This lets developers keep
+	// secrets in <repo>/.env without having to copy them manually.
+	env := mergeProjectEnv(files.Env, e.projectRoot)
+	runner, err := buildPhaseARunner(
+		files.Config,
+		env,
+		e.projectRoot,
+		e.limiterFactory,
+		e.httpClient,
+		e.logger,
+	)
+	if err != nil {
+		return fmt.Errorf("build phase a runner for run %s: %w", state.RunID, err)
+	}
+	return runner.Run(ctx, state)
 }
 
 // buildPhaseCRuntime constructs the Phase C assembly runner and metadata
@@ -249,8 +494,19 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	segStore := db.NewSegmentStore(database)
 	decisionStore := db.NewDecisionStore(database)
 	settingsStore := db.NewSettingsStore(database)
+	criticReportStore := db.NewCriticReportStore(database)
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	// In-process workers do not survive a restart. Any run still in 'running'
+	// at startup is orphaned: flip it to 'failed' so the operator gets a
+	// FailureBanner + Resume button instead of a permanently-stuck
+	// "STAGE IN PROGRESS" screen.
+	if n, err := store.ReconcileOrphanedRuns(cmd.Context()); err != nil {
+		return fmt.Errorf("reconcile orphaned runs: %w", err)
+	} else if n > 0 {
+		logger.Info("reconciled orphaned runs at startup", "count", n)
+	}
 	settingsFiles := config.NewSettingsFileManager(cfgPath, config.DefaultEnvPath())
 	settingsSvc := service.NewSettingsService(settingsStore, settingsFiles, clock.RealClock{})
 
@@ -260,7 +516,10 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 
 	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
 	engine.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore))
+	engine.SetCriticReportStore(criticReportStore)
+	engine.SetNarrationSeeder(segStore)
 	svc := service.NewRunService(store, engine)
+	svc.SetAdvancer(engine)
 	svc.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore), clock.RealClock{})
 
 	limiterFactory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
@@ -302,8 +561,17 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	engine.SetPhaseCRunner(phaseCRunner)
 	engine.SetPhaseCMetadataBuilder(metaBuilder)
 	hitlSvc := service.NewHITLService(store, decisionStore, logger)
+	// Read-time backfill: silently create the missing hitl_sessions row when
+	// BuildStatus observes a run already in a HITL wait state without a
+	// session anchor (the UI keeps polling and the WARN spam is replaced by
+	// a single INFO line). DecisionStore satisfies HITLSessionWriter.
+	hitlSvc.SetSessionWriter(decisionStore)
 	sceneSvc := service.NewSceneService(store, segStore, decisionStore, clock.RealClock{})
 	sceneSvc.SetSceneRegenerator(service.NewNoOpSceneRegenerator(segStore))
+	// outputDir lets ListScenes / ListReviewItems resolve the scenario.json
+	// path stored relative to {outputDir}/{runID}/. Without this, both
+	// surfaces 404 on any run whose segments rows lack narration text.
+	sceneSvc.SetNarrationSeeder(segStore, cfg.OutputDir)
 
 	// projectRoot for Tuning is the process working directory. Prompts,
 	// Golden fixtures, and manifest.json are all repo-relative artifacts,
@@ -312,9 +580,37 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	if err != nil {
 		return fmt.Errorf("resolve project root: %w", err)
 	}
+
+	// Phase A runs synchronously on the /advance path. Settings are resolved
+	// per-run at invocation time so provider/model changes take effect without
+	// restarting the server. projectRoot must be resolved first (above).
+	engine.SetPhaseAExecutor(&dynamicPhaseAExecutor{
+		settings:       settingsSvc,
+		projectRoot:    projectRoot,
+		outputDir:      cfg.OutputDir,
+		limiterFactory: limiterFactory,
+		httpClient:     &http.Client{Timeout: 120 * time.Second},
+		logger:         logger,
+	})
+	// Build the real Critic-backed evaluator up front and fail-loud on
+	// construction error: the schema files and forbidden-terms loader are
+	// repo-local artifacts that must always be present, so a failure here is
+	// a real misconfiguration, not a "running without API key" dev shortcut.
+	// Falling back to NotConfiguredEvaluator{} would resurrect the silent-
+	// degrade-to-placeholder mode this story exists to remove.
+	tuningEvaluator, err := eval.NewRuntimeEvaluator(eval.RuntimeEvaluatorOptions{
+		ProjectRoot: projectRoot,
+		Runtime:     settingsSvc,
+		HTTPClient:  &http.Client{Timeout: 120 * time.Second},
+		Limiter:     limiterFactory.DeepSeekText(),
+	})
+	if err != nil {
+		return fmt.Errorf("build tuning runtime evaluator: %w", err)
+	}
 	tuningSvc := service.NewTuningService(service.TuningServiceOptions{
 		ProjectRoot:  projectRoot,
-		Evaluator:    eval.NotConfiguredEvaluator{},
+		OutputDir:    cfg.OutputDir,
+		Evaluator:    tuningEvaluator,
 		ShadowSource: eval.NewSQLiteShadowSource(database),
 		Calibration:  db.NewCalibrationStore(database),
 		Clock:        clock.RealClock{},
@@ -323,7 +619,7 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	// version so later metrics can group runs by prompt version (AC-3).
 	svc.SetPromptVersionProvider(tuningSvc)
 
-	deps := api.NewDependencies(svc, settingsSvc, hitlSvc, characterSvc, sceneSvc, tuningSvc, cfg.OutputDir, logger, web.FS)
+	deps := api.NewDependencies(svc, settingsSvc, hitlSvc, characterSvc, sceneSvc, segStore, tuningSvc, cfg.OutputDir, logger, web.FS)
 	mux := http.NewServeMux()
 	if err := configureServeMux(mux, deps, devMode, mustParseURL(viteDevServerURL), cmd.OutOrStdout()); err != nil {
 		return err

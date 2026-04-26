@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/service"
@@ -143,6 +146,58 @@ func (h *RunHandler) Status(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
+// StatusStream handles GET /api/runs/{id}/status/stream.
+// Streams status as Server-Sent Events at 1-second intervals until the run
+// reaches a terminal state or the client disconnects. Each "data" event carries
+// the same {version, data} envelope as the polling endpoint. A "done" event
+// signals end of stream so the client can close cleanly without auto-reconnect.
+func (h *RunHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "SSE_UNSUPPORTED", "streaming not supported", false)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	sendOnce := func() (stop bool) {
+		if r.Context().Err() != nil {
+			return true
+		}
+		payload, err := h.hitl.BuildStatus(r.Context(), id)
+		if err != nil {
+			return true
+		}
+		data, _ := json.Marshal(apiResponse{Version: 1, Data: payload})
+		fmt.Fprintf(w, "data: %s\n\n", data) //nolint:errcheck
+		flusher.Flush()
+		s := payload.Run.Status
+		return s == domain.StatusCompleted || s == domain.StatusFailed || s == domain.StatusCancelled
+	}
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		if sendOnce() {
+			if r.Context().Err() == nil {
+				fmt.Fprintf(w, "event: done\ndata: {}\n\n") //nolint:errcheck
+				flusher.Flush()
+			}
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 // Cancel handles POST /api/runs/{id}/cancel.
 func (h *RunHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -199,6 +254,13 @@ type resumeRequest struct {
 // Malformed, too-large, or unknown-field bodies are rejected with 400 so
 // clients do not silently fall back to default behavior on typos
 // (e.g. {"force":true} instead of {"confirm_inconsistent":true}).
+//
+// Resume runs Phase B (TTS/image, minutes-long) which exceeds the server's
+// 30s WriteTimeout. The handler runs PrepareResume synchronously (validation,
+// FS/DB consistency check, artifact cleanup, status reset) so 4xx errors come
+// back without committing to async work, then dispatches ExecuteResume on a
+// detached context and returns 202 Accepted with the post-prepare snapshot.
+// The UI observes completion via /status polling. Mirrors Advance's split.
 func (h *RunHandler) Resume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -208,18 +270,61 @@ func (h *RunHandler) Resume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, report, err := h.svc.Resume(r.Context(), id, body.ConfirmInconsistent)
+	run, report, err := h.svc.PrepareResume(r.Context(), id, body.ConfirmInconsistent)
 	if err != nil {
 		h.logger.Error("resume run", "run_id", id, "error", err)
 		writeDomainError(w, err)
 		return
 	}
 
-	h.logger.Info("run resumed", "run_id", id, "stage", run.Stage, "status", run.Status)
-	writeJSON(w, http.StatusOK, &resumeResponse{
+	go func() {
+		if err := h.svc.ExecuteResume(context.Background(), id); err != nil {
+			h.logger.Error("resume execute", "run_id", id, "error", err)
+		} else {
+			h.logger.Info("run resume executed", "run_id", id)
+		}
+	}()
+
+	h.logger.Info("run resume prepared", "run_id", id, "stage", run.Stage, "status", run.Status)
+	writeJSON(w, http.StatusAccepted, &resumeResponse{
 		runResponse: toRunResponse(run),
 		Warnings:    mismatchStrings(report),
 	})
+}
+
+// Advance handles POST /api/runs/{id}/advance. Used by the UI Start-run button
+// to kick off a freshly-created pending run (Phase A entry). Resume rejects
+// pending status by design (it is the failed/waiting recovery path), so the
+// pending → critic transition needs a separate endpoint that maps to the
+// engine's automated dispatch. HITL stages are still rejected at the engine.
+//
+// Phase A involves multiple LLM calls that can take several minutes, so the
+// handler dispatches the engine in a goroutine and returns 202 Accepted
+// immediately. The UI polls GET /api/runs/{id}/status to observe progress.
+func (h *RunHandler) Advance(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	// Validate synchronously: returns typed errors for missing run or
+	// unconfigured advancer before we commit to async execution.
+	run, err := h.svc.PrepareAdvance(r.Context(), id)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	// Phase A runs multiple LLM calls that can take several minutes.
+	// Dispatch to a goroutine so the HTTP response is not held open past
+	// WriteTimeout. The engine writes success/failure directly to the DB;
+	// the UI observes progress by polling GET /api/runs/{id}/status.
+	go func() {
+		if err := h.svc.ExecuteAdvance(context.Background(), id); err != nil {
+			h.logger.Error("advance run", "run_id", id, "error", err)
+		} else {
+			h.logger.Info("run advanced", "run_id", id)
+		}
+	}()
+
+	writeJSON(w, http.StatusAccepted, toRunResponse(run))
 }
 
 // decodeJSONBody decodes r.Body into out with three guards:

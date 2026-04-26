@@ -75,26 +75,9 @@ export function FailureBanner({ on_dismiss, run }: FailureBannerProps) {
       role="alert"
     >
       <div className="failure-banner__content">
-        <div className="failure-banner__copy">
-          <p className="failure-banner__eyebrow">Pipeline failed</p>
-          <h2 className="failure-banner__title">
-            {getFailureMessage(run.retry_reason)}
-          </h2>
-          <p className="failure-banner__meta">
-            Spend so far: <strong>{formatCurrency(run.cost_usd)}</strong>
-          </p>
-          <p className="failure-banner__reassurance">
-            No work was lost. Completed stages remain intact.
-          </p>
-          {resume_mutation.isError ? (
-            <p className="failure-banner__error" role="status">
-              Resume failed: {resume_mutation.error instanceof Error
-                ? resume_mutation.error.message
-                : 'Unknown error — try again or check the run log.'}
-            </p>
-          ) : null}
-        </div>
-
+        <p className="failure-banner__meta">
+          <strong>Pipeline failed</strong> — {getFailureMessage(run.retry_reason)} · Spend <strong>{formatCurrency(run.cost_usd)}</strong>
+        </p>
         <div className="failure-banner__actions">
           <button
             className="failure-banner__resume"
@@ -114,6 +97,13 @@ export function FailureBanner({ on_dismiss, run }: FailureBannerProps) {
             ×
           </button>
         </div>
+        {resume_mutation.isError ? (
+          <p className="failure-banner__error" role="status">
+            Resume failed: {resume_mutation.error instanceof Error
+              ? resume_mutation.error.message
+              : 'Unknown error — try again or check the run log.'}
+          </p>
+        ) : null}
       </div>
     </section>
   )

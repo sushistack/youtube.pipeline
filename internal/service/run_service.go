@@ -34,14 +34,28 @@ type RunStore interface {
 // dependency direction one-way: service → pipeline interface. The returned
 // report carries FS/DB inconsistency descriptions surfaced to the caller as
 // warnings (CLI `--force` output, API response `warnings` field).
+//
+// PrepareResume + ExecuteResume are the split entry points used by the API
+// handler so Phase B/C work runs detached from the HTTP request lifetime.
+// ResumeWithOptions stays for the CLI's synchronous path.
 type Resumer interface {
+	PrepareResume(ctx context.Context, runID string, opts pipeline.ResumeOptions) (*domain.Run, *domain.InconsistencyReport, error)
+	ExecuteResume(ctx context.Context, runID string) error
 	ResumeWithOptions(ctx context.Context, runID string, opts pipeline.ResumeOptions) (*domain.InconsistencyReport, error)
+}
+
+// Advancer is the minimal engine surface for kicking off a pending run
+// (Phase A entry: pending → critic). *pipeline.Engine satisfies this.
+// Resume rejects pending status by design; Advance is the matching path.
+type Advancer interface {
+	Advance(ctx context.Context, runID string) error
 }
 
 // RunService implements pipeline run lifecycle management.
 type RunService struct {
 	store        RunStore
 	resumer      Resumer
+	advancer     Advancer
 	prompt       PromptVersionProvider
 	hitlSessions pipeline.HITLSessionStore // optional; needed by ApproveScenarioReview to maintain hitl_sessions invariant
 	clock        clock.Clock               // for last_interaction_timestamp on hitl_sessions upsert
@@ -50,8 +64,16 @@ type RunService struct {
 // NewRunService creates a RunService backed by the provided RunStore.
 // resumer MAY be nil for call paths that never invoke Resume (tests, tools);
 // runtime Resume calls with a nil resumer return ErrValidation rather than panicking.
+// The advancer is wired separately via SetAdvancer; *pipeline.Engine satisfies
+// both Resumer and Advancer so a single engine instance is passed twice.
 func NewRunService(store RunStore, resumer Resumer) *RunService {
 	return &RunService{store: store, resumer: resumer}
+}
+
+// SetAdvancer wires the engine surface used by Advance. nil disables the path
+// (Advance returns ErrValidation), matching the resumer pattern for tests.
+func (s *RunService) SetAdvancer(advancer Advancer) {
+	s.advancer = advancer
 }
 
 // SetHITLSessionStore wires the hitl_sessions writer used by
@@ -144,6 +166,89 @@ func (s *RunService) Resume(ctx context.Context, id string, force bool) (*domain
 		return nil, report, fmt.Errorf("resume run: reload: %w", err)
 	}
 	return run, report, nil
+}
+
+// PrepareResume runs the synchronous portion of Resume (validation,
+// consistency check, artifact cleanup, status reset) and returns the
+// post-reset run snapshot plus any FS/DB inconsistency warnings bypassed
+// via force. ExecuteResume must follow to perform the actual stage work.
+//
+// The API handler calls this synchronously to fail fast on 4xx errors, then
+// dispatches ExecuteResume on a detached context so Phase B (TTS/image,
+// minutes-long) is not bound to the HTTP request's WriteTimeout.
+func (s *RunService) PrepareResume(ctx context.Context, id string, force bool) (*domain.Run, *domain.InconsistencyReport, error) {
+	if s.resumer == nil {
+		return nil, nil, fmt.Errorf("resume run: %w: engine not configured", domain.ErrValidation)
+	}
+	run, report, err := s.resumer.PrepareResume(ctx, id, pipeline.ResumeOptions{Force: force})
+	if err != nil {
+		return nil, report, fmt.Errorf("resume run: %w", err)
+	}
+	return run, report, nil
+}
+
+// ExecuteResume runs Phase B/C/metadata for a run that PrepareResume has
+// already prepared. Long-running; intended to be dispatched in a goroutine
+// with context.Background() by the API handler. Errors are returned for
+// caller-side logging; the engine itself transitions the run back to
+// `failed` status on stage error so the UI's status poll observes it.
+func (s *RunService) ExecuteResume(ctx context.Context, id string) error {
+	if s.resumer == nil {
+		return fmt.Errorf("resume run: %w: engine not configured", domain.ErrValidation)
+	}
+	if err := s.resumer.ExecuteResume(ctx, id); err != nil {
+		return fmt.Errorf("resume run: %w", err)
+	}
+	return nil
+}
+
+// PrepareAdvance validates that the run can be advanced and returns it.
+// Call this synchronously before dispatching ExecuteAdvance in a goroutine
+// so that configuration errors and missing runs surface immediately as typed
+// HTTP errors rather than silently failing in the background.
+func (s *RunService) PrepareAdvance(ctx context.Context, id string) (*domain.Run, error) {
+	if s.advancer == nil {
+		return nil, fmt.Errorf("advance run: %w: engine not configured", domain.ErrValidation)
+	}
+	run, err := s.store.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("advance run: %w", err)
+	}
+	return run, nil
+}
+
+// ExecuteAdvance runs the engine advance for a run. Intended to be called in
+// a goroutine after PrepareAdvance has succeeded; the engine writes the result
+// (success or failure) directly to the DB via ApplyPhaseAResult.
+func (s *RunService) ExecuteAdvance(ctx context.Context, id string) error {
+	if err := s.advancer.Advance(ctx, id); err != nil {
+		return fmt.Errorf("advance run: %w", err)
+	}
+	return nil
+}
+
+// Advance dispatches automated execution from a non-HITL stage. The primary
+// use case is kicking off a freshly-created pending run (Phase A entry); the
+// engine also supports advancing from image/tts/assemble. HITL stages return
+// ErrConflict from the engine and are propagated unchanged.
+//
+// Error classes propagated from the engine:
+//   - ErrNotFound:   run does not exist.
+//   - ErrConflict:   stage is a HITL boundary or has no automated dispatch.
+//   - ErrValidation: required executor (phase a/b/c) is not configured.
+func (s *RunService) Advance(ctx context.Context, id string) (*domain.Run, error) {
+	run, err := s.PrepareAdvance(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.advancer.Advance(ctx, id); err != nil {
+		return nil, fmt.Errorf("advance run: %w", err)
+	}
+	run, err = s.store.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("advance run: reload: %w", err)
+	}
+	return run, nil
 }
 
 // AcknowledgeMetadata transitions a run from metadata_ack+waiting to complete+completed.

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -161,7 +162,7 @@ func (h *SceneHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]*reviewItemResponse, len(scenes))
 	for i, ep := range scenes {
-		items[i] = toReviewItemResponseFromEpisode(ep)
+		items[i] = toReviewItemResponseFromEpisode(runID, ep)
 	}
 	writeJSON(w, http.StatusOK, sceneListResponse{Items: items, Total: len(items)})
 }
@@ -178,7 +179,7 @@ func (h *SceneHandler) ListReviewItems(w http.ResponseWriter, r *http.Request) {
 
 	responseItems := make([]*reviewItemResponse, len(items))
 	for i, item := range items {
-		responseItems[i] = toReviewItemResponse(item)
+		responseItems[i] = toReviewItemResponse(runID, item)
 	}
 	writeJSON(w, http.StatusOK, reviewItemListResponse{Items: responseItems, Total: len(responseItems)})
 }
@@ -452,7 +453,10 @@ func (h *SceneHandler) Undo(w http.ResponseWriter, r *http.Request) {
 // versions of regenerated scenes, prior-rejection warnings) are intentionally
 // left at their zero values — the read-only master/detail panes do not depend
 // on them.
-func toReviewItemResponseFromEpisode(ep *domain.Episode) *reviewItemResponse {
+//
+// runID is required so tts_path can be rewritten from a server-side relative
+// filesystem path into an API URL the browser can fetch.
+func toReviewItemResponseFromEpisode(runID string, ep *domain.Episode) *reviewItemResponse {
 	narration := ""
 	if ep.Narration != nil {
 		narration = *ep.Narration
@@ -473,7 +477,7 @@ func toReviewItemResponseFromEpisode(ep *domain.Episode) *reviewItemResponse {
 		SceneIndex:    ep.SceneIndex,
 		Narration:     narration,
 		Shots:         shots,
-		TTSPath:       ep.TTSPath,
+		TTSPath:       sceneAudioURL(runID, ep.SceneIndex, ep.TTSPath),
 		TTSDurationMs: ep.TTSDurationMs,
 		ClipPath:      ep.ClipPath,
 		CriticScore:   service.NormalizeOptionalScore(ep.CriticScore),
@@ -492,6 +496,19 @@ func toReviewItemResponseFromEpisode(ep *domain.Episode) *reviewItemResponse {
 	return response
 }
 
+// sceneAudioURL rewrites a stored TTS path into an API URL the browser can
+// fetch. Returns nil when there is no underlying audio so the unavailable
+// state in the UI continues to render. The DB stores TTSPath as a server-side
+// filesystem path (relative or absolute) which the browser cannot fetch
+// directly; the /audio handler resolves it back to a file under outputDir.
+func sceneAudioURL(runID string, sceneIndex int, ttsPath *string) *string {
+	if ttsPath == nil || strings.TrimSpace(*ttsPath) == "" || runID == "" {
+		return nil
+	}
+	url := fmt.Sprintf("/api/runs/%s/scenes/%d/audio", runID, sceneIndex)
+	return &url
+}
+
 func isTimelineDecisionType(value string) bool {
 	switch value {
 	case domain.DecisionTypeApprove,
@@ -507,12 +524,12 @@ func isTimelineDecisionType(value string) bool {
 	}
 }
 
-func toReviewItemResponse(item *service.ReviewItem) *reviewItemResponse {
+func toReviewItemResponse(runID string, item *service.ReviewItem) *reviewItemResponse {
 	response := &reviewItemResponse{
 		SceneIndex:             item.SceneIndex,
 		Narration:              item.Narration,
 		Shots:                  item.Shots,
-		TTSPath:                item.TTSPath,
+		TTSPath:                sceneAudioURL(runID, item.SceneIndex, item.TTSPath),
 		TTSDurationMs:          item.TTSDurationMs,
 		ClipPath:               item.ClipPath,
 		CriticScore:            item.CriticScore,

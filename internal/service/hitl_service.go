@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/db"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
@@ -19,11 +20,22 @@ type DecisionReader interface {
 	GetSession(ctx context.Context, runID string) (*domain.HITLSession, error)
 }
 
+// HITLSessionWriter is the narrow write surface BuildStatus needs to
+// defensively backfill a missing hitl_sessions row when it observes a
+// run in a HITL wait state without a session anchor (e.g. a run that
+// transitioned before SetHITLSessionStore was wired into Engine, or any
+// other gap in the upsert path). Optional — nil keeps the legacy
+// log-and-skip behavior. *db.DecisionStore satisfies this structurally.
+type HITLSessionWriter interface {
+	UpsertSession(ctx context.Context, session *domain.HITLSession) error
+}
+
 // HITLService builds the enriched status payload for paused runs (FR49 +
 // FR50). Keeps api.RunHandler slim and focused on HTTP concerns.
 type HITLService struct {
 	runs      RunStore
 	decisions DecisionReader
+	sessions  HITLSessionWriter // optional; enables read-time backfill
 	logger    *slog.Logger
 }
 
@@ -35,6 +47,14 @@ func NewHITLService(runs RunStore, decisions DecisionReader, logger *slog.Logger
 		logger = slog.Default()
 	}
 	return &HITLService{runs: runs, decisions: decisions, logger: logger}
+}
+
+// SetSessionWriter wires the optional read-time backfill writer. When set,
+// BuildStatus will create a missing hitl_sessions row for a run already in
+// HITL wait state (instead of just warning), which unsticks the UI for
+// runs that transitioned before the Engine's transition-time hook landed.
+func (s *HITLService) SetSessionWriter(w HITLSessionWriter) {
+	s.sessions = w
 }
 
 // StatusPayload is the value returned by BuildStatus; api.RunHandler writes
@@ -114,9 +134,39 @@ func (s *HITLService) BuildStatus(ctx context.Context, runID string) (*StatusPay
 	}
 
 	if session == nil {
-		// Defensive: run is in HITL state but no session row. Log Warn and
-		// fall back to the live-state summary without a diff. This is the
-		// transient-race edge case documented in AC-DOMAIN-ERRORS-HITL.
+		// Defensive backfill: run is in HITL state but no session row.
+		// Causes include (a) the run transitioned before Engine's
+		// transition-time UpsertSessionFromState hook was wired, or (b) a
+		// downstream upsert failed silently. If a session writer is
+		// configured, build the row inline using data we already have
+		// (snapshot, scene index, counts) and persist it so the UI sees a
+		// PausedPosition on the next poll. If no writer, fall back to the
+		// legacy warn-and-skip path (transient-race edge case).
+		if s.sessions != nil {
+			snapshotJSON, marshalErr := json.Marshal(liveSnapshot)
+			if marshalErr != nil {
+				s.logger.Warn("hitl session backfill marshal failed",
+					"run_id", runID, "error", marshalErr.Error())
+			} else {
+				built := &domain.HITLSession{
+					RunID:                    runID,
+					Stage:                    run.Stage,
+					SceneIndex:               sceneIndex,
+					LastInteractionTimestamp: time.Now().UTC().Format(time.RFC3339),
+					SnapshotJSON:             string(snapshotJSON),
+				}
+				if upErr := s.sessions.UpsertSession(ctx, built); upErr != nil {
+					s.logger.Warn("hitl session backfill upsert failed",
+						"run_id", runID, "stage", string(run.Stage), "error", upErr.Error())
+				} else {
+					s.logger.Info("hitl session row backfilled at read time",
+						"run_id", runID, "stage", string(run.Stage), "scene_index", sceneIndex)
+					payload.PausedPosition = built
+					payload.Summary = pipeline.SummaryString(runID, run.Stage, run.Status, sceneIndex, counts.TotalScenes, summaryValue)
+					return payload, nil
+				}
+			}
+		}
 		s.logger.Warn("hitl session row missing for waiting run",
 			"run_id", runID, "stage", string(run.Stage), "status", string(run.Status))
 		payload.Summary = pipeline.SummaryString(runID, run.Stage, run.Status, sceneIndex, counts.TotalScenes, summaryValue)

@@ -1,27 +1,27 @@
-import { useState } from 'react'
-import type { FastFeedbackReport } from '../../contracts/tuningContracts'
-import { ApiClientError } from '../../lib/apiClient'
-import { useFastFeedbackMutation } from '../../hooks/useTuning'
+import { useState } from "react";
+import type { FastFeedbackReport } from "../../contracts/tuningContracts";
+import { ApiClientError } from "../../lib/apiClient";
+import { useFastFeedbackMutation } from "../../hooks/useTuning";
 
 export function FastFeedbackSection() {
-  const mutation = useFastFeedbackMutation()
-  const [report, setReport] = useState<FastFeedbackReport | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const mutation = useFastFeedbackMutation();
+  const [report, setReport] = useState<FastFeedbackReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleRun() {
-    setError(null)
+    setError(null);
     try {
-      const r = await mutation.mutateAsync()
-      setReport(r)
+      const r = await mutation.mutateAsync();
+      setReport(r);
     } catch (err) {
-      setReport(null)
+      setReport(null);
       setError(
         err instanceof ApiClientError
           ? err.message
           : err instanceof Error
-          ? err.message
-          : 'Fast Feedback failed.',
-      )
+            ? err.message
+            : "Fast Feedback failed.",
+      );
     }
   }
 
@@ -45,7 +45,7 @@ export function FastFeedbackSection() {
           disabled={mutation.isPending}
           onClick={handleRun}
         >
-          {mutation.isPending ? 'Running…' : 'Run Fast Feedback'}
+          {mutation.isPending ? "Running…" : "Run Fast Feedback"}
         </button>
       </div>
       {error ? (
@@ -56,13 +56,24 @@ export function FastFeedbackSection() {
       {report ? (
         <div className="tuning-report">
           <p className="tuning-report__summary">
-            {report.sample_count} samples · {report.pass_count} pass ·{' '}
-            {report.retry_count} retry · {report.accept_with_notes_count}{' '}
-            accept-with-notes ·{' '}
+            {report.sample_count} samples · {report.pass_count} pass ·{" "}
+            {report.retry_count} retry · {report.accept_with_notes_count}{" "}
+            accept-with-notes ·{" "}
             <span aria-label="duration">{report.duration_ms} ms</span>
+            {report.critic_provider ? (
+              <>
+                {" "}
+                · critic <code>{report.critic_provider}</code>
+                {report.critic_model ? (
+                  <>
+                    /<code>{report.critic_model}</code>
+                  </>
+                ) : null}
+              </>
+            ) : null}
             {report.version_tag ? (
               <>
-                {' '}
+                {" "}
                 · prompt <code>{report.version_tag}</code>
               </>
             ) : null}
@@ -70,7 +81,7 @@ export function FastFeedbackSection() {
           <ul className="tuning-report__rows">
             {report.samples.map((sample) => (
               <li key={sample.fixture_id} className="tuning-report__row">
-                <code>{sample.fixture_id}</code>{' '}
+                <code>{sample.fixture_id}</code>{" "}
                 <span
                   className={`tuning-verdict tuning-verdict--${sample.verdict}`}
                 >
@@ -78,12 +89,12 @@ export function FastFeedbackSection() {
                 </span>
                 {sample.retry_reason ? (
                   <span className="tuning-report__reason">
-                    {' '}
+                    {" "}
                     — {sample.retry_reason}
                   </span>
                 ) : null}
                 <span className="tuning-report__score">
-                  {' '}
+                  {" "}
                   score {sample.overall_score}
                 </span>
               </li>
@@ -92,5 +103,5 @@ export function FastFeedbackSection() {
         </div>
       ) : null}
     </section>
-  )
+  );
 }

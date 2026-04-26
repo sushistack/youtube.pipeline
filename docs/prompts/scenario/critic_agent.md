@@ -41,8 +41,9 @@ Answer these questions honestly:
 
 Rules:
 - "pass": Scenario is production-ready. Would get >50% watch-through rate. Narration sounds like a real YouTuber, not a wiki reader.
-- "retry": Significant issues that require rewriting. Be specific in feedback.
-- "accept_with_notes": Passable but not great. Note improvements for future reference.
+- "retry": Use ONLY when there is a fundamental structural problem that makes the content unviewable: hook is completely absent or starts with "SCP-XXX는 유클리드 등급", content is factually wrong, or the narration reads entirely like a Wikipedia article throughout. overall_score < 60 typically warrants retry.
+- "accept_with_notes": Use when overall_score is 60–79 and the content is watchable but has clear room for improvement. This is the correct verdict for "decent but not great" narration. Leave specific improvement notes in feedback and scene_notes.
+- "pass": Use when overall_score ≥ 80 and no dimension is below 65.
 - If you return "retry" and the rubric has a clear weakest dimension, fill `retry_reason` with one of the allowed machine-readable values. Do not invent a new string.
 - For `minor_policy_findings`, list only scenes that depict minors in violent, sexualized, exploitative, or otherwise policy-sensitive contexts.
 - Each `minor_policy_findings.reason` MUST be concise Korean text.
@@ -54,5 +55,4 @@ Rules:
 - **System-reserved (NEVER emit these):** `schema_validation_failed` and `forbidden_terms_detected` are set by the pipeline's precheck when the Critic LLM is skipped entirely (schema revalidation failure or forbidden-term pattern match on the narration). You must never produce them.
 - **Downstream consumers:** parsers of `retry_reason` should handle 6 possible values in total (4 LLM-authored + 2 system-reserved).
 - feedback MUST be in Korean and MUST be specific ("Scene 1을 Shock Hook으로 교체: 'SCP-173은 14명의 재단 인원을 살해했습니다'")
-- Do NOT be generous. If it's mediocre, say "retry".
-- If the narration sounds like a Wikipedia article or government report, ALWAYS say "retry". YouTube viewers leave in 5 seconds if the tone is boring.
+- If the narration sounds like a Wikipedia article or government report throughout ALL scenes, say "retry". A few wiki-style sentences in otherwise engaging content → "accept_with_notes".

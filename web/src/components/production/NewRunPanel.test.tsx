@@ -87,17 +87,17 @@ describe('NewRunPanel', () => {
     await user.type(input, '049')
 
     await user.tab()
-    expect(create_button).toHaveFocus()
-    await user.tab()
     expect(cancel_button).toHaveFocus()
+    await user.tab()
+    expect(create_button).toHaveFocus()
     await user.tab()
     expect(input).toHaveFocus()
 
     // reverse cycle (Shift+Tab)
     await user.keyboard('{Shift>}{Tab}{/Shift}')
-    expect(cancel_button).toHaveFocus()
-    await user.keyboard('{Shift>}{Tab}{/Shift}')
     expect(create_button).toHaveFocus()
+    await user.keyboard('{Shift>}{Tab}{/Shift}')
+    expect(cancel_button).toHaveFocus()
     await user.keyboard('{Shift>}{Tab}{/Shift}')
     expect(input).toHaveFocus()
 

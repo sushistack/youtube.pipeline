@@ -15,6 +15,7 @@ type Dependencies struct {
 	Artifacts *ArtifactsHandler // NEW
 	Character *CharacterHandler
 	Scene     *SceneHandler
+	Media     *MediaHandler
 	Tuning    *TuningHandler
 	HITL      *service.HITLService
 	Logger    *slog.Logger
@@ -33,8 +34,10 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("GET /api/runs", deps.Run.List)
 	api.HandleFunc("GET /api/runs/{id}", deps.Run.Get)
 	api.HandleFunc("GET /api/runs/{id}/status", deps.Run.Status)
+	api.HandleFunc("GET /api/runs/{id}/status/stream", deps.Run.StatusStream)
 	api.HandleFunc("POST /api/runs/{id}/cancel", deps.Run.Cancel)
 	api.HandleFunc("POST /api/runs/{id}/resume", deps.Run.Resume)
+	api.HandleFunc("POST /api/runs/{id}/advance", deps.Run.Advance)
 	api.HandleFunc("GET /api/decisions", deps.Scene.ListDecisions)
 	api.HandleFunc("GET /api/runs/{id}/characters", deps.Character.Search)
 	api.HandleFunc("GET /api/runs/{id}/characters/descriptor", deps.Character.Descriptor)
@@ -46,6 +49,9 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("POST /api/runs/{id}/undo", deps.Scene.Undo)
 	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/edit", deps.Scene.Edit)
 	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/regen", deps.Scene.Regenerate)
+	if deps.Media != nil {
+		api.HandleFunc("GET /api/runs/{id}/scenes/{idx}/audio", deps.Media.Audio)
+	}
 	api.HandleFunc("POST /api/runs/{id}/scenario/approve", deps.Run.ApproveScenarioReview)
 
 	// Compliance gate + artifact serving (Story 9.4).
@@ -87,12 +93,15 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 // outputDir is the server-configured run output base (never client-controlled).
 // tuning may be nil in deployments that haven't wired the Tuning surface; in
 // that case /api/tuning/* routes are simply not registered.
+// segments may be nil; the per-scene media route is registered only when a
+// lookup is provided.
 func NewDependencies(
 	svc *service.RunService,
 	settings *service.SettingsService,
 	hitl *service.HITLService,
 	characters *service.CharacterService,
 	scenes *service.SceneService,
+	segments SegmentLookup,
 	tuning TuningService,
 	outputDir string,
 	logger *slog.Logger,
@@ -107,6 +116,9 @@ func NewDependencies(
 		Logger:    logger,
 		WebFS:     webFS,
 		OutputDir: outputDir,
+	}
+	if segments != nil {
+		deps.Media = NewMediaHandler(svc, segments, outputDir)
 	}
 	if tuning != nil {
 		deps.Tuning = NewTuningHandler(tuning)

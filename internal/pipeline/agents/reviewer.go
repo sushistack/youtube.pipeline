@@ -93,6 +93,25 @@ func NewReviewer(
 				Correction:  "resolve the critical issue(s) above before approving this review",
 			})
 		}
+		if cfg.Logger != nil {
+			cfg.Logger.Info("reviewer result",
+				"run_id", state.RunID,
+				"overall_pass", report.OverallPass,
+				"coverage_pct", report.CoveragePct,
+				"issue_count", len(report.Issues),
+			)
+			for _, issue := range report.Issues {
+				if issue.Severity == "critical" {
+					cfg.Logger.Warn("reviewer critical issue",
+						"run_id", state.RunID,
+						"scene_num", issue.SceneNum,
+						"type", issue.Type,
+						"description", issue.Description,
+						"correction", issue.Correction,
+					)
+				}
+			}
+		}
 		if err := reviewValidator.Validate(report); err != nil {
 			return fmt.Errorf("reviewer: %w", err)
 		}

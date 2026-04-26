@@ -57,3 +57,23 @@ type CriticPrecheck struct {
 	ForbiddenTermHits []string `json:"forbidden_term_hits"`
 	ShortCircuited    bool     `json:"short_circuited"`
 }
+
+// PersistedCriticReport is a critic_reports row hydrated for callers (UI,
+// diagnostic queries). attempt_number is the 1-indexed retry attempt;
+// CreatedAt is the SQLite-formatted timestamp (UTC, no zone suffix).
+type PersistedCriticReport struct {
+	RunID         string
+	AttemptNumber int
+	Report        CriticCheckpointReport
+	CreatedAt     string
+}
+
+// PersistedNarrationAttempt is a narration_attempts row hydrated for callers.
+// Narration carries the full script the critic evaluated, including act_id,
+// scene metadata, and source_version.
+type PersistedNarrationAttempt struct {
+	RunID         string
+	AttemptNumber int
+	Narration     *NarrationScript
+	CreatedAt     string
+}

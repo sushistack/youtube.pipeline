@@ -53,7 +53,7 @@ func TestSettingsHandler_GetAndPutCycle(t *testing.T) {
 	putReq := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{
 	  "config": {
 	    "writer_model": "deepseek-chat-v2",
-	    "critic_model": "gemini-2.0-flash",
+	    "critic_model": "gemini-3.1-flash-lite-preview",
 	    "image_model": "qwen-image",
 	    "image_edit_model": "qwen-image-edit",
 	    "tts_model": "qwen3-tts",
@@ -173,7 +173,7 @@ func TestSettingsHandler_PutReturns409WhenIfMatchStale(t *testing.T) {
 	body := `{
 	  "config": {
 	    "writer_model": "deepseek-chat-v2",
-	    "critic_model": "gemini-2.0-flash",
+	    "critic_model": "gemini-3.1-flash-lite-preview",
 	    "image_model": "qwen-image",
 	    "image_edit_model": "qwen-image-edit",
 	    "tts_model": "qwen3-tts",

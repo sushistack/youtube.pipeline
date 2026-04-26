@@ -26,6 +26,7 @@ type actIndexedTextGenerator struct {
 	responses   map[string][]string
 	calls       map[string]int
 	prompts     map[string][]string
+	finishReason map[string][]string
 	model       string
 	provider    string
 	sleep       time.Duration
@@ -35,11 +36,12 @@ type actIndexedTextGenerator struct {
 
 func newActIndexedTextGenerator(perAct map[string][]string) *actIndexedTextGenerator {
 	return &actIndexedTextGenerator{
-		responses: perAct,
-		calls:     map[string]int{},
-		prompts:   map[string][]string{},
-		model:     "writer-model",
-		provider:  "openai",
+		responses:    perAct,
+		calls:        map[string]int{},
+		prompts:      map[string][]string{},
+		finishReason: map[string][]string{},
+		model:        "writer-model",
+		provider:     "openai",
 	}
 }
 
@@ -71,10 +73,16 @@ func (a *actIndexedTextGenerator) Generate(_ context.Context, req domain.TextReq
 	resp := queue[0]
 	a.responses[actID] = queue[1:]
 	a.calls[actID]++
+	var finish string
+	if frQueue, ok := a.finishReason[actID]; ok && len(frQueue) > 0 {
+		finish = frQueue[0]
+		a.finishReason[actID] = frQueue[1:]
+	}
 	return domain.TextResponse{NormalizedResponse: domain.NormalizedResponse{
-		Content:  resp,
-		Model:    a.model,
-		Provider: a.provider,
+		Content:      resp,
+		Model:        a.model,
+		Provider:     a.provider,
+		FinishReason: finish,
 	}}, nil
 }
 
@@ -388,6 +396,64 @@ func TestWriter_Run_MetadataFilled(t *testing.T) {
 	testutil.AssertEqual(t, state.Narration.Metadata.SceneCount, len(state.Narration.Scenes))
 }
 
+// TestWriter_PerAct_FailsFastOnTruncatedFinishReason verifies the
+// finish_reason="length" early-fail guard ported from the dogfood-era
+// single-call writer. When the provider truncates the response, decoding
+// the half-written JSON would just produce a generic parse error and
+// burn the per-act retry budget on the same broken shape — better to
+// surface the truncation directly.
+func TestWriter_PerAct_FailsFastOnTruncatedFinishReason(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	perAct := perActFixturesFromMergedSample(t)
+	gen := newActIndexedTextGenerator(perAct)
+	// Mark Act 1's response as truncated. The act's actual JSON is fine
+	// but the finish_reason guard must trip before decode.
+	gen.finishReason[domain.ActIncident] = []string{"length"}
+
+	state := sampleWriterState()
+	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "provider truncated completion") {
+		t.Fatalf("expected truncation error, got %v", err)
+	}
+	if gen.calls[domain.ActIncident] != 1 {
+		t.Fatalf("act incident call count = %d, want 1 (no retry on truncation)", gen.calls[domain.ActIncident])
+	}
+	if state.Narration != nil {
+		t.Fatalf("state mutated on truncation: %+v", state.Narration)
+	}
+}
+
+// TestWriter_PerAct_PriorCriticFeedbackInjected verifies the wiring
+// from state.PriorCriticFeedback into the {quality_feedback} prompt
+// placeholder. Same value is injected into every act's prompt today
+// (per spec §4 Critic feedback).
+func TestWriter_PerAct_PriorCriticFeedbackInjected(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	perAct := perActFixturesFromMergedSample(t)
+	gen := newActIndexedTextGenerator(perAct)
+	state := sampleWriterState()
+	state.PriorCriticFeedback = "Q-FEEDBACK-MARKER: avoid generic narration"
+
+	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err != nil {
+		t.Fatalf("Writer: %v", err)
+	}
+	for _, id := range []string{domain.ActIncident, domain.ActMystery, domain.ActRevelation, domain.ActUnresolved} {
+		prompts := gen.prompts[id]
+		if len(prompts) == 0 {
+			t.Fatalf("no prompt captured for act %s", id)
+		}
+		if !strings.Contains(prompts[0], state.PriorCriticFeedback) {
+			t.Fatalf("act %s prompt missing prior critic feedback marker", id)
+		}
+	}
+}
+
 func TestWriter_Run_DoesNotMutateStateOnFailure(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
@@ -410,17 +476,29 @@ func TestWriter_Run_DoesNotMutateStateOnFailure(t *testing.T) {
 }
 
 // fakeTextGenerator is retained for legacy shape-mismatch tests where act
-// routing isn't relevant (e.g. nil-state guards).
+// routing isn't relevant (e.g. nil-state guards). The resps/reqs slices
+// support tests that need to drive multi-call sequences with distinct
+// responses; resp is the fallback for single-shot callers.
 type fakeTextGenerator struct {
 	resp  domain.TextResponse
+	resps []domain.TextResponse
 	err   error
 	calls int
 	last  domain.TextRequest
+	reqs  []domain.TextRequest
 }
 
 func (f *fakeTextGenerator) Generate(_ context.Context, req domain.TextRequest) (domain.TextResponse, error) {
 	f.calls++
 	f.last = req
+	f.reqs = append(f.reqs, req)
+	if len(f.resps) > 0 {
+		idx := f.calls - 1
+		if idx >= len(f.resps) {
+			idx = len(f.resps) - 1
+		}
+		return f.resps[idx], f.err
+	}
 	return f.resp, f.err
 }
 

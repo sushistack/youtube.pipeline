@@ -155,6 +155,33 @@ export function resumeRun(run_id: string) {
   );
 }
 
+// cancelRun aborts a running or waiting run. Server returns 409 for any other
+// state; surface the error so the operator can decide whether to refresh or
+// pick a different run.
+export function cancelRun(run_id: string) {
+  return apiRequest(
+    `/runs/${encodeURIComponent(run_id)}/cancel`,
+    runDetailResponseSchema,
+    {
+      method: "POST",
+    },
+  );
+}
+
+// advanceRun kicks off a freshly-created pending run via Phase A entry.
+// resumeRun rejects pending status by design (it is the failed/waiting recovery
+// path), so the UI's Start-run button on the pending guidance card calls this
+// instead. Backend route: POST /api/runs/{id}/advance.
+export function advanceRun(run_id: string) {
+  return apiRequest(
+    `/runs/${encodeURIComponent(run_id)}/advance`,
+    runDetailResponseSchema,
+    {
+      method: "POST",
+    },
+  );
+}
+
 export function fetchRunScenes(run_id: string) {
   return apiRequest(
     `/runs/${encodeURIComponent(run_id)}/scenes`,

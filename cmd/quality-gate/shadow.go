@@ -29,7 +29,7 @@ func runShadowGate(
 	ev eval.Evaluator,
 	now time.Time,
 ) ShadowGateResult {
-	report, err := eval.RunShadow(ctx, projectRoot, source, ev, now, shadowWindow)
+	report, err := eval.RunShadow(ctx, projectRoot, projectRoot, source, ev, now, shadowWindow)
 	if err != nil {
 		return ShadowGateResult{Err: fmt.Errorf("shadow gate: run: %w", err)}
 	}

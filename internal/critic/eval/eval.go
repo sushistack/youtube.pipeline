@@ -21,6 +21,8 @@ type VerdictResult struct {
 	Verdict      string
 	RetryReason  string
 	OverallScore int
+	Model        string
+	Provider     string
 }
 
 // Fixture is a single Golden eval input with its expected verdict.

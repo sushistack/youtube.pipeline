@@ -72,6 +72,15 @@ func NewPostWriterCritic(
 			return err
 		}
 
+		if cfg.Logger != nil {
+			cfg.Logger.Info("critic call start",
+				"run_id", state.RunID,
+				"checkpoint", "post_writer",
+				"provider", cfg.Provider,
+				"model", cfg.Model,
+			)
+		}
+		callStart := time.Now()
 		resp, err := gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
@@ -79,7 +88,25 @@ func NewPostWriterCritic(
 			Temperature: cfg.Temperature,
 		})
 		if err != nil {
+			if cfg.Logger != nil {
+				cfg.Logger.Error("critic call failed",
+					"run_id", state.RunID,
+					"checkpoint", "post_writer",
+					"duration_ms", time.Since(callStart).Milliseconds(),
+					"error", err.Error(),
+				)
+			}
 			return err
+		}
+		if cfg.Logger != nil {
+			cfg.Logger.Info("critic call complete",
+				"run_id", state.RunID,
+				"checkpoint", "post_writer",
+				"duration_ms", time.Since(callStart).Milliseconds(),
+				"finish_reason", resp.FinishReason,
+				"tokens_in", resp.TokensIn,
+				"tokens_out", resp.TokensOut,
+			)
 		}
 
 		// Non-fatal audit write after successful post-writer critic generation.
@@ -107,6 +134,15 @@ func NewPostWriterCritic(
 			report.RetryReason = DeriveRetryReason(report.Rubric)
 		} else if report.Verdict != domain.CriticVerdictRetry {
 			report.RetryReason = ""
+		}
+		if cfg.Logger != nil {
+			cfg.Logger.Info("critic verdict",
+				"run_id", state.RunID,
+				"checkpoint", "post_writer",
+				"verdict", string(report.Verdict),
+				"overall_score", report.OverallScore,
+				"retry_reason", report.RetryReason,
+			)
 		}
 		report.Checkpoint = domain.CriticCheckpointPostWriter
 		report.Precheck = precheck
@@ -197,6 +233,15 @@ func NewPostReviewerCritic(
 			return err
 		}
 
+		if cfg.Logger != nil {
+			cfg.Logger.Info("critic call start",
+				"run_id", state.RunID,
+				"checkpoint", "post_reviewer",
+				"provider", cfg.Provider,
+				"model", cfg.Model,
+			)
+		}
+		callStart := time.Now()
 		resp, err := gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
@@ -204,7 +249,25 @@ func NewPostReviewerCritic(
 			Temperature: cfg.Temperature,
 		})
 		if err != nil {
+			if cfg.Logger != nil {
+				cfg.Logger.Error("critic call failed",
+					"run_id", state.RunID,
+					"checkpoint", "post_reviewer",
+					"duration_ms", time.Since(callStart).Milliseconds(),
+					"error", err.Error(),
+				)
+			}
 			return err
+		}
+		if cfg.Logger != nil {
+			cfg.Logger.Info("critic call complete",
+				"run_id", state.RunID,
+				"checkpoint", "post_reviewer",
+				"duration_ms", time.Since(callStart).Milliseconds(),
+				"finish_reason", resp.FinishReason,
+				"tokens_in", resp.TokensIn,
+				"tokens_out", resp.TokensOut,
+			)
 		}
 
 		// Non-fatal audit write after successful post-reviewer critic generation.
@@ -235,6 +298,15 @@ func NewPostReviewerCritic(
 		}
 		if err := validateMinorPolicyFindings(report.MinorPolicyFindings, state.Narration); err != nil {
 			return fmt.Errorf("critic: %w", err)
+		}
+		if cfg.Logger != nil {
+			cfg.Logger.Info("critic verdict",
+				"run_id", state.RunID,
+				"checkpoint", "post_reviewer",
+				"verdict", string(report.Verdict),
+				"overall_score", report.OverallScore,
+				"retry_reason", report.RetryReason,
+			)
 		}
 		report.Checkpoint = domain.CriticCheckpointPostReviewer
 		report.Precheck = precheck
@@ -336,7 +408,7 @@ func decodeJSONResponse(content string, dst any) error {
 		return fmt.Errorf("response is not bare JSON: %w", domain.ErrValidation)
 	}
 	if err := json.Unmarshal([]byte(trimmed), dst); err != nil {
-		return fmt.Errorf("invalid JSON: %w", domain.ErrValidation)
+		return fmt.Errorf("invalid JSON (%s): %w", err.Error(), domain.ErrValidation)
 	}
 	return nil
 }

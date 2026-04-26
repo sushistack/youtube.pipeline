@@ -262,6 +262,97 @@ func TestRunStore_SetStatus_NotFound(t *testing.T) {
 	}
 }
 
+func TestRunStore_ReconcileOrphanedRuns_FlipsRunningToFailed(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	outDir := t.TempDir()
+	ctx := context.Background()
+
+	// Two runs in 'running' (orphaned) plus one of every other status to
+	// confirm the reconciler only touches 'running'.
+	running1, _ := store.Create(ctx, "049", outDir)
+	running2, _ := store.Create(ctx, "049", outDir)
+	pending, _ := store.Create(ctx, "049", outDir)
+	waiting, _ := store.Create(ctx, "049", outDir)
+	failed, _ := store.Create(ctx, "049", outDir)
+	completed, _ := store.Create(ctx, "049", outDir)
+	cancelled, _ := store.Create(ctx, "049", outDir)
+
+	if err := store.SetStatus(ctx, running1.ID, domain.StatusRunning, nil); err != nil {
+		t.Fatalf("SetStatus running1: %v", err)
+	}
+	if err := store.SetStatus(ctx, running2.ID, domain.StatusRunning, nil); err != nil {
+		t.Fatalf("SetStatus running2: %v", err)
+	}
+	// pending stays pending (Create default)
+	if err := store.SetStatus(ctx, waiting.ID, domain.StatusWaiting, nil); err != nil {
+		t.Fatalf("SetStatus waiting: %v", err)
+	}
+	preexistingReason := "weak_hook"
+	if err := store.SetStatus(ctx, failed.ID, domain.StatusFailed, &preexistingReason); err != nil {
+		t.Fatalf("SetStatus failed: %v", err)
+	}
+	if err := store.SetStatus(ctx, completed.ID, domain.StatusCompleted, nil); err != nil {
+		t.Fatalf("SetStatus completed: %v", err)
+	}
+	if err := store.SetStatus(ctx, cancelled.ID, domain.StatusCancelled, nil); err != nil {
+		t.Fatalf("SetStatus cancelled: %v", err)
+	}
+
+	n, err := store.ReconcileOrphanedRuns(ctx)
+	if err != nil {
+		t.Fatalf("ReconcileOrphanedRuns: %v", err)
+	}
+	testutil.AssertEqual(t, n, int64(2))
+
+	for _, runID := range []string{running1.ID, running2.ID} {
+		got, err := store.Get(ctx, runID)
+		if err != nil {
+			t.Fatalf("Get %s: %v", runID, err)
+		}
+		testutil.AssertEqual(t, got.Status, domain.StatusFailed)
+		if got.RetryReason == nil || !strings.Contains(*got.RetryReason, "server restarted") {
+			t.Errorf("%s: RetryReason = %v, want non-nil containing 'server restarted'", runID, got.RetryReason)
+		}
+	}
+
+	// Untouched: pending, waiting, completed, cancelled keep their status.
+	for _, c := range []struct {
+		id   string
+		want domain.Status
+	}{
+		{pending.ID, domain.StatusPending},
+		{waiting.ID, domain.StatusWaiting},
+		{completed.ID, domain.StatusCompleted},
+		{cancelled.ID, domain.StatusCancelled},
+	} {
+		got, _ := store.Get(ctx, c.id)
+		testutil.AssertEqual(t, got.Status, c.want)
+	}
+
+	// Pre-existing failed run keeps its original retry_reason — the reconciler
+	// must not stomp the real failure cause with its own message.
+	gotFailed, _ := store.Get(ctx, failed.ID)
+	testutil.AssertEqual(t, gotFailed.Status, domain.StatusFailed)
+	if gotFailed.RetryReason == nil || *gotFailed.RetryReason != preexistingReason {
+		t.Errorf("failed run RetryReason = %v, want preserved %q", gotFailed.RetryReason, preexistingReason)
+	}
+}
+
+func TestRunStore_ReconcileOrphanedRuns_NoOpWhenNoRunning(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	ctx := context.Background()
+
+	n, err := store.ReconcileOrphanedRuns(ctx)
+	if err != nil {
+		t.Fatalf("ReconcileOrphanedRuns on empty DB: %v", err)
+	}
+	testutil.AssertEqual(t, n, int64(0))
+}
+
 func TestRunStore_SetSelectedCharacterID_PersistsValue(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)
