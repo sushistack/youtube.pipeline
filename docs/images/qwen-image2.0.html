@@ -1,0 +1,1384 @@
+<div class="pc-markdown-container unionContainer" id="pc-markdown-container"><div class="markdown-body" style="margin:0"><div id="img-preview-container"></div><div lang="en" class="icms-help-docs-content">
+<main id="main-3058370"><p data-tag="shortdesc" id="05f3cf3ddcwk1" class="shortdesc">Qwen-Image is a general-purpose image generation model that supports multiple artistic styles and excels at <b>complex text rendering</b>. The model supports multi-line layouts, paragraph-level text generation, and fine-grained detail rendering. </p><div data-tag="body" id="c3cae50fb3glu" class="body" data-spm-anchor-id="0.0.0.i4.20cf4a9aEvaztL"><section id="123b43254e6a1" props="intl" data-cond-props="intl" class="section"><div class="table-wrapper table-wrapper-intl"><table id="9e237e143e9if" outputclass="help-table-card" tablewidth="100" tablecolswidth="100" autofit="true" class="help-table-card table" minwidth="162" style="min-width: 1201px;"><colgroup colwidth="1*" style="width:100.00%"></colgroup><tbody class="tbody"><tr id="83e79be883i5n"><td id="d922ba887fihw" rowspan="1" style="vertical-align:middle" colspan="1"><p id="f3fcffdbe63eh"><b>Quick access:</b> <a href="/help/en/model-studio/text-to-image" id="a91f720476gi4" title="" class="xref">User guide</a><b> </b>| Try it online<b> (</b><a class="" href="https://modelstudio.console.alibabacloud.com/ap-southeast-1/?tab=dashboard#/efm/model_experience_center/vision?currentTab=imageGenerate&amp;modelId=qwen-image-max" id="b7b7a83602kzf">Singapore</a> | <a class="" href="https://bailian.console.alibabacloud.com/cn-beijing?tab=model#/efm/model_experience_center/vision?currentTab=imageGenerate&amp;modelId=qwen-image-max" id="fd86965dcdtud">Beijing</a>)<b> |</b> <a class="" href="https://qwen.ai/blog?id=9467b4bff9c638e847f08443802c6b96ab116a87&amp;from=research.research-list" id="9492035e1eztz" data-spm-protocol="i" title="">Technical blog (more examples)</a></p></td></tr></tbody></table></div></section><section id="6f5ffba2bfg39" class="section"><h2 id="5849834e92mb7" data-spm-anchor-id="0.0.0.i3.20cf4a9aEvaztL"><b>Examples</b></h2><section id="acdc62a68685b" props="intl" data-cond-props="intl" class="section"><div class="table-wrapper table-wrapper-intl"><table class="fixed-table" style="min-width: 1201px; width: 1201px; visibility: hidden; top: -1px;"><colgroup colwidth="1*" style="width:50.04%"></colgroup><colgroup colwidth="1*" style="width:49.96%"></colgroup><thead class="fixed-thead"><tr id="f4a707a2a5dwv"><td id="0013afb08fuuc" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><span><p jc="center" id="28b7420f5fpvm" style="text-align:center"><b>Prompt</b></p></span></td><td id="c5ab969855ee4" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><span><p jc="center" id="fa32b90591aye" style="text-align:center"><b>Generated image</b></p></span></td></tr></thead></table><table id="96e2cd15c8qa1" tablewidth="100" tablecolswidth="50.04 49.96" autofit="true" class="table" minwidth="324.2594075260208" style="min-width: 1201px;"><colgroup colwidth="1*" style="width:50.04%"></colgroup><colgroup colwidth="1*" style="width:49.96%"></colgroup><tbody class="tbody"><tr id="f4a707a2a5dwv"><td id="0013afb08fuuc" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><p jc="center" id="28b7420f5fpvm" style="text-align:center"><b>Prompt</b></p></td><td id="c5ab969855ee4" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><p jc="center" id="fa32b90591aye" style="text-align:center"><b>Generated image</b></p></td></tr><tr id="4af32c89ddxv9"><td id="3daa692fa1fyz" rowspan="1" style="vertical-align:middle" colspan="1" data-spm-anchor-id="0.0.0.i2.20cf4a9aEvaztL"><p id="1d71ea3f0850o">A healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title <b>“Come Play Ball!”</b> appears prominently at the top in bold, blue cartoon font. Below it, the subtitle <b>“Come [Show Off Your Skills]!”</b> appears in green font. A speech bubble adds playful charm with the text: <b>“Hehe, watch me amaze my little friends next!”</b> At the bottom, supplementary text reads: <b>“We get to play ball with our friends again!”</b> The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere.</p></td><td id="048e88e8c7xkz" rowspan="1" style="vertical-align:middle" colspan="1"><p jc="center" id="8000ff93d7vbb" style="text-align:center"><img alt="image" id="a827a453b0z9m" placement="break" src="https://help-static-aliyun-doc.aliyuncs.com/assets/img/en-US/6492803771/p1005422.png" width="300" class="image break"></p></td></tr></tbody></table></div><p id="e734e63ce3dsp"></p></section></section><section id="e454f6b592b2x" class="section"><h2 id="4a3e46b825d2k">Model overview</h2><div class="table-wrapper table-wrapper-intl"><table class="fixed-table" style="min-width: 1201px; width: 1201px; visibility: hidden; top: -1px;"><colgroup colwidth="0.73*" style="width:24.00%"></colgroup><colgroup colwidth="1.15*" style="width:38.00%"></colgroup><colgroup colwidth="1.15*" style="width:38.00%"></colgroup><thead class="fixed-thead"><tr id="52e84ca0a1cto"><td id="ea8f2668d6c1q" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><span><p jc="left" id="4079e68ff9a0v" style="text-align:left"><b>Model</b></p></span></td><td id="4ba12db2ddwou" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><span><p jc="left" id="6fe8b07078hyd" style="text-align:left"><b>Description</b></p></span></td><td id="50cf3335c0ckh" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><span><p id="5347421b0f0ew"><b>Output image specifications</b></p></span></td></tr></thead></table><table id="186e4fff0ao20" outputclass="qwen" tablewidth="100" tablecolswidth="24 38 38" autofit="true" class="qwen table" minwidth="675" style="min-width: 1201px;"><colgroup colwidth="0.73*" style="width:24.00%"></colgroup><colgroup colwidth="1.15*" style="width:38.00%"></colgroup><colgroup colwidth="1.15*" style="width:38.00%"></colgroup><tbody class="tbody"><tr id="52e84ca0a1cto"><td id="ea8f2668d6c1q" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><p jc="left" id="4079e68ff9a0v" style="text-align:left"><b>Model</b></p></td><td id="4ba12db2ddwou" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><p jc="left" id="6fe8b07078hyd" style="text-align:left"><b>Description</b></p></td><td id="50cf3335c0ckh" rowspan="1" style="background-color:#e5e5e5;vertical-align:middle" colspan="1"><p id="5347421b0f0ew"><b>Output image specifications</b></p></td></tr><tr id="a1b2c3d4e5f01"><td id="a1b2c3d4e5f02" rowspan="1" style="vertical-align:middle" colspan="1"><p id="a1b2c3d4e5f03">qwen-image-2.0-pro <code data-tag="code" id="be5fd475fdmvk" class="code"><b>Recommended</b></code></p><blockquote id="a1b2c3d4e5f04">Same capabilities as qwen-image-2.0-pro-2026-03-03</blockquote></td><td id="a1b2c3d4e5f05" rowspan="3" style="vertical-align:middle" colspan="1"><p id="cb1bc4ec7fzni">Qwen Pro series for image generation and editing. Offers stronger text rendering, realistic texture, and semantic adherence.</p><blockquote id="2432172e51v9g">For image editing, see <a href="/help/en/model-studio/qwen-image-edit-api" id="492b81ae7d88n" title="" class="xref" data-spm-protocol="i">Qwen-Image Editing</a>.</blockquote></td><td id="a1b2c3d4e5f07" rowspan="5" style="vertical-align:middle" colspan="1"><p id="a1b2c3d4e5f08">Resolution: Set width and height freely. Total pixels must be between 512*512 and 2048*2048. Default resolution is 2048*2048.</p><p id="a1b2c3d4e5f09">Format: PNG</p><p id="a1b2c3d4e5f10">Number of images: 1–6</p></td></tr><tr id="24a095ebf5ujv"><td id="7d13d23b2afsf" rowspan="1" colspan="1"><p id="3b1079592d259">qwen-image-2.0-pro-2026-04-22 <code data-tag="code" id="d7ba0ed95ftny" class="code"><b>Recommended</b></code></p></td></tr><tr id="a1b2c3d4e5f11"><td id="a1b2c3d4e5f12" rowspan="1" colspan="1"><p id="a1b2c3d4e5f13">qwen-image-2.0-pro-2026-03-03 </p></td></tr><tr id="a1b2c3d4e5f14"><td id="a1b2c3d4e5f15" rowspan="1" style="vertical-align:middle" colspan="1"><p id="a1b2c3d4e5f16">qwen-image-2.0 <code data-tag="code" id="5f19d09a605xn" class="code"><b>Recommended</b></code></p><blockquote id="a1b2c3d4e5f17">Same capabilities as qwen-image-2.0-2026-03-03</blockquote></td><td id="a1b2c3d4e5f18" rowspan="2" style="vertical-align:middle" colspan="1"><p id="a1b2c3d4e5f19">Qwen accelerated series for image generation and editing. Balances quality and response speed.</p><blockquote id="dd65983df3a3e">For image editing, see <a href="/help/en/model-studio/qwen-image-edit-api" id="dda44e701ai3k" title="" class="xref">Qwen-Image Editing</a>.</blockquote></td></tr><tr id="a1b2c3d4e5f20"><td id="a1b2c3d4e5f21" rowspan="1" colspan="1"><p id="a1b2c3d4e5f22">qwen-image-2.0-2026-03-03 <code data-tag="code" id="757ed6276e6a3" class="code"><b>Recommended</b></code></p></td></tr><tr id="585c9cb8a9c59"><td id="a28f81c1abfne" rowspan="1" style="vertical-align:middle" colspan="1"><p id="1667d636a9xam">qwen-image-max</p><blockquote id="3da7515a677a4">Same capabilities as qwen-image-max-2025-12-30</blockquote></td><td id="42da289f099wx" rowspan="2" style="vertical-align:middle" colspan="1"><p id="b4aaf1dcbadwe">Qwen Max series for image generation. Delivers higher realism and naturalness, with fewer AI-generation artifacts.</p></td><td id="3d983e4101v1i" rowspan="5" style="vertical-align:middle" colspan="1"><p id="1321e3475cpnf">Resolution: See <a href="#1c7b41f2d13sv" id="2c633272911g7" title="" class="xref">size parameter settings</a> for supported resolutions and aspect ratios.</p><p id="075ce23d51k4p">Format: PNG</p><p id="038d16c8e9w5j">Number of images: Fixed at 1</p></td></tr><tr id="ab0205f0d74m8"><td id="58b0d1adedz2n" rowspan="1" colspan="1"><p id="03134f26553s2">qwen-image-max-2025-12-30</p></td></tr><tr id="5b11beacb5te6"><td id="b416a10f62tu3" rowspan="1" colspan="1"><p id="ca2f3cc589dtc">qwen-image-plus</p><blockquote id="ec6cf5e918055">Same capabilities as qwen-image</blockquote></td><td id="bd1977971as4m" rowspan="3" colspan="1"><p id="8c09a84fc7vsf">Qwen Plus series for image generation. Excels at diverse artistic styles and text rendering.</p></td></tr><tr id="c4e8087fb26v5"><td id="7b54d7a410pwu" rowspan="1" colspan="1"><p id="65060baacbshe">qwen-image-plus-2026-01-09</p></td></tr><tr id="cfc62353b33kj"><td id="6d25e5174fpou" rowspan="1" colspan="1"><p id="d132078d6a4ci">qwen-image</p></td></tr></tbody></table></div><blockquote id="f614e4ac5dm0e">Only qwen-image-plus and qwen-image support <a href="#0d8029dcc8pxl" id="c901779a32fs7" title="" class="xref">asynchronous calls</a>.</blockquote><div id="fbee0aaf572e7" type="note" class="note note-note"><div class="note-icon-wrapper"><i class="icon-note note note"></i><strong>Note </strong></div><div class="noteContentSpan"><p id="25eb2503a2w7z">Before calling the API, check the <span props="intl"><a href="/help/en/model-studio/models#9648161a22le8" id="8d17573a93byr" title="" class="xref">supported models list</a></span> for your region.</p></div></div></section><section id="e9c6aaa30fykr" class="section"><h2 id="0e41425c577u4">Prerequisites</h2><section id="09d4bceff1xvo" docid="5733862" is-conref="true" class="section"><p id="83a88c10679hg">Before making a call, <a href="/help/en/model-studio/get-api-key" id="b4e5f0bf6dle1" title="" class="xref">get an API key</a> and <a href="/help/en/model-studio/configure-api-key-through-environment-variables" id="c8fc53cf2bj54" title="" class="xref">export the API key as an environment variable</a>. To make calls using the SDK, <a href="/help/en/model-studio/install-sdk" id="382007856ck3r" title="" class="xref">install the DashScope SDK</a>.</p></section><div id="2547da0c74sdb" type="important" docid="5749641" is-conref="true" class="note note-important"><div class="note-icon-wrapper"><i class="icon-note note important"></i><strong>Important </strong></div><div class="noteContentSpan"><p id="e4a87a88b81k8">The Beijing and Singapore regions have separate <b>API keys</b> and <b>request endpoints</b>. They cannot be used interchangeably. Cross-region calls lead to authentication failures or service errors.</p></div></div></section><section id="aaff07612e7ic" class="section"><h2 id="39337f0fd0wzt"><b>Synchronous API (recommended)</b></h2><section id="8fd426a914rmk" class="section"><h3 id="90575c8228nmq"><b>HTTP</b></h3><p id="e9c45b9d525y9">Qwen-Image supports synchronous calls, returning results in a single request.</p><section id="f626320941v5j" props="intl" data-cond-props="intl" class="section"><p id="114fc83acdx6e"><b>Singapore: </b><code data-tag="code" code-type="xCode" data-init-id="08d1ad3361z8r" id="2b2228fbe6r6o" class="code">POST https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation</code></p><p id="b101a110ab7o5"><b>Beijing: </b><code data-tag="code" id="889cbcf90c4o9" class="code">POST https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation</code></p></section><section id="f83b1c49d5qr1" class="section"><div class="table-wrapper table-wrapper-intl"><table bordertype="no-border" id="c040b9be1bko2" outputclass="api-reference column-layout" tablewidth="100" tablecolswidth="53.93 46.07" autofit="true" class="api-reference column-layout table table-no-border" minwidth="351.63881050575213"><colgroup colwidth="1.08*" style="width:53.93%"></colgroup><colgroup colwidth="0.92*" style="width:46.07%"></colgroup><tbody class="tbody"><tr id="9555bf4ea7gkl" outputclass="test" class="test"><td id="e779185d823d5" rowspan="1" style="vertical-align:top" colspan="1"><h4 id="576ce84612n7u">Request parameters</h4></td><td id="7ad10cfdc2fu7" rowspan="8" style="vertical-align:top" colspan="1"><section id="f0e4b3968fgp8" outputclass="stick-top" class="stick-top section"></section><section id="bffd5cb561698" class="section"><section data-tag="tabbed-content-box" id="c371e9f4b8lth" outputclass="tabbed-content-box" props="intl" data-cond-props="intl" class="tabbed-content-box section"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="93dc7a33402e0">Text-to-image</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="3fe6ada40asdh" class="section" style="display: block;">
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="ce070cce40scj" outputclass="language-curl" class="pre codeblock language-curl"><code data-highlighted="yes" class="hljs language-curl"><span class="hljs-keyword">curl</span> <span class="hljs-literal">--location</span> <span class="hljs-string">'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation'</span> \
+<span class="hljs-literal">--header</span> <span class="hljs-string">'Content-Type: application/json'</span> \
+<span class="hljs-literal">--header</span> <span class="hljs-string">"Authorization: Bearer $DASHSCOPE_API_KEY"</span> \
+<span class="hljs-literal">--data</span> <span class="hljs-string">'{
+    "model": "qwen-image-2.0-pro",
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."
+            }
+          ]
+        }
+      ]
+    },
+    "parameters": {
+      "negative_prompt": "Low resolution, low quality, distorted limbs, malformed fingers, oversaturated colors, wax-figure appearance, lack of facial detail, excessive smoothness, AI-looking artifacts, chaotic composition, blurry or warped text.",
+      "prompt_extend": true,
+      "watermark": false,
+      "size": "2048*2048"
+    }
+}'</span></code></pre>
+    </div>
+    </section></section></section></td></tr><tr id="6dcd0ec62exr9"><td id="161501ba9br74" rowspan="1" style="vertical-align:middle" colspan="1"><h5 id="bb0a157056fbk">Request headers</h5></td></tr><tr id="38e8b6669f0yi" outputclass="test" class="test"><td id="4416555064wd8" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="d398337f8cu7f" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="b35b36152auao"><b>Content-Type</b> <code data-tag="code" code-type="xCode" id="9d0e02b383aea" class="code"><i>string</i></code> <b>(Required)</b></p><p jc="left" id="c84336268andm" style="text-align:left">The content type of the request. Must be <code data-tag="code" code-type="xCode" id="e629c56e1e0ss" class="code">application/json</code>.</p></section></td></tr><tr id="7b9713aa79gxb" outputclass="test" class="test"><td id="125993c123jbo" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="6f9e428fde39p" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="ac48af82483to"><b>Authorization</b> <code data-tag="code" code-type="xCode" id="7c35409e8enfj" class="code"><i>string</i></code> <b>(Required)</b></p><p jc="left" id="a1b0e25ac4cv4" style="text-align:left">Authenticates the request with a Model Studio API key. Example: Bearer sk-xxxx.</p></section></td></tr><tr id="126c6be574q98" outputclass="test" class="test"><td id="ce34530d307vg" rowspan="1" style="vertical-align:middle" colspan="1"><h5 id="45d1fa2260zn6">Request body</h5></td></tr><tr id="a0ca21d3fbxrh" outputclass="test" class="test"><td id="d078d05210heu" rowspan="1" style="vertical-align:middle" colspan="1"><section id="a88975433267s" class="section"><p id="d428f3b56boci"><b>model</b> <code data-tag="code" code-type="xCode" id="6e2610e668vhz" class="code"><i>string</i></code> <b>(required)</b></p><p id="cbb63b4d3a3zk">Model name. Example: <code data-tag="code" id="13068eb7aa8w7" class="code">qwen-image-2.0-pro</code>.</p></section></td></tr><tr id="edc914efe2ax8"><td id="dd0cd7340aduy" rowspan="1" style="vertical-align:middle" colspan="1"><section id="99af911dd2z4b" class="section"><p id="f96cfad0daftb"><b>input</b> <code data-tag="code" code-type="xCode" id="1164859cb0cis" class="code"><i>object</i></code> <b>(required)</b></p><p id="ab8a7e44e0sss">Input information.</p>
+    <section class="collapse expanded" id="b547ea59651ml">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="af6ff14b96vxt" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="49af94f7d97ys" class="section"><p id="81bac4cdf4drw"><b>messages</b> <code data-tag="code" code-type="xCode" id="925ad8357bx8l" class="code"><i>array</i></code> <b>(required)</b></p><p id="cf49bd82ec61d">Array of message objects. <b>Only single-turn conversations are supported</b>, so the array must contain exactly one element.</p>
+    <section class="collapse expanded" id="0e015253b75h9">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="75945efc0eabf" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="05d5c196e7op3" class="section"><p id="afea61305egt7"><b>role </b><code data-tag="code" id="ad982596c06zy" class="code"><i>string</i></code> <b>(required)</b></p><p id="468a06de1awrt">Message role. Set to <code data-tag="code" id="9caa52b0885l7" class="code">user</code>.</p></section><section id="3ecac848bettg" class="section"><p id="4e30030880eua"><b>content </b><code data-tag="code" id="e4d2984ef2r5j" class="code"><i>array</i></code> <b>(required)</b></p><p id="7a48190ae5q2h">Array of message content objects.</p>
+    <section class="collapse expanded" id="6f48864450h9x">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="2a03fdd702su1" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="c3f54455a79tt" class="section"><p id="35e695465edfa"><b>text </b><code data-tag="code" code-type="xCode" id="6d8a3d0ac4vwr" class="code"><i>string</i></code><b> (required)</b></p><p jc="left" id="e7322777a53h0" uuid="me9dqkg2ebfzqgyrree" style="text-align:left">A positive prompt describing the image content, style, and composition you want.</p><p jc="left" id="599c52b3eetts" uuid="me9dqkg222uqdtoauno" style="text-align:left">Supports Chinese and English. Maximum length is 800 characters. Each Chinese character, letter, digit, or symbol counts as one character. Excess characters are truncated automatically.</p><p jc="left" id="5e39f00e4bzmc" uuid="me9dqkg27kmdkm9gzh6" style="text-align:left">Example: A sitting orange cat with a joyful expression, lively and adorable, highly realistic.</p><p jc="left" id="47c7b91701vxv" uuid="metrcjk1yd1lbqmfgbr" style="text-align:left"><b>Note:</b> Only one text field is allowed. Omitting it or providing more than one returns an error.</p></section>
+      </div>
+    </section>
+  </section>
+      </div>
+    </section>
+  </section>
+      </div>
+    </section>
+  </section></td></tr><tr id="d8ba85e0c3hxa" outputclass="test" class="test"><td id="22da5b9c3d13c" rowspan="1" style="vertical-align:middle" colspan="1"><section id="1c7b41f2d13sv" class="section"><p id="279f492bd3rwk"><b>parameters</b> <code data-tag="code" code-type="xCode" data-init-id="b938210d961ia" id="db452fe9d80x1" class="code"><i>object</i></code> (optional)</p><p id="8e1e27279cpet">Image processing parameters.</p>
+    <section class="collapse expanded" id="e346aefbb8luh">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="4653ae653d3tq" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="89ae3a4359dp2" docid="5632589" is-conref="true" class="section"><p data-init-id="8be4f74eb1f08" id="20c8ad2b27d4c"><b>negative_prompt</b> <code data-tag="code" code-type="xCode" data-init-id="14455a9f7dglm" id="e8497b249ducj" class="code"><i>string</i></code> (optional)</p><p data-init-id="b8f1f5a69bw45" id="7c54f8df75lf2">A negative prompt describing what you do not want in the image.</p><p data-init-id="dde3861a5dxe3" id="bd2186bb4bwk7">Supports Chinese and English. Maximum length is 500 characters. Excess characters are truncated automatically.</p><p data-init-id="5f915669974n9" id="c2bab2510da9r">Example: Low resolution, low quality, distorted limbs, malformed fingers, oversaturated colors, wax-like appearance, no facial details, overly smooth surfaces, AI-generated look. Chaotic composition. Blurry or distorted text.</p></section><section id="15a0b9198dseo" class="section"><p data-init-id="c042137751rzl" id="7654646d68bw5"><b>size</b> <code data-tag="code" code-type="xCode" data-init-id="9ee4660868nv9" id="7c77307b947yj" class="code"><i>string</i></code> (optional)</p><p data-init-id="c50477982addn" id="b5b516083chkx">Output image resolution, formatted as <code data-tag="code" data-init-id="e75cced7ddnbq" id="cc0ce0bef43ga" class="code">width*height</code>.</p><p id="b5b516083chk1"><b>qwen-image-2.0 series models:</b> Total pixels must be between <code data-tag="code" id="aa31f87557rge" class="code">512*512</code> and <code data-tag="code" id="b3c3850802pzm" class="code">2048*2048</code>. Default resolution is <code data-tag="code" id="8064c9354aht1" class="code">2048*2048</code>. Recommended resolutions: </p><ul id="db233aedf4so1"><li id="72853e067fz0k"><p jc="left" id="3ad77b1d64hu4" style="text-align:left"><code data-tag="code" id="eaa566c24fi32" class="code">2688*1536</code>: 16:9</p></li><li id="ad482158b9ix4"><p jc="left" id="42857459dfq1u" style="text-align:left"><code data-tag="code" id="4d62393b5fnmz" class="code">1536*2688</code>: 9:16</p></li><li id="89d56af145j64"><p jc="left" id="d09c92249285v" style="text-align:left"><code data-tag="code" id="0df78d2a09uee" class="code">2048*2048</code> <b>(default)</b>: 1:1</p></li><li id="7e7123a53fkzp"><p jc="left" id="3cbd8deee35n0" style="text-align:left"><code data-tag="code" id="deb2079e0cewi" class="code">2368*1728</code>: 4:3</p></li><li id="b2d8da0389v1b"><p jc="left" id="97dd29decb6nd" style="text-align:left"><code data-tag="code" id="2fb4c01e58i31" class="code">1728*2368</code>: 3:4</p></li></ul><p id="b5b516083chk2"><b>qwen-image-max and qwen-image-plus series models:</b> Default resolution is <code data-tag="code" data-init-id="a42e41bf99u5u" id="8064c9354ahtm" class="code">1664*928</code>. Supported resolutions and their aspect ratios: </p><ul data-init-id="fe14a9e2b2783" id="e2fca577f9d3g"><li data-init-id="9afc08b28c7ul" id="23dc9a46a0vbr"><p data-init-id="01532fea160wk" id="e7ebcbe69af08"><code data-tag="code" id="6d229b36c3i0r" class="code">1664*928</code> <b>(default)</b>: 16:9</p></li><li data-init-id="46b6c66fcb3jn" id="42790b2773rnt"><p data-init-id="524299ece7e3e" id="8f5421b24eaqj"><code data-tag="code" data-init-id="f046cac874yw0" id="eb3edd447edfq" class="code">1472*1104</code>: 4:3</p></li><li data-init-id="674af97711t3z" id="663e96f150pzw"><p data-init-id="add492d091d1w" id="779480d0f7zpj"><code data-tag="code" data-init-id="200cbbac0echb" id="16a82505c6sew" class="code">1328*1328</code>: 1:1</p></li><li data-init-id="7ad4143d96sss" id="582703613a81l"><p data-init-id="324c65ddd0z04" id="361797210cmol"><code data-tag="code" data-init-id="da84a4d90alm1" id="229f21dba7qqf" class="code">1104*1472</code>: 3:4</p></li><li data-init-id="547aca5505dgj" id="cf3b47fc46g5r"><p data-init-id="1e8dcba4dbicb" id="d994905016udy"><code data-tag="code" data-init-id="eed53eaa03z5t" id="9eb7ee4e500et" class="code">928*1664</code>: 9:16</p></li></ul></section><section data-init-id="de6b77046febe" id="2ff7a560efwov" class="section"><p id="a1b2c3n00001"><b>n</b> <code data-tag="code" code-type="xCode" id="a1b2c3n00002" class="code"><i>integer</i></code> (optional)</p><p id="a1b2c3n00003">Number of output images. Default is 1.</p><p id="a1b2c3n00004">For qwen-image-2.0 series models, you can choose 1–6 images.</p><p id="a1b2c3n00005">For qwen-image-max and qwen-image-plus series models, this value is fixed at 1. Setting any other value returns an error.</p></section><section data-init-id="6a4fb15ed0sgh" id="bc0895baf7z2j" docid="5632589" is-conref="true" class="section"><p data-init-id="5f6a27b7b4gw9" id="6f30126292dz4"><b>prompt_extend</b> <code data-tag="code" code-type="xCode" data-init-id="a97b3fdf5acuw" id="35d068c38as6k" class="code"><i>bool</i></code> (optional) </p><p data-init-id="7287b8c93di59" id="7805ca27a6c8u" uuid="m0ku51w10fympmapw55o">Enable smart prompt rewriting. The model optimizes the positive prompt. Does not affect the negative prompt.</p><ul data-init-id="7cdd6cbb54ttx" id="c1801c4f31vmq"><li data-init-id="e715f6f0b9k5k" id="de99908e7d8oc"><p data-init-id="3f4797a84c8n2" id="26f6d4ed9bj4d"><code data-tag="code" data-init-id="bba61dd479ane" id="6fc65528c4idh" class="code">true</code>: <b>Default</b>. Enables rewriting. Use this for more diverse image content; the model adds details.</p></li><li data-init-id="57b52637a22hl" id="947425e15bcfy"><p data-init-id="9c3a5ace95kzj" id="3b1cf3a1bfh8g"><code data-tag="code" data-init-id="e5a9b44d3amqy" id="d8a1f2d48eh3e" class="code">false</code>: Disables rewriting. Use this for tighter control over image details. For best results, optimize your prompts based on <a href="/help/en/model-studio/text-to-image-prompt" id="87a0d304acugr" title="" class="xref">Text-to-image prompt guide</a>.</p></li></ul>
+    <section class="collapse" id="87d500d72ctsi">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-init-id="be2e8aade56xy" data-tag="expandable-title" id="3d45022ab4kmw" class="expandable-title">View rewriting examples</p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <blockquote data-init-id="cf96402c3awgj" id="3a21eb6d75lmw">Only asynchronous calls return the actual rewritten prompt.</blockquote><p data-init-id="88e04487c26bp" id="9111f505a8ler"></p><p data-init-id="43e9378407n6e" id="f84dd2876cm25"></p><p data-init-id="ff13d99924yi5" id="dd7c4bf3e4kli"><span data-tag="ph" data-init-id="407586f307gqp" id="2979ecc4a26bm" props="intl" data-cond-props="intl" class="ph"><b>Original prompt (orig_prompt)</b>: A sitting ginger cat with a joyful expression, looking lively, adorable, and incredibly lifelike.</span></p><p data-init-id="5113e0dc21o2q" id="d4a1951be4dnr"><span data-tag="ph" data-init-id="da120308b79ky" id="143eae055ane0" props="intl" data-cond-props="intl" class="ph"><b>Actual prompt (actual_prompt)</b>: Photorealistic wildlife portrait: A sitting ginger cat with lush, sun-kissed fur and a vibrant, joyful expression, eyes sparkling with curiosity and warmth. The cat's head is slightly tilted, ears perked forward, mouth gently open in a contented, lively pose—exuding adorable charm and incredible lifelike detail. Soft natural lighting enhances the texture of each individual whisker and fur strand, with subtle highlights on the muzzle and inner ears. Background: a softly blurred autumn garden at golden hour—warm tones of amber leaves, dappled sunlight filtering through trees, and faint hints of mossy stone steps. Composition emphasizes the cat as the central focal point, captured in sharp focus with shallow depth of field. Style: ultra-realistic photography, National Geographic-level detail, 8K resolution, Canon EOS R5, f/1.2 aperture, cinematic lighting, true-to-life color grading, minimal post-processing. No text or overlays.</span></p>
+      </div>
+    </section>
+  </section><section data-init-id="7fb5fa3449p87" id="c8f78b5c818vt" docid="5632589" is-conref="true" class="section"><p data-init-id="294d7d8f02ufr" id="0ab2f3507dkkk"><b>watermark</b> <code data-tag="code" code-type="xCode" data-init-id="2b6cba9dfd3t2" id="62b5b9b54b8d9" class="code"><i>bool</i></code> (optional) </p><p data-init-id="f41bdc06a0abq" id="426f06c975gll" uuid="m0ku51w10fympmapw55o">Adds a “Qwen-Image” watermark to the bottom-right corner of the image. Default: <code data-tag="”code”" data-init-id="”debac1cf0fc4x”" id="27833d8bd8611" uuid="”mfl0ph4y4b8d8eqc21c”" class="”code”">false</code>. Watermark style: <img alt="1" data-init-id="1f43d4c796wzz" height="24" id="b146ff0b97om3" placement="inline" src="https://help-static-aliyun-doc.aliyuncs.com/assets/img/en-US/6844029571/p1012089.jpg" width="80.293" class="image inline"></p></section><section id="3fb51871efoyy" docid="5859561" is-conref="true" class="section"><p data-init-id="8f53ccf9e9gnv" id="e9f7d126b5x15"><b>seed</b> <code data-tag="code" code-type="xCode" data-init-id="186ea99ea8f89" id="3b0658d916q3r" class="code"><i>integer</i></code> (optional)</p><p data-init-id="f8e5b2ca11ipt" id="f160a965aceef">Random number seed. Valid range: <code data-tag="code" data-init-id="b14c01c95bx29" id="d863a185f9lhg" class="code">[0,2147483647]</code>.</p><p data-init-id="482f5dea79bmv" id="459ae9b37ealp">Using the same <code data-tag="code" class="code react-markdown-blog-code" data-init-id="528d154898f4h" id="6f16a7ad46kic">seed</code> yields similar outputs. If omitted, the algorithm uses a random seed.</p><p data-init-id="c58eaf7d687si" id="42141b0cf2syi"><b>Note:</b> Image generation is probabilistic. Even with the same <code data-tag="code" class="code react-markdown-blog-code" data-init-id="ea4672cf23or5" id="4071d07589nfq">seed</code>, results may vary.</p></section>
+      </div>
+    </section>
+  </section><p id="eca0eb3fdf422"></p></td></tr></tbody></table></div></section><section id="9f422cd223c7n" class="section"><div class="table-wrapper table-wrapper-intl"><table bordertype="no-border" id="977af7f33bl6a" outputclass="api-reference column-layout" tablewidth="100" tablecolswidth="53.54 46.46" autofit="true" class="api-reference column-layout table table-no-border" minwidth="348.6870426173052"><colgroup colwidth="1.07*" style="width:53.54%"></colgroup><colgroup colwidth="0.93*" style="width:46.46%"></colgroup><tbody class="tbody"><tr id="dccbf865a6i9k" outputclass="test" class="test"><td id="60bbce16d8gy8" rowspan="1" style="vertical-align:top" colspan="1"><h4 id="b7e833ee1f962" outputclass="test" class="test">Response parameters</h4></td><td id="825d4906c8n0c" rowspan="6" style="vertical-align:top" colspan="1"><section data-tag="tabbed-content-box" id="e138c09a48j0m" outputclass="tabbed-content-box" class="tabbed-content-box section"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="64fb21fd98plx">Task succeeded</div><div class="tab-item" id="eb0dd4f027fc5">Task failed</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="2297bf0b09lsh" class="section" style="display: block;"><section id="f6fd695fa14qt" docid="6306505" is-conref="true" class="section"><p jc="left" id="78cab11d19edt" style="text-align:left">Image URLs are valid for only 24 hours and then automatically purged. Save generated images promptly.</p></section>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="7fd21d5961ovj" index="0" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"choices"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+            <span class="hljs-punctuation">{</span>
+                <span class="hljs-attr">"finish_reason"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"stop"</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+                    <span class="hljs-attr">"content"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+                        <span class="hljs-punctuation">{</span>
+                            <span class="hljs-attr">"image"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/xxx.png?Expires=xxx"</span>
+                        <span class="hljs-punctuation">}</span>
+                    <span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+                    <span class="hljs-attr">"role"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"assistant"</span>
+                <span class="hljs-punctuation">}</span>
+            <span class="hljs-punctuation">}</span>
+        <span class="hljs-punctuation">]</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"usage"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"height"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2048</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"image_count"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"width"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2048</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"d0250a3d-b07f-49e1-bdc8-6793f4929xxx"</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section><section id="f4c13d9715aus" class="section"><section id="c5c794d831oej" class="section"><p id="2e15e95258mwf">If the task fails, the response includes error details in the code and message fields. See <a href="/help/en/model-studio/error-code" id="48f9fa21dd7bb" title="" class="xref">Error messages</a>.</p></section>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="77200b9bd6x8n" index="0" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"a4d78a5f-655f-9639-8437-xxxxxx"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"code"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"InvalidParameter"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"num_images_per_prompt must be 1"</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section></section></td></tr><tr id="e2e382ef8f10s"><td id="4ae7150115h4t" rowspan="1" style="vertical-align:middle" colspan="1"><p id="825be0811b9vl"><b>output</b> <code data-tag="code" code-type="xCode" id="63156937ffru1" class="code"><i>object</i></code> </p><p id="368c2fc125ajw">Task output information.</p>
+    <section class="collapse expanded" id="93e7f0d7e4keq">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="d552bfcaa240t" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="d31dc7bd42453" class="section"><p id="197d2f47f26od"><b>choices</b> <code data-tag="code" id="d1a0c4d44fuwr" class="code"><i>array</i></code></p><p jc="left" id="eb1740e591fr4" style="text-align:left">Model output. This array contains exactly one element.</p>
+    <section class="collapse expanded" id="e9b6cb9c5clw7">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="71350d78e90zl" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="f281b85b50r8v" class="section"><p id="22f7daf4efeb4"><b>finish_reason</b>&nbsp;<code data-tag="code" class="code" code-type="xCode" id="4a8f4987a6ksv"><i>string</i></code></p><p jc="left" id="e0a5184037cda" style="text-align:left">Reason the task stopped. Value is <code data-tag="code" id="de14fc819bj0z" class="code">stop</code> for natural stops.</p></section><section id="c279dfe076gin" class="section"><p id="825f42afe1usf"><b>message</b> <code data-tag="code" code-type="xCode" data-init-id="925ad8357bx8l" id="6085620dd98cq" class="code"><i>object</i></code></p><p jc="left" id="10b75d5c3dvqk" style="text-align:left">Model response message.</p>
+    <section class="collapse expanded" id="8f71d65383rxt">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="460d832ae164k" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="beca31c63bguu" class="section"><p id="e41f201482opf"><b>role </b><code data-tag="code" data-init-id="ad982596c06zy" id="d128363a8687h" class="code"><i>string</i></code> </p><p id="0b0cd53a0a0sd">Message role. Fixed value: <code data-tag="code" class="code" code-type="xCode" id="e0614c5d45no2">assistant</code>.</p></section><section id="cf83c9e6723lz" class="section"><p id="961d37d415naf"><b>content </b><code data-tag="code" data-init-id="e4d2984ef2r5j" id="c092828988qjw" class="code"><i>array</i></code> </p>
+    <section class="collapse expanded" id="229d07229bpuy">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="e962ba174ck3h" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="356d9f1832iuf" class="section"><p id="59bddceb27oub"><b>image</b> <code data-tag="code" data-init-id="ad982596c06zy" id="0b43bbd2eb47u" class="code"><i>string</i></code> </p><p id="08fdcff302xmu">URL of the generated image (PNG format). <b>Expires after 24 hours</b>. Download and save it promptly.</p></section>
+      </div>
+    </section>
+  </section>
+      </div>
+    </section>
+  </section>
+      </div>
+    </section>
+  </section><section id="8e21ed4b75ced" class="section"><p jc="left" id="aa3a027e60od0" style="text-align:left"><b>task_metric</b> <code data-tag="code" code-type="xCode" id="fe98d8a096qu1" class="code"><i>object</i></code></p><p id="2215441c0afqr">Task result statistics. Not returned for qwen-image-2.0 series models.</p>
+    <section class="collapse expanded" id="a2ed8174f74t5">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="d695b11132chc" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="0c893fc7fcycc" class="section"><p id="0f7aea6620q80"><b>TOTAL</b> <code data-tag="code" code-type="xCode" id="29bc000a66nbi" class="code"><i>integer</i></code></p><p jc="left" id="623d1e87984fy" style="text-align:left">Total number of tasks.</p></section><section id="414859935bsjb" class="section"><p id="4d1b3bf561n3p"><b>SUCCEEDED</b> <code data-tag="code" code-type="xCode" id="f25d623b3drqi" class="code"><i>integer</i></code></p><p jc="left" id="046ddf326bdpa" style="text-align:left">Number of successful tasks.</p></section><section id="c76a35c788o2h" class="section"><p id="eccd3658cbt48"><b>FAILED</b> <code data-tag="code" code-type="xCode" id="3f9c8a7175kys" class="code"><i>integer</i></code></p><p jc="left" id="9a63dcee3a5cr" style="text-align:left">Number of failed tasks.</p></section>
+      </div>
+    </section>
+  </section>
+      </div>
+    </section>
+  </td></tr><tr id="f0300ea3e3np6"><td id="d1e14dec01z12" rowspan="1" colspan="1"><section id="ab6208da34feg" class="section"><p id="d2bf84ad78u16"><b>usage</b> <code data-tag="code" code-type="xCode" data-init-id="63156937ffru1" id="1259b38a34h5z" class="code"><i>object</i></code></p><p id="53c2baa7ecaon">Output statistics. Counts only successful results.</p>
+    <section class="collapse expanded" id="3bf90a0220x4j">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="c58e952c84z79" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="dc1f0e2c16dpt" class="section"><p id="5af2be3fc2314"><b>image_count</b> <code data-tag="code" code-type="xCode" id="d05347fe57ioy" class="code"><i>integer</i></code></p><p id="23e89aac279hz">Number of generated images. Fixed at 1.</p></section><section id="13f1739f5fabd" class="section"><p id="2b41532c20gru"><b>width</b> <code data-tag="code" code-type="xCode" data-init-id="d05347fe57ioy" id="4885aa239f6wl" class="code"><i>integer</i></code></p><p id="ebe379a19b56n">Width of the generated image, in pixels.</p></section><section id="8f75eef9dckpd" class="section"><p id="6c195398f752x"><b>height</b> <code data-tag="code" code-type="xCode" data-init-id="d05347fe57ioy" id="0897017853023" class="code"><i>integer</i></code></p><p id="4cf4ad25f1bh3">Height of the generated image, in pixels.</p></section>
+      </div>
+    </section>
+  </section></td></tr><tr id="d4c4d3c591gz0" outputclass="test" class="test"><td id="e230c768ae0yf" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="26ff5251b8zi5" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="f8ad0d8e5fmh3"><b>request_id</b> <code data-tag="code" code-type="xCode" id="3f24e7a18c86z" class="code"><i>string</i></code></p><p id="50e43a8e01stk">Unique request identifier for tracing and troubleshooting.</p></section></td></tr><tr id="a129ed78dc401"><td id="897d26defd3ty" rowspan="1" colspan="1"><section data-ref-searchable="yes" id="1c12843ae83tm" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="0e54bb3abdsfz"><b>code</b> <code data-tag="code" code-type="xCode" id="747a126bbd65i" class="code"><i>string</i></code></p><p id="b634d3711cwim">Error code. Returned only for failed requests. See <a href="/help/en/model-studio/error-code" id="8ce79bbfb6xfs" title="" class="xref">Error messages</a>.</p></section></td></tr><tr id="eee56846e9kjz"><td id="3afc5937a4qir" rowspan="1" colspan="1"><section data-ref-searchable="yes" id="504c5c5dbc9vy" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="aa9502135bkcx"><b>message</b> <code data-tag="code" code-type="xCode" id="319e9daaccg6n" class="code"><i>string</i></code></p><p id="49943cf91bcyu">Detailed error message. Returned only for failed requests. See <a href="/help/en/model-studio/error-code" id="201837a58b7du" title="" class="xref">Error messages</a>.</p></section></td></tr></tbody></table></div></section></section><hr data-path="7,2" id="5509lg"><section id="9d830ebd765hk" class="section"><h3 id="bc5bea44cab1b"><b>DashScope SDK call</b></h3><p id="328030076a012">The DashScope SDK supports Python and Java.</p><p id="ddef3a4d79tod">The parameter names in the SDK closely match the HTTP parameters, and the parameter structures follow language-specific conventions. For synchronous call parameters, see <a href="#90575c8228nmq" id="998ed3b827rly" title="" class="xref">HTTP</a>.</p><section data-tag="tabbed-content-box" id="a21302518f89e" outputclass="tabbed-content-box" class="tabbed-content-box section"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="310b4ec866uez">Python</div><div class="tab-item" id="98754beb2334v">Java</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="b683e4765a9ab" class="section" style="display: block;"><section id="6c23b6d3f74yl" class="section"><div id="8e4eedc024fb9" type="note" docid="5632589" is-conref="true" class="note note-note"><div class="note-icon-wrapper"><i class="icon-note note note"></i><strong>Note </strong></div><div class="noteContentSpan"><p data-init-id="6452587080jte" id="6b71f69711wf1">You must install the latest DashScope Python SDK. Otherwise, runtime errors may occur: <a href="/help/en/model-studio/install-sdk" id="ad8805a519gl6" title="" class="xref">Install SDK</a>.</p></div></div><section id="ae4dbeda3cmsl" class="section"><h5 id="3dcaa20713o8e"><b>Request example</b></h5>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="631d94b46f48x" index="0" outputclass="language-python" props="intl" data-cond-props="intl" class="pre codeblock language-python"><code data-highlighted="yes" class="hljs language-python"><span class="hljs-keyword">import</span> json
+<span class="hljs-keyword">import</span> os
+<span class="hljs-keyword">import</span> dashscope
+<span class="hljs-keyword">from</span> dashscope <span class="hljs-keyword">import</span> MultiModalConversation
+
+<span class="hljs-comment"># Use this URL for Singapore region. For Beijing region, replace with: https://dashscope.aliyuncs.com/api/v1</span>
+dashscope.base_http_api_url = <span class="hljs-string">'https://dashscope-intl.aliyuncs.com/api/v1'</span>
+
+messages = [
+    {
+        <span class="hljs-string">"role"</span>: <span class="hljs-string">"user"</span>,
+        <span class="hljs-string">"content"</span>: [
+            {<span class="hljs-string">"text"</span>: <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span>}
+        ]
+    }
+]
+
+<span class="hljs-comment"># API keys differ between Beijing and Singapore regions. Get your API key: https://www.alibabacloud.com/help/zh/model-studio/get-api-key</span>
+<span class="hljs-comment"># If you haven't set the environment variable, replace the line below with: api_key="sk-xxx"</span>
+api_key = os.getenv(<span class="hljs-string">"DASHSCOPE_API_KEY"</span>)
+
+response = MultiModalConversation.call(
+    api_key=api_key,
+    model=<span class="hljs-string">"qwen-image-2.0-pro"</span>,
+    messages=messages,
+    result_format=<span class="hljs-string">'message'</span>,
+    stream=<span class="hljs-literal">False</span>,
+    watermark=<span class="hljs-literal">False</span>,
+    prompt_extend=<span class="hljs-literal">True</span>,
+    negative_prompt=<span class="hljs-string">"Low resolution, low quality, distorted limbs, malformed fingers, oversaturated colors, wax-figure appearance, lack of facial detail, excessive smoothness, AI-looking artifacts, chaotic composition, blurry or warped text."</span>,
+    size=<span class="hljs-string">'2048*2048'</span>
+)
+
+<span class="hljs-keyword">if</span> response.status_code == <span class="hljs-number">200</span>:
+    <span class="hljs-built_in">print</span>(json.dumps(response, ensure_ascii=<span class="hljs-literal">False</span>))
+<span class="hljs-keyword">else</span>:
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">f"HTTP status code: <span class="hljs-subst">{response.status_code}</span>"</span>)
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">f"Error code: <span class="hljs-subst">{response.code}</span>"</span>)
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">f"Error message: <span class="hljs-subst">{response.message}</span>"</span>)
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">"See documentation: https://www.alibabacloud.com/help/zh/model-studio/error-code"</span>)
+</code></pre>
+    </div>
+    </section><section id="3c7a1c0805hcc" class="section"><h5 id="f60171c71fg3t"><b>Response example</b></h5><blockquote id="8ee7322c7fbp0">Image URLs expire after 24 hours. Download the images promptly.</blockquote>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="2e4f0fd14beln" index="0" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"status_code"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">200</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"d2d1a8c0-325f-9b9d-8b90-xxxxxx"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"code"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">""</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">""</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"text"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">null</span></span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"finish_reason"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">null</span></span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"choices"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+            <span class="hljs-punctuation">{</span>
+                <span class="hljs-attr">"finish_reason"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"stop"</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+                    <span class="hljs-attr">"role"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"assistant"</span><span class="hljs-punctuation">,</span>
+                    <span class="hljs-attr">"content"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+                        <span class="hljs-punctuation">{</span>
+                            <span class="hljs-attr">"image"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"https://dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com/xxx.png?Expires=xxx"</span>
+                        <span class="hljs-punctuation">}</span>
+                    <span class="hljs-punctuation">]</span>
+                <span class="hljs-punctuation">}</span>
+            <span class="hljs-punctuation">}</span>
+        <span class="hljs-punctuation">]</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"usage"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"input_tokens"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"output_tokens"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"width"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2048</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"image_count"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"height"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2048</span>
+    <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section></section></section><section id="2f5dfd612dgzz" class="section"><section id="5b3e227654jbg" class="section"><div id="5dcc2a5731h0g" type="note" docid="5632589" is-conref="true" class="note note-note"><div class="note-icon-wrapper"><i class="icon-note note note"></i><strong>Note </strong></div><div class="noteContentSpan"><p data-init-id="15982bb560b88" id="f65e2647435l6">You must install the latest DashScope Java SDK. Otherwise, runtime errors may occur: <a href="/help/en/model-studio/install-sdk" id="d35ca33922448" title="" class="xref">Install SDK</a>.</p></div></div><section id="4202ee135a65v" class="section"><h5 id="d137cf544fnw6"><b>Request example</b></h5>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="40ab597e21dh9" index="1" outputclass="language-java" props="intl" data-cond-props="intl" class="pre codeblock language-java"><code data-highlighted="yes" class="hljs language-java"><span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversation;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationParam;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationResult;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.common.MultiModalMessage;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.common.Role;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.exception.ApiException;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.exception.NoApiKeyException;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.exception.UploadFileException;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.utils.JsonUtils;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.utils.Constants;
+
+<span class="hljs-keyword">import</span> java.io.IOException;
+<span class="hljs-keyword">import</span> java.util.Arrays;
+<span class="hljs-keyword">import</span> java.util.Collections;
+<span class="hljs-keyword">import</span> java.util.HashMap;
+<span class="hljs-keyword">import</span> java.util.Map;
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">QwenImage</span> {
+
+    <span class="hljs-keyword">static</span> {
+        <span class="hljs-comment">// Use this URL for Singapore region. For Beijing region, replace with: https://dashscope.aliyuncs.com/api/v1</span>
+        Constants.baseHttpApiUrl = <span class="hljs-string">"https://dashscope-intl.aliyuncs.com/api/v1"</span>;
+    }
+
+    <span class="hljs-comment">// API keys differ between Beijing and Singapore regions. Get your API key: https://www.alibabacloud.com/help/zh/model-studio/get-api-key</span>
+    <span class="hljs-comment">// If you haven't set the environment variable, replace the line below with: static String apiKey="sk-xxx"</span>
+    <span class="hljs-keyword">static</span> <span class="hljs-type">String</span> <span class="hljs-variable">apiKey</span> <span class="hljs-operator">=</span> System.getenv(<span class="hljs-string">"DASHSCOPE_API_KEY"</span>);
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">call</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> ApiException, NoApiKeyException, UploadFileException, IOException {
+
+        <span class="hljs-type">MultiModalConversation</span> <span class="hljs-variable">conv</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">MultiModalConversation</span>();
+
+        <span class="hljs-type">MultiModalMessage</span> <span class="hljs-variable">userMessage</span> <span class="hljs-operator">=</span> MultiModalMessage.builder().role(Role.USER.getValue())
+                .content(Arrays.asList(
+                        Collections.singletonMap(<span class="hljs-string">"text"</span>, <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span>)
+                )).build();
+
+        Map&lt;String, Object&gt; parameters = <span class="hljs-keyword">new</span> <span class="hljs-title class_">HashMap</span>&lt;&gt;();
+        parameters.put(<span class="hljs-string">"watermark"</span>, <span class="hljs-literal">false</span>);
+        parameters.put(<span class="hljs-string">"prompt_extend"</span>, <span class="hljs-literal">true</span>);
+        parameters.put(<span class="hljs-string">"negative_prompt"</span>, <span class="hljs-string">"Low resolution, low quality, distorted limbs, malformed fingers, oversaturated colors, wax-figure appearance, lack of facial detail, excessive smoothness, AI-looking artifacts, chaotic composition, blurry or warped text."</span>);
+        parameters.put(<span class="hljs-string">"size"</span>, <span class="hljs-string">"2048*2048"</span>);
+
+        <span class="hljs-type">MultiModalConversationParam</span> <span class="hljs-variable">param</span> <span class="hljs-operator">=</span> MultiModalConversationParam.builder()
+                .apiKey(apiKey)
+                .model(<span class="hljs-string">"qwen-image-2.0-pro"</span>)
+                .messages(Collections.singletonList(userMessage))
+                .parameters(parameters)
+                .build();
+
+        <span class="hljs-type">MultiModalConversationResult</span> <span class="hljs-variable">result</span> <span class="hljs-operator">=</span> conv.call(param);
+        System.out.println(JsonUtils.toJson(result));
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">main</span><span class="hljs-params">(String[] args)</span> {
+        <span class="hljs-keyword">try</span> {
+            call();
+        } <span class="hljs-keyword">catch</span> (ApiException | NoApiKeyException | UploadFileException | IOException e) {
+            System.out.println(e.getMessage());
+        }
+        System.exit(<span class="hljs-number">0</span>);
+    }
+</code></pre>
+    </div>
+    </section><section id="54086c63fcv4o" class="section"><h5 id="9631851c87t5h"><b>Response example</b></h5><blockquote id="1f4974303c7zn">Image URLs expire after 24 hours. Download the images promptly.</blockquote>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="38f80b6fce8ci" index="0" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"requestId"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"5b6f2d04-b019-40db-a5cc-xxxxxx"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"usage"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"image_count"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"width"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2048</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"height"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2048</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"choices"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+            <span class="hljs-punctuation">{</span>
+                <span class="hljs-attr">"finish_reason"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"stop"</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+                    <span class="hljs-attr">"role"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"assistant"</span><span class="hljs-punctuation">,</span>
+                    <span class="hljs-attr">"content"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+                        <span class="hljs-punctuation">{</span>
+                            <span class="hljs-attr">"image"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"https://dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com/xxx.png?Expires=xxx"</span>
+                        <span class="hljs-punctuation">}</span>
+                    <span class="hljs-punctuation">]</span>
+                <span class="hljs-punctuation">}</span>
+            <span class="hljs-punctuation">}</span>
+        <span class="hljs-punctuation">]</span>
+    <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section></section></section></section></section></section><p id="7f81e370f2sd7"></p><section id="5b6f8847dbixx" class="section"><h2 id="0d8029dcc8pxl"><b>Asynchronous API</b></h2><div id="e612005f8eaz5" type="important" class="note note-important"><div class="note-icon-wrapper"><i class="icon-note note important"></i><strong>Important </strong></div><div class="noteContentSpan"><p id="a75143564fteo">Only qwen-image-plus and qwen-image support asynchronous calls.</p></div></div></section><section id="7c782df20fkq8" class="section"><h3 id="42703589880ts"><b>HTTP</b></h3><p id="7b8363c3car4b">Qwen-Image also supports asynchronous calls. The HTTP workflow has two steps:</p><ol id="4c6b458117bj7" start="1"><li data-spm-anchor-id="a2c4g.11186623.0.i4.204b4b3eUGI4ff" id="3635fb178bkqj"><p id="42ba887a8dvxj"><b>Create a task to get a task ID:</b> Send a request to create a task. The response returns a <b>task ID</b> (task_id).</p></li><li id="d63a7c519dz4s"><p id="0ac1ac0800fvk"><b>Poll for results using the task ID:</b> You can use the task_id to poll the task status until it completes and returns an image URL.</p></li></ol><section id="1a5d85859608j" class="section"><h4 id="db8cf70432oe3"><b>Step 1: Create a task to get a task ID</b></h4><section id="c1b6857e2e0oe" props="intl" data-cond-props="intl" class="section"><p id="d456148ec16mc"><b>Singapore: </b><code data-tag="code" id="1eadd38936k2c" class="code">POST https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis</code></p><p id="3b39f6a52bzc3"><b>Beijing: </b><code data-tag="code" id="adc7a97464yhe" class="code">POST https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis</code></p></section><div id="1378a78d6e7kl" type="note" docid="5729257" is-conref="true" class="note note-note"><div class="note-icon-wrapper"><i class="icon-note note note"></i><strong>Note </strong></div><div class="noteContentSpan"><ul id="293298e687o1v"><li id="4f27058238nvw"><p id="8ea87a0a45mar">After the task is created, use the returned <code data-tag="code" id="b357e1caa0kcf" class="code">task_id</code> to query the result. The <code data-tag="code" id="7c21c25b448dg" class="code">task_id</code> is valid for 24 hours. <b>Do not create duplicate tasks</b>. Instead, use polling to retrieve the result.</p></li><li id="ceea565da7a22"><p id="6cd37e3e57tgj">For guidance for beginners, see <a href="/help/en/model-studio/first-call-to-image-and-video-api" id="a28717ba6dqgc" title="" class="xref">Postman</a>.</p></li></ul></div></div><div class="table-wrapper table-wrapper-intl"><table bordertype="no-border" id="d87a249b55qxd" outputclass="api-reference column-layout" tablewidth="100" tablecolswidth="53.95 46.05" autofit="true" class="api-reference column-layout table table-no-border" minwidth="351.79153094462544"><colgroup colwidth="1.08*" style="width:53.95%"></colgroup><colgroup colwidth="0.92*" style="width:46.05%"></colgroup><tbody class="tbody"><tr id="99c9f584c45su" outputclass="test" class="test"><td id="2bd0a0e250y3g" rowspan="1" style="vertical-align:top" colspan="1"><h5 id="afcd41d2b57zf"><b>Request parameters</b></h5></td><td id="229d2c019fsy1" rowspan="9" style="vertical-align:top" colspan="1"><section id="c40d21d966qwm" outputclass="stick-top" class="stick-top section"><section data-tag="tabbed-content-box" id="e9401b8a6c3pv" outputclass="tabbed-content-box margin-top-33" props="intl" data-cond-props="intl" class="tabbed-content-box section margin-top-33"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="7d11f815ecgic">Text-to-image</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="6852fa87903qb" class="section" style="display: block;"><p id="20e1ccff80v0o">Only <code data-tag="code" data-init-id="6efbe01426h3c" id="5bce034ebek4v" class="code">qwen-image-plus</code> and <code data-tag="code" data-init-id="0b30d3059a02r" id="687b62b023tn8" class="code">qwen-image</code> support asynchronous calls.</p><section id="307754aa5fo9f" class="section">
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="9011a173feraj" index="0" outputclass="language-curl" class="pre codeblock language-curl"><code data-highlighted="yes" class="hljs language-curl"><span class="hljs-keyword">curl</span> <span class="hljs-literal">-X <span class="hljs-symbol">POST</span></span> https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis \
+    <span class="hljs-literal">-H</span> <span class="hljs-string">'X-DashScope-Async: enable'</span> \
+    <span class="hljs-literal">-H</span> <span class="hljs-string">"Authorization: Bearer $DASHSCOPE_API_KEY"</span> \
+    <span class="hljs-literal">-H</span> <span class="hljs-string">'Content-Type: application/json'</span> \
+    <span class="hljs-literal">-d</span> <span class="hljs-string">'{
+    "model": "qwen-image-plus",
+    "input": {
+        "prompt": "Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."
+    },
+    "parameters": {
+        "negative_prompt":" ",
+        "size": "1664*928",
+        "n": 1,
+        "prompt_extend": true,
+        "watermark": false
+    }
+}'</span>        </code></pre>
+    </div>
+    </section></section></section></section><p id="29596098063ot"></p></td></tr><tr id="526a4a47a9t4r"><td id="d042b7ac27efy" rowspan="1" style="vertical-align:middle" colspan="1"><h6 id="79473e45c592d"><b>Request headers</b></h6></td></tr><tr id="c2234225c7e2d" outputclass="test" class="test"><td id="895606e6e52lk" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="05fe23891aqao" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="b35b36152auao"><b>Content-Type</b> <code data-tag="code" code-type="xCode" id="9d0e02b383aea" class="code"><i>string</i></code> <b>(Required)</b></p><p jc="left" id="c84336268andm" style="text-align:left">The content type of the request. Must be <code data-tag="code" code-type="xCode" id="e629c56e1e0ss" class="code">application/json</code>.</p></section></td></tr><tr id="311992229ek0y" outputclass="test" class="test"><td id="8f4c7cba33au3" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="1f65a905c0l39" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="ac48af82483to"><b>Authorization</b> <code data-tag="code" code-type="xCode" id="7c35409e8enfj" class="code"><i>string</i></code> <b>(Required)</b></p><p jc="left" id="a1b0e25ac4cv4" style="text-align:left">Authenticates the request with a Model Studio API key. Example: Bearer sk-xxxx.</p></section></td></tr><tr id="726344fa142up" outputclass="test" class="test"><td id="693374e512wgz" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="e748646398lel" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="ce88e0f57eopk"><b>X-DashScope-Async</b> <code data-tag="code" code-type="xCode" id="21417561a0y7n" class="code"><i>string</i></code> <b>(Required)</b></p><p jc="left" id="07fa9d1a3e24y" style="text-align:left">Enables asynchronous processing. HTTP requests support only asynchronous calls. Must be <code data-tag="code" code-type="xCode" id="e7b30e36930sk" class="code">enable</code>.</p><div id="c8a2904c29tco" type="important" class="note note-important"><div class="note-icon-wrapper"><i class="icon-note note important"></i><strong>Important </strong></div><div class="noteContentSpan"><p id="2cf177f1bepsl">If this request header is missing, the error "current user api does not support synchronous calls" is returned.</p></div></div></section></td></tr><tr id="e092bbc0acx5v" outputclass="test" class="test"><td id="a1ba292620gfd" rowspan="1" style="vertical-align:middle" colspan="1"><h6 id="66a778d4fbfub"><b>Request body</b></h6></td></tr><tr id="d6df745f2c4ds" outputclass="test" class="test"><td id="912ef0dbb3esm" rowspan="1" style="vertical-align:middle" colspan="1"><p id="43ace6d48b1fo"><b>model</b> <code data-tag="code" code-type="xCode" data-init-id="6e2610e668vhz" id="cfff08cd8asnu" class="code"><i>string</i></code> <b>(required)</b></p><p id="a67cb1979dmb7">Model name. Only <code data-tag="code" data-init-id="6efbe01426h3c" id="0e38a12ab5qy0" class="code">qwen-image-plus</code> and <code data-tag="code" data-init-id="0b30d3059a02r" id="459346156as60" class="code">qwen-image</code> support asynchronous calls.</p><p id="143c00f68aa9d">Example: <code data-tag="code" data-init-id="13068eb7aa8w7" id="d32d02a7f9n5j" class="code">qwen-image-plus</code>.</p></td></tr><tr id="bab63b9a1020c"><td id="fcd8d01bcaiou" rowspan="1" style="vertical-align:middle" colspan="1"><section id="d32a118887394" class="section"><p id="10e0010cf3do6"><b>input</b> <code data-tag="code" code-type="xCode" id="d8cc76ced43qx" class="code"><i>object</i></code> <b>(required)</b></p><p id="8ed029feafe3g">Input information.</p>
+    <section class="collapse expanded" id="2dcc901c8495t">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="9bd6febe7fljn" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="86bf38471clxk" class="section"><p id="26252f88a6jvp"><b>prompt</b> <code data-tag="code" code-type="xCode" data-init-id="925ad8357bx8l" id="1ac09f03cddw4" class="code"><i>string</i></code> <b>(required)</b></p><p id="e549e85683ljo">A positive prompt describing the visual elements and characteristics you want in the generated image.</p><p id="a9520bcbbeh8u">Supports Chinese and English. Maximum length is 800 characters. Each Chinese character, letter, digit, or symbol counts as one character. Excess characters are truncated automatically.</p><p id="b5424c307ew6a">Example: A sitting orange cat with a joyful expression, lively and adorable, highly realistic.</p></section><section id="68a89740899cy" class="section"><p data-init-id="8be4f74eb1f08" id="20c8ad2b27d4c"><b>negative_prompt</b> <code data-tag="code" code-type="xCode" data-init-id="14455a9f7dglm" id="e8497b249ducj" class="code"><i>string</i></code> (optional)</p><p data-init-id="b8f1f5a69bw45" id="7c54f8df75lf2">A negative prompt describing what you do not want in the image.</p><p data-init-id="dde3861a5dxe3" id="bd2186bb4bwk7">Supports Chinese and English. Maximum length is 500 characters. Excess characters are truncated automatically.</p><p data-init-id="5f915669974n9" id="c2bab2510da9r">Example: Low resolution, low quality, distorted limbs, malformed fingers, oversaturated colors, wax-like appearance, no facial details, overly smooth surfaces, AI-generated look. Chaotic composition. Blurry or distorted text.</p></section>
+      </div>
+    </section>
+  </section></td></tr><tr id="7a204d9e36k3h" outputclass="test" class="test"><td id="05a62a76d53un" rowspan="1" style="vertical-align:middle" colspan="1"><section id="b3e5e9944a28q" class="section"><p data-init-id="bd4c782090aio" id="3e8ecd6315hea"><b>parameters</b> <code data-tag="code" code-type="xCode" data-init-id="b938210d961ia" id="becb4fb16dr15" class="code"><i>object</i></code> (optional)</p><p data-init-id="4c782fd672e63" id="4d09bfedcehat">Image processing parameters.</p>
+    <section class="collapse expanded" id="42823dd07doct">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-init-id="68dd9d7d1cq6c" data-tag="expandable-title" id="65fa3b0335fiq" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="1fc09c89ecf0v" docid="6164556" is-conref="true" class="section"><p data-init-id="c042137751rzl" id="7654646d68bw5"><b>size</b> <code data-tag="code" code-type="xCode" data-init-id="9ee4660868nv9" id="7c77307b947yj" class="code"><i>string</i></code> (optional)</p><p data-init-id="c50477982addn" id="b5b516083chkx">Output image resolution, formatted as <code data-tag="code" data-init-id="e75cced7ddnbq" id="cc0ce0bef43ga" class="code">width*height</code>.</p><p id="b5b516083chk1"><b>qwen-image-2.0 series models:</b> Total pixels must be between <code data-tag="code" id="aa31f87557rge" class="code">512*512</code> and <code data-tag="code" id="b3c3850802pzm" class="code">2048*2048</code>. Default resolution is <code data-tag="code" id="8064c9354aht1" class="code">2048*2048</code>. Recommended resolutions: </p><ul id="db233aedf4so1"><li id="72853e067fz0k"><p jc="left" id="3ad77b1d64hu4" style="text-align:left"><code data-tag="code" id="eaa566c24fi32" class="code">2688*1536</code>: 16:9</p></li><li id="ad482158b9ix4"><p jc="left" id="42857459dfq1u" style="text-align:left"><code data-tag="code" id="4d62393b5fnmz" class="code">1536*2688</code>: 9:16</p></li><li id="89d56af145j64"><p jc="left" id="d09c92249285v" style="text-align:left"><code data-tag="code" id="0df78d2a09uee" class="code">2048*2048</code> <b>(default)</b>: 1:1</p></li><li id="7e7123a53fkzp"><p jc="left" id="3cbd8deee35n0" style="text-align:left"><code data-tag="code" id="deb2079e0cewi" class="code">2368*1728</code>: 4:3</p></li><li id="b2d8da0389v1b"><p jc="left" id="97dd29decb6nd" style="text-align:left"><code data-tag="code" id="2fb4c01e58i31" class="code">1728*2368</code>: 3:4</p></li></ul><p id="b5b516083chk2"><b>qwen-image-max and qwen-image-plus series models:</b> Default resolution is <code data-tag="code" data-init-id="a42e41bf99u5u" id="8064c9354ahtm" class="code">1664*928</code>. Supported resolutions and their aspect ratios: </p><ul data-init-id="fe14a9e2b2783" id="e2fca577f9d3g"><li data-init-id="9afc08b28c7ul" id="23dc9a46a0vbr"><p data-init-id="01532fea160wk" id="e7ebcbe69af08"><code data-tag="code" id="6d229b36c3i0r" class="code">1664*928</code> <b>(default)</b>: 16:9</p></li><li data-init-id="46b6c66fcb3jn" id="42790b2773rnt"><p data-init-id="524299ece7e3e" id="8f5421b24eaqj"><code data-tag="code" data-init-id="f046cac874yw0" id="eb3edd447edfq" class="code">1472*1104</code>: 4:3</p></li><li data-init-id="674af97711t3z" id="663e96f150pzw"><p data-init-id="add492d091d1w" id="779480d0f7zpj"><code data-tag="code" data-init-id="200cbbac0echb" id="16a82505c6sew" class="code">1328*1328</code>: 1:1</p></li><li data-init-id="7ad4143d96sss" id="582703613a81l"><p data-init-id="324c65ddd0z04" id="361797210cmol"><code data-tag="code" data-init-id="da84a4d90alm1" id="229f21dba7qqf" class="code">1104*1472</code>: 3:4</p></li><li data-init-id="547aca5505dgj" id="cf3b47fc46g5r"><p data-init-id="1e8dcba4dbicb" id="d994905016udy"><code data-tag="code" data-init-id="eed53eaa03z5t" id="9eb7ee4e500et" class="code">928*1664</code>: 9:16</p></li></ul></section><section data-init-id="de6b77046febe" id="9e0c764368kqy" class="section"><p data-init-id="119a0d783261w" id="4497cf072058q"><b>n</b> <code data-tag="code" code-type="xCode" data-init-id="8319bfa719ubq" id="6ba70332689ej" class="code"><i>integer</i></code> (optional)</p><p data-init-id="9ee56eedcaqi2" id="d505698c965cr">Number of generated images. <b>This value is fixed at 1. Setting any other value returns an error.</b></p></section><section data-init-id="6a4fb15ed0sgh" id="dd7c57ec84gyi" class="section"><p data-init-id="5f6a27b7b4gw9" id="6f30126292dz4"><b>prompt_extend</b> <code data-tag="code" code-type="xCode" data-init-id="a97b3fdf5acuw" id="35d068c38as6k" class="code"><i>bool</i></code> (optional) </p><p data-init-id="7287b8c93di59" id="7805ca27a6c8u" uuid="m0ku51w10fympmapw55o">Enable smart prompt rewriting. The model optimizes the positive prompt. Does not affect the negative prompt.</p><ul data-init-id="7cdd6cbb54ttx" id="c1801c4f31vmq"><li data-init-id="e715f6f0b9k5k" id="de99908e7d8oc"><p data-init-id="3f4797a84c8n2" id="26f6d4ed9bj4d"><code data-tag="code" data-init-id="bba61dd479ane" id="6fc65528c4idh" class="code">true</code>: <b>Default</b>. Enables rewriting. Use this for more diverse image content; the model adds details.</p></li><li data-init-id="57b52637a22hl" id="947425e15bcfy"><p data-init-id="9c3a5ace95kzj" id="3b1cf3a1bfh8g"><code data-tag="code" data-init-id="e5a9b44d3amqy" id="d8a1f2d48eh3e" class="code">false</code>: Disables rewriting. Use this for tighter control over image details. For best results, optimize your prompts based on <a href="/help/en/model-studio/text-to-image-prompt" id="87a0d304acugr" title="" class="xref">Text-to-image prompt guide</a>.</p></li></ul>
+    <section class="collapse" id="87d500d72ctsi">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-init-id="be2e8aade56xy" data-tag="expandable-title" id="3d45022ab4kmw" class="expandable-title">View rewriting examples</p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <blockquote data-init-id="cf96402c3awgj" id="3a21eb6d75lmw">Only asynchronous calls return the actual rewritten prompt.</blockquote><p data-init-id="88e04487c26bp" id="9111f505a8ler"></p><p data-init-id="43e9378407n6e" id="f84dd2876cm25"></p><p data-init-id="ff13d99924yi5" id="dd7c4bf3e4kli"><span data-tag="ph" data-init-id="407586f307gqp" id="2979ecc4a26bm" props="intl" data-cond-props="intl" class="ph"><b>Original prompt (orig_prompt)</b>: A sitting ginger cat with a joyful expression, looking lively, adorable, and incredibly lifelike.</span></p><p data-init-id="5113e0dc21o2q" id="d4a1951be4dnr"><span data-tag="ph" data-init-id="da120308b79ky" id="143eae055ane0" props="intl" data-cond-props="intl" class="ph"><b>Actual prompt (actual_prompt)</b>: Photorealistic wildlife portrait: A sitting ginger cat with lush, sun-kissed fur and a vibrant, joyful expression, eyes sparkling with curiosity and warmth. The cat's head is slightly tilted, ears perked forward, mouth gently open in a contented, lively pose—exuding adorable charm and incredible lifelike detail. Soft natural lighting enhances the texture of each individual whisker and fur strand, with subtle highlights on the muzzle and inner ears. Background: a softly blurred autumn garden at golden hour—warm tones of amber leaves, dappled sunlight filtering through trees, and faint hints of mossy stone steps. Composition emphasizes the cat as the central focal point, captured in sharp focus with shallow depth of field. Style: ultra-realistic photography, National Geographic-level detail, 8K resolution, Canon EOS R5, f/1.2 aperture, cinematic lighting, true-to-life color grading, minimal post-processing. No text or overlays.</span></p>
+      </div>
+    </section>
+  </section><section data-init-id="7fb5fa3449p87" id="d4f809bee3hlg" class="section"><p data-init-id="294d7d8f02ufr" id="0ab2f3507dkkk"><b>watermark</b> <code data-tag="code" code-type="xCode" data-init-id="2b6cba9dfd3t2" id="62b5b9b54b8d9" class="code"><i>bool</i></code> (optional) </p><p data-init-id="f41bdc06a0abq" id="426f06c975gll" uuid="m0ku51w10fympmapw55o">Adds a “Qwen-Image” watermark to the bottom-right corner of the image. Default: <code data-tag="”code”" data-init-id="”debac1cf0fc4x”" id="27833d8bd8611" uuid="”mfl0ph4y4b8d8eqc21c”" class="”code”">false</code>. Watermark style: <img alt="1" data-init-id="1f43d4c796wzz" height="24" id="b146ff0b97om3" placement="inline" src="https://help-static-aliyun-doc.aliyuncs.com/assets/img/en-US/6844029571/p1012089.jpg" width="80.293" class="image inline"></p></section><section id="f2714bba7amas" class="section"><p data-init-id="8f53ccf9e9gnv" id="e9f7d126b5x15"><b>seed</b> <code data-tag="code" code-type="xCode" data-init-id="186ea99ea8f89" id="3b0658d916q3r" class="code"><i>integer</i></code> (optional)</p><p data-init-id="f8e5b2ca11ipt" id="f160a965aceef">Random number seed. Valid range: <code data-tag="code" data-init-id="b14c01c95bx29" id="d863a185f9lhg" class="code">[0,2147483647]</code>.</p><p data-init-id="482f5dea79bmv" id="459ae9b37ealp">Using the same <code data-tag="code" class="code react-markdown-blog-code" data-init-id="528d154898f4h" id="6f16a7ad46kic">seed</code> yields similar outputs. If omitted, the algorithm uses a random seed.</p><p data-init-id="c58eaf7d687si" id="42141b0cf2syi"><b>Note:</b> Image generation is probabilistic. Even with the same <code data-tag="code" class="code react-markdown-blog-code" data-init-id="ea4672cf23or5" id="4071d07589nfq">seed</code>, results may vary.</p></section>
+      </div>
+    </section>
+  </section></td></tr></tbody></table></div></section><p id="17852c825dwiz"></p><section id="f5d1a44542v6q" class="section"><div class="table-wrapper table-wrapper-intl"><table bordertype="no-border" id="48a817b0e9t30" outputclass="api-reference column-layout" tablewidth="100" tablecolswidth="53.62 46.38" autofit="true" class="api-reference column-layout table table-no-border" minwidth="349.28848641655884"><colgroup colwidth="1.07*" style="width:53.62%"></colgroup><colgroup colwidth="0.93*" style="width:46.38%"></colgroup><tbody class="tbody"><tr id="953bd00a219mf" outputclass="test" class="test"><td id="dc82dca896sol" rowspan="1" style="vertical-align:top" colspan="1"><h5 id="cd3063363egdc" outputclass="test" class="test"><b>Response parameters</b></h5></td><td id="b48ba03f55xdw" rowspan="5" style="vertical-align:top" colspan="1"><section data-ref-searchable="yes" id="bb0c35f776jis" data-source="reuse_library" docid="4817411" is-conref="true" class="section"><section data-tag="tabbed-content-box" id="8d84b12dadbku" outputclass="tabbed-content-box" class="tabbed-content-box section"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="f281932a43b03">Successful response</div><div class="tab-item" id="a9ad4ea0bcr7i">Error response</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="938dd6aa00xez" class="section" style="display: block;"><p jc="left" id="f78b9c52854wc" style="text-align:left">Save the <code data-tag="code" id="c04aa74f79aha" class="code">task_id</code> to query the task status and result.</p>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="089f6d510f95u" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"task_status"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"PENDING"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"task_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"0385dc79-5ff8-4d82-bcb6-xxxxxx"</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"4909100c-7b5a-9f92-bfe5-xxxxxx"</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section><section id="77dc168e6fsu6" class="section"><p id="aad5e34286x6w">Task creation failed. See <a href="/help/en/model-studio/error-code" id="dd77e2f8a0my1" title="" class="xref">Error messages</a>.</p>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="8d79ec495em13" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"code"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"InvalidApiKey"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"No API-key provided."</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"7438d53d-6eb8-4596-8835-xxxxxx"</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section></section></section></td></tr><tr id="42cbd87952zlt"><td id="0dd5021b67fzo" rowspan="1" style="vertical-align:middle" colspan="1"><p id="95a6828d2fd1g"><b>output </b><code data-tag="code" code-type="xCode" id="872bbbda63xfz" class="code"><i>object</i></code> </p><p id="62930c5c1fk7u">Task output information.</p>
+    <section class="collapse expanded" id="fb57d85ae22pi">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="317ba051bcg7k" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section data-ref-searchable="yes" id="8a26ef4007mw3" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="1fe5b36c81n81"><b>task_id</b> <code data-tag="code" code-type="xCode" id="1927ac1711a6b" class="code"><i>string</i></code></p><p jc="left" id="4ac2b3335dt4z" style="text-align:left">The task ID. Valid for queries for 24 hours.</p></section><section data-ref-searchable="yes" id="225bd49ec0e1h" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="e05ef2e779yzc"><b>task_status</b> <code data-tag="code" code-type="xCode" id="2cc6cd76b7scz" class="code"><i>string</i></code></p><p jc="left" id="20e406b75d1tu" style="text-align:left">The status of the task.</p>
+    <section class="collapse expanded" id="47d1a560adkz4">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="9f885f3065wa7" class="expandable-title"><b>Enumeration values</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <ul id="bea23c4522v96"><li id="8b437cac894c9"><p jc="left" id="2d1a77994culj" style="text-align:left">PENDING</p></li><li id="83a099d9ff99x"><p jc="left" id="58157145280pd" style="text-align:left">RUNNING</p></li><li id="45bba956f5dn8"><p id="ecd9d0220dku0">SUCCEEDED</p></li><li id="6d9fa1aa091ec"><p id="4f3476ccabg8m">FAILED</p></li><li id="1a40e957952zv"><p id="dfeff5edf0ir4">CANCELED</p></li><li id="4fc2869e3d7e3"><p id="c1947b6b9asan">UNKNOWN: The task does not exist or its status is unknown.</p></li></ul>
+      </div>
+    </section>
+  </section>
+      </div>
+    </section>
+  </td></tr><tr id="975bba72df389" outputclass="test" class="test"><td id="64fb8df556rpc" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="9f3df54de7p84" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="f8ad0d8e5fmh3"><b>request_id</b> <code data-tag="code" code-type="xCode" id="3f24e7a18c86z" class="code"><i>string</i></code></p><p id="50e43a8e01stk">Unique request identifier for tracing and troubleshooting.</p></section></td></tr><tr id="3c8a5939b7jlf"><td id="1b64e73a24nqk" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="9f6d51a6c26hm" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="0e54bb3abdsfz"><b>code</b> <code data-tag="code" code-type="xCode" id="747a126bbd65i" class="code"><i>string</i></code></p><p id="b634d3711cwim">Error code. Returned only for failed requests. See <a href="/help/en/model-studio/error-code" id="8ce79bbfb6xfs" title="" class="xref">Error messages</a>.</p></section></td></tr><tr id="884f4b4322etn"><td id="5cd60eeed7s8d" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="6b8490930fpqv" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="aa9502135bkcx"><b>message</b> <code data-tag="code" code-type="xCode" id="319e9daaccg6n" class="code"><i>string</i></code></p><p id="49943cf91bcyu">Detailed error message. Returned only for failed requests. See <a href="/help/en/model-studio/error-code" id="201837a58b7du" title="" class="xref">Error messages</a>.</p></section></td></tr></tbody></table></div></section><p id="fb5729ce65r2y"></p><section id="522f623f9ex6a" class="section"><h4 id="420e6e77a17om"><b>Step 2: Poll for results using the task ID</b></h4><section id="6b97583be0r3h" props="intl" docid="5857363" is-conref="true" data-cond-props="intl" class="section"><section data-tag="tabbed-content-box" id="86ebdb813fvwl" outputclass="tabbed-content-box" class="tabbed-content-box section"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="0d1dac6bb2jej">Singapore</div><div class="tab-item" id="fd2f1aa16dfgy">Beijing</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="769e8e140413x" class="section" style="display: block;"><p id="e9aedb1b9bswb"><code data-tag="code" code-type="xCode" data-init-id="08d1ad3361z8r" id="abb020813bd5h" class="code">GET https://dashscope-intl.aliyuncs.com/api/v1/tasks/{task_id}</code></p></section><section id="ea97de0032ys9" class="section"><p id="1031eb5b51640"><code data-tag="code" data-init-id="34451e1576tn3" id="916b7994a17a7" class="code">GET https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}</code></p></section></section></section><section data-ref-searchable="yes" id="8c886cd95fbnn" class="section"><div id="d51019d875nut" type="note" docid="6306505" is-conref="true" class="note note-note"><div class="note-icon-wrapper"><i class="icon-note note note"></i><strong>Note </strong></div><div class="noteContentSpan"><ul data-spm-anchor-id="a2c4g.11186623.0.i37.4ae8f41cvAcjZU" id="93b33a6648y5i"><li id="a6d7209d652jf"><p id="b0ed04143bxno"><b>Polling recommendation</b>: Image generation is time-consuming. Use a polling mechanism with a reasonable interval, such as 10 seconds.</p></li><li id="a2d7e354a40ur"><p id="0f96c3c3eas5g"><b>Task state transition</b>: PENDING → RUNNING → SUCCEEDED or FAILED.</p></li><li cid="n317" class="md-list-item" id="2f2f3ebb3dybx" mdtype="list_item"><p id="a368ed35b17g0"><b>Result link</b>: After a task succeeds, an image URL valid for <b>24 hours</b> is returned. Download and save the image to permanent storage, such as <a href="/help/en/oss/user-guide/what-is-oss" id="652f906412zrl" title="" class="xref">OSS</a>.</p></li></ul></div></div><p id="5b86697257ey2"></p><div class="table-wrapper table-wrapper-intl"><table bordertype="no-border" id="0bb24774a2a8y" outputclass="api-reference column-layout" tablewidth="100" tablecolswidth="53.78 46.22" autofit="true" class="api-reference column-layout table table-no-border" minwidth="350.49762007788837"><colgroup colwidth="1.08*" style="width:53.78%"></colgroup><colgroup colwidth="0.92*" style="width:46.22%"></colgroup><tbody class="tbody"><tr id="f990ca9923jus" outputclass="test" class="test"><td id="dfd817d8a9r6d" rowspan="1" style="vertical-align:top" colspan="1"><h5 id="eb9c8d77b6xg8"><b>Request parameters</b></h5></td><td id="d344950c54prs" rowspan="5" style="vertical-align:top" colspan="1"><section id="48fbfc461868r" outputclass="stick-top two-codeblocks" class="two-codeblocks stick-top section"><section data-tag="tabbed-content-box" id="d4cc1b5c62lj9" outputclass="tabbed-content-box margin-top-33" class="tabbed-content-box section margin-top-33"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="35137df76b4vz">Poll for task results</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="afad4b3bf2znt" class="section" style="display: block;"><section id="5a1a713a12ou4" docid="6306505" is-conref="true" class="section"><p id="37c488525frts">Replace <code data-tag="code" id="7901a4ac7d4e8" class="code">{task_id}</code> with the <code data-tag="code" id="051ad9306ey2i" class="code">task_id</code> value returned by the previous API call. The <code data-tag="code" id="d85332762a18d" class="code">task_id</code> is valid for queries for 24 hours.</p><section id="f1f95de4cemai" class="section">
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="e1fd331f55mu2" index="0" outputclass="language-curl" props="intl" data-cond-props="intl" class="pre codeblock language-curl"><code data-highlighted="yes" class="hljs language-curl"><span class="hljs-keyword">curl</span> <span class="hljs-literal">-X <span class="hljs-symbol">GET</span></span> https://dashscope-intl.aliyuncs.com/api/v1/tasks/{task_id} \
+<span class="hljs-literal">--header</span> <span class="hljs-string">"Authorization: Bearer $DASHSCOPE_API_KEY"</span></code></pre>
+    </div>
+    </section></section></section></section></section></td></tr><tr id="43c9b73a7c46o"><td id="a446166a26vi3" rowspan="1" style="vertical-align:middle" colspan="1"><h6 id="36a28b657f196"><b>Request headers</b></h6></td></tr><tr id="5455c0f18114x" outputclass="test" class="test"><td id="f336b6bc5b8a6" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="4b26e0a20a718" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="ac48af82483to"><b>Authorization</b> <code data-tag="code" code-type="xCode" id="7c35409e8enfj" class="code"><i>string</i></code> <b>(Required)</b></p><p jc="left" id="a1b0e25ac4cv4" style="text-align:left">Authenticates the request with a Model Studio API key. Example: Bearer sk-xxxx.</p></section></td></tr><tr id="328cf38311gv1" outputclass="test" class="test"><td id="aa05bf8285u84" rowspan="1" style="vertical-align:middle" colspan="1"><h6 id="0e29e015d8opn"><b>URL path parameters</b></h6></td></tr><tr id="df6cc09b9bb83" outputclass="test" class="test"><td id="d94f1285eb7ie" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="0b32fc5926h0s" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="f0f368468efqp"><b>task_id</b> <code data-tag="code" code-type="xCode" id="b7b98f85a05qn" class="code"><i>string</i></code> <b>(Required)</b></p><p id="246335d09fpiz">The ID of the task.</p></section></td></tr></tbody></table></div><section id="dbb4b14b0d4if" class="section"><div class="table-wrapper table-wrapper-intl"><table bordertype="no-border" id="412c1d7446w81" outputclass="api-reference column-layout" tablewidth="100" tablecolswidth="53.78 46.22" autofit="true" class="api-reference column-layout table table-no-border" minwidth="350.49762007788837"><colgroup colwidth="1.08*" style="width:53.78%"></colgroup><colgroup colwidth="0.92*" style="width:46.22%"></colgroup><tbody class="tbody"><tr id="eca844ece26d8" outputclass="test" class="test"><td id="9af0e871c5orb" rowspan="1" style="vertical-align:top" colspan="1"><h5 id="f277d7425foyq" outputclass="test" class="test"><b>Response parameters</b></h5></td><td id="af03bf21215nl" rowspan="4" style="vertical-align:top" colspan="1"><section data-tag="tabbed-content-box" id="e390981f6ftw3" outputclass="tabbed-content-box stick-top" class="tabbed-content-box stick-top section"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="671a441be89fx">Task succeeded</div><div class="tab-item" id="7865bc1f76bqw">Task failed</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="a7cc6f4f4cnoz" class="section" style="display: block;"><section data-ref-searchable="yes" id="5cc196d1a4rxh" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="1f99fcb4e25m8">Task data (task status and image URLs) is retained for only 24 hours and then automatically purged. Save generated images promptly.</p></section><section id="83055046c2yj5" props="intl" data-cond-props="intl" class="section">
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="5bb2708e88vgi" index="0" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"7434edb2-3cba-44e6-a772-xxxxxx"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"task_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"878f591e-ebdf-4e45-97eb-xxxxxx"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"task_status"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"SUCCEEDED"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"submit_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-09-09 11:38:54.741"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"scheduled_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-09-09 11:38:54.781"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"end_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-09-09 11:39:19.484"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"results"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+            <span class="hljs-punctuation">{</span>
+                <span class="hljs-attr">"orig_prompt"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"actual_prompt"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"Childhood-inspired hand-drawn poster design: Three playful puppies joyfully interact with a colorful ball on a vibrant patch of lush green grass. Delicate decorative elements including fluttering birds and twinkling stars are scattered throughout. At the top center, the bold, blue cartoon-style title “Come Play Ball!” stands out prominently. Directly beneath, the subtitle “Come [Show Off Your Skills]!” is rendered in cheerful green lettering. A whimsical speech bubble near one of the puppies contains the playful text: “Hehe, watch me amaze my little friends next!” At the bottom edge, smaller supplementary text reads: “We get to play ball with our friends again!” The color palette is centered on fresh greens and sky blues, accented with pops of bright pink and sunny yellow, enhancing the cheerful, childlike atmosphere. Style evokes nostalgic, hand-inked illustrations with soft textures, gentle linework, and a whimsical, storybook-like composition."</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"url"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"https://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com/7d/xxx.png?Expires=xxxx"</span>
+            <span class="hljs-punctuation">}</span>
+        <span class="hljs-punctuation">]</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"usage"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"image_count"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span>
+    <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section></section><section id="6990f8a1c5ntr" class="section"><section data-ref-searchable="yes" id="cc6c0e2196mwt" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="16791da818coy">When a task fails, <code data-tag="code" id="73ca11d677yjs" class="code">task_status</code> is FAILED with an error code and message. See <a href="/help/en/model-studio/error-code" id="5bf22525d31sa" title="" class="xref">Error messages</a>.</p></section>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="1d85bd7031vv7" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"c61fe158-c0de-40f0-b4d9-964625119ba4"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"task_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"86ecf553-d340-4e21-xxxxxxxxx"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"task_status"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"FAILED"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"submit_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-11-11 11:46:28.116"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"scheduled_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-11-11 11:46:28.154"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"end_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-11-11 11:46:28.255"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"code"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"InvalidParameter"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xxxxxxxx"</span>
+    <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section></section></td></tr><tr id="4aa861e4939zy"><td id="068b838df3jto" rowspan="1" style="vertical-align:middle" colspan="1"><p id="fb71053694akh"><b>output </b><code data-tag="code" code-type="xCode" id="d2517bc20cage" class="code"><i>object</i></code></p><p id="2db9a48274fh2">Task output information.</p>
+    <section class="collapse expanded" id="9de1837e39flt">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="2d809e7916k6t" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section data-ref-searchable="yes" id="62a1ab7d130fg" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="1fe5b36c81n81"><b>task_id</b> <code data-tag="code" code-type="xCode" id="1927ac1711a6b" class="code"><i>string</i></code></p><p jc="left" id="4ac2b3335dt4z" style="text-align:left">The task ID. Valid for queries for 24 hours.</p></section><section data-ref-searchable="yes" id="1a616fba3fvak" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="e05ef2e779yzc"><b>task_status</b> <code data-tag="code" code-type="xCode" id="2cc6cd76b7scz" class="code"><i>string</i></code></p><p jc="left" id="20e406b75d1tu" style="text-align:left">The status of the task.</p>
+    <section class="collapse expanded" id="47d1a560adkz4">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="9f885f3065wa7" class="expandable-title"><b>Enumeration values</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <ul id="bea23c4522v96"><li id="8b437cac894c9"><p jc="left" id="2d1a77994culj" style="text-align:left">PENDING</p></li><li id="83a099d9ff99x"><p jc="left" id="58157145280pd" style="text-align:left">RUNNING</p></li><li id="45bba956f5dn8"><p id="ecd9d0220dku0">SUCCEEDED</p></li><li id="6d9fa1aa091ec"><p id="4f3476ccabg8m">FAILED</p></li><li id="1a40e957952zv"><p id="dfeff5edf0ir4">CANCELED</p></li><li id="4fc2869e3d7e3"><p id="c1947b6b9asan">UNKNOWN: The task does not exist or its status is unknown.</p></li></ul>
+      </div>
+    </section>
+  </section><section data-ref-searchable="yes" id="e1b4e6173445m" data-source="reuse_library" docid="4867942" is-conref="true" class="section"><p id="e7f4494bd6qyk"><b>submit_time</b> <code data-tag="code" id="24aa5438e2pxu" class="code"><i>string</i></code></p><p jc="left" id="746ca6e31cx1m" style="text-align:left">The time when the task was submitted. <span data-tag="ph" id="0f65dbb787vu0" props="intl" data-cond-props="intl" class="ph">The time is in UTC+8 and the</span> format is YYYY-MM-DD HH:mm:ss.SSS.</p></section><section data-ref-searchable="yes" id="3b6f0986f0fkm" data-source="reuse_library" docid="4867942" is-conref="true" class="section"><p id="9a4303951198v"><b>scheduled_time</b> <code data-tag="code" id="208c9508c6mcv" class="code"><i>string</i></code></p><p jc="left" id="add62d333a6l1" style="text-align:left">The time when the task was executed. <span data-tag="ph" id="2ff8de43a52mg" props="intl" data-cond-props="intl" class="ph">The time is in UTC+8 and the</span> format is YYYY-MM-DD HH:mm:ss.SSS.</p></section><section data-ref-searchable="yes" id="c72429e8e215f" data-source="reuse_library" docid="4867942" is-conref="true" class="section"><p id="4c98803d30bd3"><b>end_time</b> <code data-tag="code" id="3868f8ef2bfof" class="code"><i>string</i></code></p><p jc="left" id="cb80512dc1v8y" style="text-align:left">The time when the task was completed. <span data-tag="ph" id="4394e71249dte" props="intl" data-cond-props="intl" class="ph">The time is in UTC+8 and the</span> format is YYYY-MM-DD HH:mm:ss.SSS.</p></section><section id="de31692ec8x9h" class="section"><p id="2c9e895a2cmi8"><b>results</b> <code data-tag="code" code-type="xCode" id="2fe3686149qaw" class="code"><i>array</i></code></p><p jc="left" id="63850c8dd37e0" style="text-align:left">List of task results, including image URLs, prompts, and error messages for failed tasks.</p>
+    <section class="collapse expanded" id="529298670atxj">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="5ec11b3ca2b0a" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="0b27428541d7g" docid="6306505" is-conref="true" class="section"><p jc="left" id="2bea6e58b8f22" style="text-align:left"><b>orig_prompt</b> <code data-tag="code" class="code" code-type="xCode" id="e79ee09774hyx"><i>string</i></code></p><p jc="left" id="2917477fc2dc1" style="text-align:left">The original input prompt, corresponding to the request parameter <code data-tag="code" id="f1b2676b46bnd" class="code">prompt</code>.</p></section><section id="c9bfed10e6rc6" docid="6306505" is-conref="true" class="section"><p jc="left" id="d4915bc0dakmz" style="text-align:left"><b>actual_prompt</b> <code data-tag="code" class="code" code-type="xCode" id="323eba7c97zei"><i>string</i></code></p><p id="ed6f47f210qjm">The optimized prompt used when prompt rewriting is enabled. Not returned when disabled.</p></section><section id="613e2af84a8yl" class="section"><p id="722102f8a3kct"><b>url</b> <code data-tag="code" code-type="xCode" id="6b086c5272tv2" class="code"><i>string</i></code></p><p jc="left" id="fe3d819684p2i" style="text-align:left">URL of the generated image. Expires after 24 hours. Download and save the image promptly.</p></section>
+      </div>
+    </section>
+  </section><section id="90b859ca42wiw" class="section"><section data-ref-searchable="yes" id="9763fddb1bd6x" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="0e54bb3abdsfz"><b>code</b> <code data-tag="code" code-type="xCode" id="747a126bbd65i" class="code"><i>string</i></code></p><p id="b634d3711cwim">Error code. Returned only for failed requests. See <a href="/help/en/model-studio/error-code" id="8ce79bbfb6xfs" title="" class="xref">Error messages</a>.</p></section><section data-ref-searchable="yes" id="6ba122b84ewo0" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="aa9502135bkcx"><b>message</b> <code data-tag="code" code-type="xCode" id="319e9daaccg6n" class="code"><i>string</i></code></p><p id="49943cf91bcyu">Detailed error message. Returned only for failed requests. See <a href="/help/en/model-studio/error-code" id="201837a58b7du" title="" class="xref">Error messages</a>.</p></section></section>
+      </div>
+    </section>
+  </td></tr><tr id="88141f3e59pbn"><td id="54ecc88447lbm" rowspan="1" style="vertical-align:middle" colspan="1"><section id="bbc7164783z4w" class="section"><p id="5e2701e9507aa"><b>usage</b> <code data-tag="code" code-type="xCode" id="df339e9d7bhtf" class="code"><i>object</i></code></p><p jc="left" id="40a13316dci76" style="text-align:left">Output statistics. Counts only successful results.</p>
+    <section class="collapse expanded" id="33da99ae16ncb">
+      <div class="expandable-title-bold">
+        <span class="title"><p data-tag="expandable-title" id="ed0f82adb24bz" class="expandable-title"><b>Properties</b></p></span>
+        <i class="icon help-iconfont help-icon-zhankai1 smallFont"></i>
+      </div>
+      <div class="expandable-content">
+        <section id="6379132256eyj" docid="5859561" is-conref="true" class="section"><p id="5af2be3fc2314"><b>image_count</b> <code data-tag="code" code-type="xCode" id="d05347fe57ioy" class="code"><i>integer</i></code></p><p id="23e89aac279hz">Number of generated images. Fixed at 1.</p></section>
+      </div>
+    </section>
+  </section></td></tr><tr id="c889706528f7l"><td id="46fffc0b1dya6" rowspan="1" style="vertical-align:middle" colspan="1"><section data-ref-searchable="yes" id="4a03618d41uyd" data-source="reuse_library" docid="4720193" is-conref="true" class="section"><p id="f8ad0d8e5fmh3"><b>request_id</b> <code data-tag="code" code-type="xCode" id="3f24e7a18c86z" class="code"><i>string</i></code></p><p id="50e43a8e01stk">Unique request identifier for tracing and troubleshooting.</p></section></td></tr></tbody></table></div></section></section></section></section><section id="32e296ff61fdn" class="section"><h3 id="db17b3098c2iv"><b>DashScope SDK</b></h3><section id="da53906f1fq5t" class="section"><p id="3b95496c46mzk">The DashScope SDK supports <a href="#a3ad9a3b6d9if" id="f3806198904m0" title="" class="xref">Python</a> and <a href="#589b80853e6rn" id="d5c11b1238qii" title="" class="xref">Java</a>.</p><p id="c65213ff5c9vj">SDK parameter names closely match their corresponding HTTP parameters. Parameter structures follow language-specific conventions. For details about asynchronous call parameters, see <a href="#42703589880ts" id="52efd46c7267i" title="" class="xref">HTTP</a>.</p><p jc="left" id="904e0adfb6v38" style="text-align:left">Because image models require longer processing times, the underlying service uses asynchronous execution. The SDK provides two modes to handle this:</p><ul id="9f0745a05ctyx"><li id="58f8cf88aad53"><p id="ece5ab5bffcrf"><b>Synchronous call (blocking mode):</b> The SDK waits for the task to complete and returns the final result. This behavior matches that of standard synchronous calls.</p></li><li id="6767c1341ac0f"><p id="908a971767tg6"><b>Asynchronous call (non-blocking mode):</b> The call returns immediately with a task ID. You must poll for the task status and final result using that ID.</p></li></ul></section><section id="cf97f2c7e50cg" class="section"><h4 id="a3ad9a3b6d9if"><b>Python SDK</b></h4><div id="bdd3ac28a6j1b" type="note" class="note note-note"><div class="note-icon-wrapper"><i class="icon-note note note"></i><strong>Note </strong></div><div class="noteContentSpan"><p data-init-id="6452587080jte" id="6b71f69711wf1">You must install the latest DashScope Python SDK. Otherwise, runtime errors may occur: <a href="/help/en/model-studio/install-sdk" id="ad8805a519gl6" title="" class="xref">Install SDK</a>.</p></div></div><section data-tag="tabbed-content-box" id="81b071a5e9w84" outputclass="tabbed-content-box" class="tabbed-content-box section"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="1b02a3dafef7p">Synchronous</div><div class="tab-item" id="4c9724d501qsq">Asynchronous</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="1986d3fd56rcm" class="section" style="display: block;"><section id="fe76b76cc4m7w" class="section"><section id="12ecd4ccbfvyl" class="section"><h5 id="de8be082068hw"><b>Request example</b></h5>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="e7a70de2bc9t4" index="0" outputclass="language-python" props="intl" data-cond-props="intl" class="pre codeblock language-python"><code data-highlighted="yes" class="hljs language-python"><span class="hljs-keyword">from</span> http <span class="hljs-keyword">import</span> HTTPStatus
+<span class="hljs-keyword">from</span> urllib.parse <span class="hljs-keyword">import</span> urlparse, unquote
+<span class="hljs-keyword">from</span> pathlib <span class="hljs-keyword">import</span> PurePosixPath
+<span class="hljs-keyword">import</span> requests
+<span class="hljs-keyword">from</span> dashscope <span class="hljs-keyword">import</span> ImageSynthesis
+<span class="hljs-keyword">import</span> os
+<span class="hljs-keyword">import</span> dashscope
+
+<span class="hljs-comment"># Use this URL for Singapore region. For Beijing region, replace with: https://dashscope.aliyuncs.com/api/v1</span>
+dashscope.base_http_api_url = <span class="hljs-string">'https://dashscope-intl.aliyuncs.com/api/v1'</span>
+
+prompt = <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span>
+
+<span class="hljs-comment"># API keys differ between Beijing and Singapore regions. Get your API key: https://www.alibabacloud.com/help/zh/model-studio/get-api-key</span>
+<span class="hljs-comment"># If you haven't set the environment variable, replace the line below with: api_key="sk-xxx"</span>
+api_key = os.getenv(<span class="hljs-string">"DASHSCOPE_API_KEY"</span>)
+
+<span class="hljs-built_in">print</span>(<span class="hljs-string">'----Sync call, please wait a moment----'</span>)
+rsp = ImageSynthesis.call(api_key=api_key,
+                          model=<span class="hljs-string">"qwen-image-plus"</span>, <span class="hljs-comment"># Only qwen-image-plus and qwen-image support asynchronous calls</span>
+                          prompt=prompt,
+                          negative_prompt=<span class="hljs-string">" "</span>,
+                          n=<span class="hljs-number">1</span>,
+                          size=<span class="hljs-string">'1664*928'</span>,
+                          prompt_extend=<span class="hljs-literal">True</span>,
+                          watermark=<span class="hljs-literal">False</span>)
+<span class="hljs-built_in">print</span>(<span class="hljs-string">f'response: <span class="hljs-subst">{rsp}</span>'</span>)
+<span class="hljs-keyword">if</span> rsp.status_code == HTTPStatus.OK:
+    <span class="hljs-comment"># Save image in current directory</span>
+    <span class="hljs-keyword">for</span> result <span class="hljs-keyword">in</span> rsp.output.results:
+        file_name = PurePosixPath(unquote(urlparse(result.url).path)).parts[-<span class="hljs-number">1</span>]
+        <span class="hljs-keyword">with</span> <span class="hljs-built_in">open</span>(<span class="hljs-string">'./%s'</span> % file_name, <span class="hljs-string">'wb+'</span>) <span class="hljs-keyword">as</span> f:
+            f.write(requests.get(result.url).content)
+<span class="hljs-keyword">else</span>:
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">f'Sync call failed, status_code: <span class="hljs-subst">{rsp.status_code}</span>, code: <span class="hljs-subst">{rsp.code}</span>, message: <span class="hljs-subst">{rsp.message}</span>'</span>)
+</code></pre>
+    </div>
+    </section><section id="2d40bbae637ud" class="section"><h5 id="177b27c9b28it">Response example</h5><blockquote id="409697a956a5r">URLs expire after 24 hours. Download images promptly.</blockquote>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="c2938937d1ey1" index="0" outputclass="language-json" props="intl" data-cond-props="intl" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"status_code"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">200</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"a47b1a65-7041-4565-9068-xxxxxx"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"code"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">null</span></span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">""</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"task_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"91093132-475e-43cf-b94e-xxxxxx"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"task_status"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"SUCCEEDED"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"results"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+            <span class="hljs-punctuation">{</span>
+                <span class="hljs-attr">"url"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"https://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com/xxx.png?Expires=xxxxxx"</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"orig_prompt"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"actual_prompt"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"Childhood-inspired hand-drawn poster design: Three playful puppies joyfully interact with a colorful ball on a vibrant patch of lush green grass. Delicate decorative elements including fluttering birds and twinkling stars are scattered throughout. At the top center, the bold, blue cartoon-style title “Come Play Ball!” stands out prominently. Directly beneath, the subtitle “Come [Show Off Your Skills]!” is rendered in cheerful green lettering. A whimsical speech bubble near one of the puppies contains the playful text: “Hehe, watch me amaze my little friends next!” At the bottom edge, smaller supplementary text reads: “We get to play ball with our friends again!” The color palette is centered on fresh greens and sky blues, accented with pops of bright pink and sunny yellow, enhancing the cheerful, childlike atmosphere. Style evokes nostalgic, hand-inked illustrations with soft textures, gentle linework, and a whimsical, storybook-like composition."</span>
+            <span class="hljs-punctuation">}</span>
+        <span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"submit_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-09-09 13:39:20.659"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"scheduled_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-09-09 13:39:20.717"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"end_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-09-09 13:39:45.233"</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"usage"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"image_count"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span>
+    <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section></section></section><section id="97abb6334793w" class="section"><section id="b41331552dqmg" class="section"><h5 id="b9b6d3bf42rc7">Request example</h5>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="315b661dd9qnq" index="0" outputclass="language-python" props="intl" data-cond-props="intl" class="pre codeblock language-python"><code data-highlighted="yes" class="hljs language-python"><span class="hljs-keyword">from</span> http <span class="hljs-keyword">import</span> HTTPStatus
+<span class="hljs-keyword">from</span> urllib.parse <span class="hljs-keyword">import</span> urlparse, unquote
+<span class="hljs-keyword">from</span> pathlib <span class="hljs-keyword">import</span> PurePosixPath
+<span class="hljs-keyword">import</span> requests
+<span class="hljs-keyword">from</span> dashscope <span class="hljs-keyword">import</span> ImageSynthesis
+<span class="hljs-keyword">import</span> os
+<span class="hljs-keyword">import</span> dashscope
+<span class="hljs-keyword">import</span> time
+
+<span class="hljs-comment"># Use this URL for Singapore region. For Beijing region, replace with: https://dashscope.aliyuncs.com/api/v1</span>
+dashscope.base_http_api_url = <span class="hljs-string">'https://dashscope-intl.aliyuncs.com/api/v1'</span>
+
+prompt = <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span>
+
+<span class="hljs-comment"># API keys differ between Beijing and Singapore regions. Get your API key: https://www.alibabacloud.com/help/zh/model-studio/get-api-key</span>
+<span class="hljs-comment"># If you haven't set the environment variable, replace the line below with: api_key="sk-xxx"</span>
+api_key = os.getenv(<span class="hljs-string">"DASHSCOPE_API_KEY"</span>)
+
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">async_call</span>():
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">'----Creating Task----'</span>)
+    task_info = create_async_task()
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">'----Polling Task Status----'</span>)
+    poll_task_status(task_info)
+
+
+<span class="hljs-comment"># Create asynchronous task</span>
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">create_async_task</span>():
+    rsp = ImageSynthesis.async_call(api_key=api_key,
+                                    model=<span class="hljs-string">"qwen-image-plus"</span>, <span class="hljs-comment"># Only qwen-image-plus and qwen-image support asynchronous calls</span>
+                                    prompt=prompt,
+                                    negative_prompt=<span class="hljs-string">" "</span>,
+                                    n=<span class="hljs-number">1</span>,
+                                    size=<span class="hljs-string">'1664*928'</span>,
+                                    prompt_extend=<span class="hljs-literal">True</span>,
+                                    watermark=<span class="hljs-literal">False</span>)
+    <span class="hljs-built_in">print</span>(rsp)
+    <span class="hljs-keyword">if</span> rsp.status_code == HTTPStatus.OK:
+        <span class="hljs-built_in">print</span>(rsp.output)
+    <span class="hljs-keyword">else</span>:
+        <span class="hljs-built_in">print</span>(<span class="hljs-string">f'Failed to create task, status_code: <span class="hljs-subst">{rsp.status_code}</span>, code: <span class="hljs-subst">{rsp.code}</span>, message: <span class="hljs-subst">{rsp.message}</span>'</span>)
+    <span class="hljs-keyword">return</span> rsp
+
+
+<span class="hljs-comment"># Poll asynchronous task status, query every 5 seconds, maximum polling for 1 minute</span>
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">poll_task_status</span>(<span class="hljs-params">task</span>):
+    start_time = time.time()
+    timeout = <span class="hljs-number">60</span>  <span class="hljs-comment"># 1 minute timeout</span>
+    
+    <span class="hljs-keyword">while</span> <span class="hljs-literal">True</span>:
+        <span class="hljs-comment"># Check if timeout</span>
+        <span class="hljs-keyword">if</span> time.time() - start_time &gt; timeout:
+            <span class="hljs-built_in">print</span>(<span class="hljs-string">'Polling timeout (1 minute), task not completed'</span>)
+            <span class="hljs-keyword">return</span>
+            
+        <span class="hljs-comment"># Get task status</span>
+        status_rsp = ImageSynthesis.fetch(task)
+        <span class="hljs-built_in">print</span>(<span class="hljs-string">f'Task status query result: <span class="hljs-subst">{status_rsp}</span>'</span>)
+        
+        <span class="hljs-keyword">if</span> status_rsp.status_code != HTTPStatus.OK:
+            <span class="hljs-built_in">print</span>(<span class="hljs-string">f'Failed to get task status, status_code: <span class="hljs-subst">{status_rsp.status_code}</span>, code: <span class="hljs-subst">{status_rsp.code}</span>, message: <span class="hljs-subst">{status_rsp.message}</span>'</span>)
+            <span class="hljs-keyword">return</span>
+        task_status = status_rsp.output.task_status
+        <span class="hljs-built_in">print</span>(<span class="hljs-string">f'Current task status: <span class="hljs-subst">{task_status}</span>'</span>)
+        
+        <span class="hljs-keyword">if</span> task_status == <span class="hljs-string">'SUCCEEDED'</span>:
+            <span class="hljs-built_in">print</span>(<span class="hljs-string">'Task completed, downloading image...'</span>)
+            <span class="hljs-keyword">for</span> result <span class="hljs-keyword">in</span> status_rsp.output.results:
+                file_name = PurePosixPath(unquote(urlparse(result.url).path)).parts[-<span class="hljs-number">1</span>]
+                <span class="hljs-keyword">with</span> <span class="hljs-built_in">open</span>(<span class="hljs-string">f'./<span class="hljs-subst">{file_name}</span>'</span>, <span class="hljs-string">'wb+'</span>) <span class="hljs-keyword">as</span> f:
+                    f.write(requests.get(result.url).content)
+                <span class="hljs-built_in">print</span>(<span class="hljs-string">f'Image saved as: <span class="hljs-subst">{file_name}</span>'</span>)
+            <span class="hljs-keyword">break</span>
+        <span class="hljs-keyword">elif</span> task_status == <span class="hljs-string">'FAILED'</span>:
+            <span class="hljs-built_in">print</span>(<span class="hljs-string">f'Task execution failed, status: <span class="hljs-subst">{task_status}</span>, code: <span class="hljs-subst">{status_rsp.code}</span>, message: <span class="hljs-subst">{status_rsp.message}</span>'</span>)
+            <span class="hljs-keyword">break</span>
+        <span class="hljs-keyword">elif</span> task_status == <span class="hljs-string">'PENDING'</span> <span class="hljs-keyword">or</span> task_status == <span class="hljs-string">'RUNNING'</span>:
+            <span class="hljs-built_in">print</span>(<span class="hljs-string">'Task in progress, continue querying after 5 seconds...'</span>)
+            time.sleep(<span class="hljs-number">5</span>)
+        <span class="hljs-keyword">else</span>:
+            <span class="hljs-built_in">print</span>(<span class="hljs-string">f'Unknown task status: <span class="hljs-subst">{task_status}</span>, continue querying after 5 seconds...'</span>)
+            time.sleep(<span class="hljs-number">5</span>)
+
+<span class="hljs-comment"># Cancel asynchronous task, only tasks in PENDING status can be canceled</span>
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">cancel_task</span>(<span class="hljs-params">task</span>):
+    rsp = ImageSynthesis.cancel(task)
+    <span class="hljs-built_in">print</span>(rsp)
+    <span class="hljs-keyword">if</span> rsp.status_code == HTTPStatus.OK:
+        <span class="hljs-built_in">print</span>(rsp.output.task_status)
+    <span class="hljs-keyword">else</span>:
+        <span class="hljs-built_in">print</span>(<span class="hljs-string">f'Failed to cancel task, status_code: <span class="hljs-subst">{rsp.status_code}</span>, code: <span class="hljs-subst">{rsp.code}</span>, message: <span class="hljs-subst">{rsp.message}</span>'</span>)
+
+
+<span class="hljs-keyword">if</span> __name__ == <span class="hljs-string">'__main__'</span>:
+    async_call()
+</code></pre>
+    </div>
+    <section id="e8f6495021eue" class="section"><h5 id="5beee471f9q8l"><b>Response example</b></h5><p id="738e174ee0v21">1. Response for task creation</p>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="6a8698744bqfh" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+	<span class="hljs-attr">"status_code"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">200</span><span class="hljs-punctuation">,</span>
+	<span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"31b04171-011c-96bd-ac00-xxxxxx"</span><span class="hljs-punctuation">,</span>
+	<span class="hljs-attr">"code"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">""</span><span class="hljs-punctuation">,</span>
+	<span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">""</span><span class="hljs-punctuation">,</span>
+	<span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+		<span class="hljs-attr">"task_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"4f90cf14-a34e-4eae-xxxxxxxx"</span><span class="hljs-punctuation">,</span>
+		<span class="hljs-attr">"task_status"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"PENDING"</span><span class="hljs-punctuation">,</span>
+		<span class="hljs-attr">"results"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-punctuation">]</span>
+	<span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+	<span class="hljs-attr">"usage"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">null</span></span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    <p id="7607962bf6ql7">2. Response for polling task results</p><blockquote id="06b7e9aca9414">URLs expire after 24 hours. Download images promptly.</blockquote>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="3dc7aa1a97oja" index="0" outputclass="language-json" props="intl" docid="5707573" is-conref="true" syntax="json" data-cond-props="intl" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"status_code"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">200</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"a47b1a65-7041-4565-9068-xxxxxx"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"code"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">null</span></span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"message"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">""</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"task_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"91093132-475e-43cf-b94e-xxxxxx"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"task_status"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"SUCCEEDED"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"results"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+            <span class="hljs-punctuation">{</span>
+                <span class="hljs-attr">"url"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"https://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com/xxx.png?Expires=xxxxxx"</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"orig_prompt"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"actual_prompt"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"Childhood-inspired hand-drawn poster design: Three playful puppies joyfully interact with a colorful ball on a vibrant patch of lush green grass. Delicate decorative elements including fluttering birds and twinkling stars are scattered throughout. At the top center, the bold, blue cartoon-style title “Come Play Ball!” stands out prominently. Directly beneath, the subtitle “Come [Show Off Your Skills]!” is rendered in cheerful green lettering. A whimsical speech bubble near one of the puppies contains the playful text: “Hehe, watch me amaze my little friends next!” At the bottom edge, smaller supplementary text reads: “We get to play ball with our friends again!” The color palette is centered on fresh greens and sky blues, accented with pops of bright pink and sunny yellow, enhancing the cheerful, childlike atmosphere. Style evokes nostalgic, hand-inked illustrations with soft textures, gentle linework, and a whimsical, storybook-like composition."</span>
+            <span class="hljs-punctuation">}</span>
+        <span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"submit_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-09-09 13:39:20.659"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"scheduled_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-09-09 13:39:20.717"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"end_time"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"2025-09-09 13:39:45.233"</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"usage"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"image_count"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span>
+    <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section></section></section></section></section><section id="0910550f7e6es" class="section"><h4 id="589b80853e6rn"><b>Java SDK</b></h4><div id="d45f4bdb0515c" type="note" class="note note-note"><div class="note-icon-wrapper"><i class="icon-note note note"></i><strong>Note </strong></div><div class="noteContentSpan"><p data-init-id="15982bb560b88" id="f65e2647435l6">You must install the latest DashScope Java SDK. Otherwise, runtime errors may occur: <a href="/help/en/model-studio/install-sdk" id="d35ca33922448" title="" class="xref">Install SDK</a>.</p></div></div><section data-tag="tabbed-content-box" id="f364eaa01fbj9" outputclass="tabbed-content-box" class="tabbed-content-box section"><div class="tab-box"><div class="tab-item-container"><div class="tab-item selected-tab-item" id="52528dfb05xcy">Synchronous</div><div class="tab-item" id="ecd1180f3c026">Asynchronous</div></div><div class="tab-box-button" style="visibility: hidden;">
+  <div class="left deactivateBtn"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  <div class="right"><i class="help-iconfont help-icon-zhankai1"></i></div>
+  </div></div><section id="4d632ffd0cjn2" class="section" style="display: block;"><section id="f6390492acqxk" class="section"><section id="1ed9c658e5ls8" class="section"><h5 id="5ac3ea9f52tii">Request example</h5>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="f3b852bcdau9f" index="0" outputclass="language-java" props="intl" data-cond-props="intl" class="pre codeblock language-java"><code data-highlighted="yes" class="hljs language-java"><span class="hljs-comment">// Copyright (c) Alibaba, Inc. and its affiliates.</span>
+
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.imagesynthesis.ImageSynthesis;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.imagesynthesis.ImageSynthesisListResult;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.imagesynthesis.ImageSynthesisParam;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.imagesynthesis.ImageSynthesisResult;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.exception.ApiException;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.exception.NoApiKeyException;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.task.AsyncTaskListParam;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.utils.Constants;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.utils.JsonUtils;
+<span class="hljs-keyword">import</span> java.util.HashMap;
+<span class="hljs-keyword">import</span> java.util.Map;
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Text2Image</span> {
+    <span class="hljs-keyword">static</span> {
+        <span class="hljs-comment">// Use this URL for Singapore region. For Beijing region, replace with: https://dashscope.aliyuncs.com/api/v1</span>
+        Constants.baseHttpApiUrl = <span class="hljs-string">"https://dashscope-intl.aliyuncs.com/api/v1"</span>;
+    }
+
+    <span class="hljs-comment">// API keys differ between Beijing and Singapore regions. Get your API key: https://www.alibabacloud.com/help/zh/model-studio/get-api-key</span>
+    <span class="hljs-comment">// If you haven't set the environment variable, replace the line below with: static String apiKey = "sk-xxx"</span>
+    <span class="hljs-keyword">static</span> <span class="hljs-type">String</span> <span class="hljs-variable">apiKey</span> <span class="hljs-operator">=</span> System.getenv(<span class="hljs-string">"DASHSCOPE_API_KEY"</span>);
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">basicCall</span><span class="hljs-params">()</span> <span class="hljs-keyword">throws</span> ApiException, NoApiKeyException {
+        <span class="hljs-type">String</span> <span class="hljs-variable">prompt</span> <span class="hljs-operator">=</span> <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span>;
+        Map&lt;String, Object&gt; parameters = <span class="hljs-keyword">new</span> <span class="hljs-title class_">HashMap</span>&lt;&gt;();
+        parameters.put(<span class="hljs-string">"prompt_extend"</span>, <span class="hljs-literal">true</span>);
+        parameters.put(<span class="hljs-string">"watermark"</span>, <span class="hljs-literal">false</span>);
+        parameters.put(<span class="hljs-string">"negative_prompt"</span>, <span class="hljs-string">" "</span>);
+        <span class="hljs-type">ImageSynthesisParam</span> <span class="hljs-variable">param</span> <span class="hljs-operator">=</span>
+                ImageSynthesisParam.builder()
+                        .apiKey(apiKey)
+                        <span class="hljs-comment">// Only qwen-image-plus and qwen-image support asynchronous calls</span>
+                        .model(<span class="hljs-string">"qwen-image-plus"</span>)
+                        .prompt(prompt)
+                        .n(<span class="hljs-number">1</span>)
+                        .size(<span class="hljs-string">"1664*928"</span>)
+                        .parameters(parameters)
+                        .build();
+
+        <span class="hljs-type">ImageSynthesis</span> <span class="hljs-variable">imageSynthesis</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ImageSynthesis</span>();
+        <span class="hljs-type">ImageSynthesisResult</span> <span class="hljs-variable">result</span> <span class="hljs-operator">=</span> <span class="hljs-literal">null</span>;
+        <span class="hljs-keyword">try</span> {
+            System.out.println(<span class="hljs-string">"---Sync call, please wait a moment----"</span>);
+            result = imageSynthesis.call(param);
+        } <span class="hljs-keyword">catch</span> (ApiException | NoApiKeyException e){
+            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">RuntimeException</span>(e.getMessage());
+        }
+        System.out.println(JsonUtils.toJson(result));
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">main</span><span class="hljs-params">(String[] args)</span>{
+        <span class="hljs-keyword">try</span>{
+            basicCall();
+        }<span class="hljs-keyword">catch</span>(ApiException|NoApiKeyException e){
+            System.out.println(e.getMessage());
+        }
+    }
+}
+</code></pre>
+    </div>
+    </section><section id="ce07fb097bf04" class="section"><h5 id="277843734cea9"><b>Response example</b></h5><blockquote id="ef165f3f93av3">URLs expire after 24 hours. Download images promptly.</blockquote>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="f7b1658aadjgc" index="0" outputclass="language-json" props="intl" data-cond-props="intl" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"9f3044ba-528f-4606-8830-xxxxxx"</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"task_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"fecf4c7f-3508-45f4-8454-xxxxxx"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"task_status"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"SUCCEEDED"</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">"results"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+            <span class="hljs-punctuation">{</span>
+                <span class="hljs-attr">"orig_prompt"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"actual_prompt"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"Childhood-inspired hand-drawn poster design: Three playful puppies joyfully interact with a colorful ball on a vibrant patch of lush green grass. Delicate decorative elements including fluttering birds and twinkling stars are scattered throughout. At the top center, the bold, blue cartoon-style title “Come Play Ball!” stands out prominently. Directly beneath, the subtitle “Come [Show Off Your Skills]!” is rendered in cheerful green lettering. A whimsical speech bubble near one of the puppies contains the playful text: “Hehe, watch me amaze my little friends next!” At the bottom edge, smaller supplementary text reads: “We get to play ball with our friends again!” The color palette is centered on fresh greens and sky blues, accented with pops of bright pink and sunny yellow, enhancing the cheerful, childlike atmosphere. Style evokes nostalgic, hand-inked illustrations with soft textures, gentle linework, and a whimsical, storybook-like composition."</span><span class="hljs-punctuation">,</span>
+                <span class="hljs-attr">"url"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"https://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com/xxx.png?Expires=xxxx"</span>
+            <span class="hljs-punctuation">}</span>
+        <span class="hljs-punctuation">]</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">"usage"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">"image_count"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span>
+    <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    </section></section></section><section id="2ec99dc962238" class="section"><section id="54e6579b39d8v" class="section"><section id="ad04c8134ff2o" class="section"><h5 id="f7b9a75fbbo26">Request example</h5>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="d133288085zqh" index="6" outputclass="language-java" props="intl" data-cond-props="intl" class="pre codeblock language-java"><code data-highlighted="yes" class="hljs language-java"><span class="hljs-comment">// Copyright (c) Alibaba, Inc. and its affiliates.</span>
+
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.imagesynthesis.ImageSynthesis;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.imagesynthesis.ImageSynthesisParam;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.aigc.imagesynthesis.ImageSynthesisResult;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.exception.ApiException;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.exception.NoApiKeyException;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.utils.Constants;
+<span class="hljs-keyword">import</span> com.alibaba.dashscope.utils.JsonUtils;
+<span class="hljs-keyword">import</span> java.util.HashMap;
+<span class="hljs-keyword">import</span> java.util.Map;
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">Text2Image</span> {
+
+    <span class="hljs-keyword">static</span> {
+        <span class="hljs-comment">// Use this URL for Singapore region. For Beijing region, replace with: https://dashscope.aliyuncs.com/api/v1</span>
+        Constants.baseHttpApiUrl = <span class="hljs-string">"https://dashscope-intl.aliyuncs.com/api/v1"</span>;
+    }
+
+    <span class="hljs-comment">// API keys differ between Beijing and Singapore regions. Get your API key: https://www.alibabacloud.com/help/zh/model-studio/get-api-key</span>
+    <span class="hljs-comment">// If you haven't set the environment variable, replace the line below with: static String apiKey = "sk-xxx"</span>
+    <span class="hljs-keyword">static</span> <span class="hljs-type">String</span> <span class="hljs-variable">apiKey</span> <span class="hljs-operator">=</span> System.getenv(<span class="hljs-string">"DASHSCOPE_API_KEY"</span>);
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">asyncCall</span><span class="hljs-params">()</span> {
+        System.out.println(<span class="hljs-string">"---Creating task----"</span>);
+        <span class="hljs-type">String</span> <span class="hljs-variable">taskId</span> <span class="hljs-operator">=</span> <span class="hljs-built_in">this</span>.createAsyncTask();
+        System.out.println(<span class="hljs-string">"--Waiting for task to complete and return image url----"</span>);
+        <span class="hljs-built_in">this</span>.waitAsyncTask(taskId);
+    }
+
+    <span class="hljs-keyword">public</span> String <span class="hljs-title function_">createAsyncTask</span><span class="hljs-params">()</span> {
+        <span class="hljs-type">String</span> <span class="hljs-variable">prompt</span> <span class="hljs-operator">=</span> <span class="hljs-string">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span>;
+        Map&lt;String, Object&gt; parameters = <span class="hljs-keyword">new</span> <span class="hljs-title class_">HashMap</span>&lt;&gt;();
+        parameters.put(<span class="hljs-string">"prompt_extend"</span>, <span class="hljs-literal">true</span>);
+        parameters.put(<span class="hljs-string">"watermark"</span>, <span class="hljs-literal">false</span>);
+        parameters.put(<span class="hljs-string">"negative_prompt"</span>, <span class="hljs-string">" "</span>);
+        <span class="hljs-type">ImageSynthesisParam</span> <span class="hljs-variable">param</span> <span class="hljs-operator">=</span>
+                ImageSynthesisParam.builder()
+                        .apiKey(apiKey)
+                        <span class="hljs-comment">// Only qwen-image-plus and qwen-image support asynchronous calls</span>
+                        .model(<span class="hljs-string">"qwen-image-plus"</span>)
+                        .prompt(prompt)
+                        .n(<span class="hljs-number">1</span>)
+                        .size(<span class="hljs-string">"1664*928"</span>)
+                        .parameters(parameters)
+                        .build();
+
+        <span class="hljs-keyword">try</span> {
+            <span class="hljs-type">ImageSynthesisResult</span> <span class="hljs-variable">result</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ImageSynthesis</span>().asyncCall(param);
+            System.out.println(JsonUtils.toJson(result));
+            <span class="hljs-type">String</span> <span class="hljs-variable">taskId</span> <span class="hljs-operator">=</span> result.getOutput().getTaskId();
+            System.out.println(<span class="hljs-string">"task_id="</span> + taskId);
+            <span class="hljs-keyword">return</span> taskId;
+        } <span class="hljs-keyword">catch</span> (Exception e) {
+            <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">RuntimeException</span>(e.getMessage());
+        }
+    }
+
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">waitAsyncTask</span><span class="hljs-params">(String taskId)</span> {
+        <span class="hljs-type">ImageSynthesis</span> <span class="hljs-variable">imageSynthesis</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">ImageSynthesis</span>();
+        <span class="hljs-type">long</span> <span class="hljs-variable">startTime</span> <span class="hljs-operator">=</span> System.currentTimeMillis();
+        <span class="hljs-type">int</span> <span class="hljs-variable">timeout</span> <span class="hljs-operator">=</span> <span class="hljs-number">60</span> * <span class="hljs-number">1000</span>; <span class="hljs-comment">// 1 minute timeout</span>
+        <span class="hljs-type">int</span> <span class="hljs-variable">interval</span> <span class="hljs-operator">=</span> <span class="hljs-number">5</span> * <span class="hljs-number">1000</span>;  <span class="hljs-comment">// 5 second polling interval</span>
+
+        <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>) {
+            <span class="hljs-keyword">if</span> (System.currentTimeMillis() - startTime &gt; timeout) {
+                System.out.println(<span class="hljs-string">"Polling timed out (1 minute), task not completed"</span>);
+                <span class="hljs-keyword">return</span>;
+            }
+
+            <span class="hljs-keyword">try</span> {
+                <span class="hljs-type">ImageSynthesisResult</span> <span class="hljs-variable">result</span> <span class="hljs-operator">=</span> imageSynthesis.fetch(taskId, apiKey);
+                System.out.println(<span class="hljs-string">"Task status query result: "</span> + JsonUtils.toJson(result));
+                <span class="hljs-keyword">if</span> (result.getOutput() == <span class="hljs-literal">null</span>) {
+                    System.out.println(<span class="hljs-string">"Failed to get task status, output is empty"</span>);
+                    <span class="hljs-keyword">return</span>;
+                }
+                <span class="hljs-type">String</span> <span class="hljs-variable">taskStatus</span> <span class="hljs-operator">=</span> result.getOutput().getTaskStatus();
+                System.out.println(<span class="hljs-string">"Current task status: "</span> + taskStatus);
+                <span class="hljs-keyword">switch</span> (taskStatus) {
+                    <span class="hljs-keyword">case</span> <span class="hljs-string">"SUCCEEDED"</span>:
+                        System.out.println(<span class="hljs-string">"Task completed"</span>);
+                        System.out.println(JsonUtils.toJson(result));
+                        <span class="hljs-keyword">return</span>;
+                    <span class="hljs-keyword">case</span> <span class="hljs-string">"FAILED"</span>:
+                        System.out.println(<span class="hljs-string">"Task execution failed, status: "</span> + taskStatus);
+                        <span class="hljs-keyword">return</span>;
+                    <span class="hljs-keyword">case</span> <span class="hljs-string">"PENDING"</span>:
+                    <span class="hljs-keyword">case</span> <span class="hljs-string">"RUNNING"</span>:
+                        System.out.println(<span class="hljs-string">"Task in progress, querying again in 5 seconds..."</span>);
+                        Thread.sleep(interval);
+                        <span class="hljs-keyword">break</span>;
+                    <span class="hljs-keyword">default</span>:
+                        System.out.println(<span class="hljs-string">"Unknown task status: "</span> + taskStatus + <span class="hljs-string">", querying again in 5 seconds..."</span>);
+                        Thread.sleep(interval);
+                        <span class="hljs-keyword">break</span>;
+                }
+            } <span class="hljs-keyword">catch</span> (ApiException | NoApiKeyException e) {
+                System.err.println(<span class="hljs-string">"API call exception: "</span> + e.getMessage());
+                <span class="hljs-keyword">return</span>;
+            } <span class="hljs-keyword">catch</span> (InterruptedException e) {
+                System.err.println(<span class="hljs-string">"Thread interruption exception: "</span> + e.getMessage());
+                Thread.currentThread().interrupt();
+                <span class="hljs-keyword">return</span>;
+            }
+        }
+    }
+    
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">main</span><span class="hljs-params">(String[] args)</span>{
+        <span class="hljs-type">Text2Image</span> <span class="hljs-variable">text2Image</span> <span class="hljs-operator">=</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Text2Image</span>();
+        text2Image.asyncCall();
+    }
+}</code></pre>
+    </div>
+    </section><section id="fea34471e2rzd" class="section"><h5 id="228c690525jkh">Response example</h5><p id="c4f1b1426byab">1. Response for task creation</p>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="5b459392b7znx" outputclass="language-json" class="pre codeblock language-json"><code data-highlighted="yes" class="hljs language-json"><span class="hljs-punctuation">{</span>
+	<span class="hljs-attr">"request_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"5dbf9dc5-4f4c-9605-85ea-542f97709ba8"</span><span class="hljs-punctuation">,</span>
+	<span class="hljs-attr">"output"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+		<span class="hljs-attr">"task_id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"7277e20e-aa01-4709-xxxxxxxx"</span><span class="hljs-punctuation">,</span>
+		<span class="hljs-attr">"task_status"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"PENDING"</span>
+	<span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre>
+    </div>
+    <p id="357851edab77c">2. Response for polling task results</p><blockquote id="24941d28159tp">URLs expire after 24 hours. Download images promptly.</blockquote>
+    <div class="help-code-block">
+      <div class="code-tools">
+        <div class="left-tools">
+        </div>
+        <div class="right-tools">
+          <i class="theme-switch-btn help-iconfont help-icon-baitian" title="Change code theme"></i>
+      <i class="copy-btn help-iconfont help-icon-fuzhi" title="Copy Code"></i>
+        </div>
+      </div>
+      <pre code-type="xCode" data-tag="codeblock" id="b113e90009s72" index="0" outputclass="" props="intl" docid="5707573" is-conref="true" syntax="json" theme="default" data-cond-props="intl" class="pre codeblock"><code data-highlighted="yes" class="hljs language-smalltalk">{
+    <span class="hljs-comment">"request_id"</span>: <span class="hljs-comment">"9f3044ba-528f-4606-8830-xxxxxx"</span>,
+    <span class="hljs-comment">"output"</span>: {
+        <span class="hljs-comment">"task_id"</span>: <span class="hljs-comment">"fecf4c7f-3508-45f4-8454-xxxxxx"</span>,
+        <span class="hljs-comment">"task_status"</span>: <span class="hljs-comment">"SUCCEEDED"</span>,
+        <span class="hljs-comment">"results"</span>: [
+            {
+                <span class="hljs-comment">"orig_prompt"</span>: <span class="hljs-comment">"Healing-style hand-drawn poster featuring three puppies playing with a ball on lush green grass, adorned with decorative elements such as birds and stars. The main title “Come Play Ball!” is prominently displayed at the top in bold, blue cartoon font. Below it, the subtitle “Come [Show Off Your Skills]!” appears in green font. A speech bubble adds playful charm with the text: “Hehe, watch me amaze my little friends next!” At the bottom, supplementary text reads: “We get to play ball with our friends again!” The color palette centers on fresh greens and blues, accented with bright pink and yellow tones to highlight a cheerful, childlike atmosphere."</span>,
+                <span class="hljs-comment">"actual_prompt"</span>: <span class="hljs-comment">"Childhood-inspired hand-drawn poster design: Three playful puppies joyfully interact with a colorful ball on a vibrant patch of lush green grass. Delicate decorative elements including fluttering birds and twinkling stars are scattered throughout. At the top center, the bold, blue cartoon-style title “Come Play Ball!” stands out prominently. Directly beneath, the subtitle “Come [Show Off Your Skills]!” is rendered in cheerful green lettering. A whimsical speech bubble near one of the puppies contains the playful text: “Hehe, watch me amaze my little friends next!” At the bottom edge, smaller supplementary text reads: “We get to play ball with our friends again!” The color palette is centered on fresh greens and sky blues, accented with pops of bright pink and sunny yellow, enhancing the cheerful, childlike atmosphere. Style evokes nostalgic, hand-inked illustrations with soft textures, gentle linework, and a whimsical, storybook-like composition."</span>,
+                <span class="hljs-comment">"url"</span>: <span class="hljs-comment">"https://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com/xxx.png?Expires=xxxx"</span>
+            }
+        ]
+    },
+    <span class="hljs-comment">"usage"</span>: {
+        <span class="hljs-comment">"image_count"</span>: <span class="hljs-number">1</span>
+    }
+}</code></pre>
+    </div>
+    </section></section></section></section></section></section><section id="2bdaccbaa3lv5" class="section"><h2 id="aa1d5dd501v1b"><b>Billing and rate limiting</b></h2><ul id="98ddb0e6e51hh"><li id="83953b329euvm"><p jc="left" id="743eae4ce58sb" style="text-align:left">For free quotas and pricing, see <span props="intl"><a href="/help/en/model-studio/model-pricing#fc5b2efa93kzk" id="00037c474c84y" title="" class="xref">Model pricing</a></span>.</p></li><li id="ea45eb0676phi"><p id="4e3cde8f0d8yp">For rate limits, see <span props="intl"><a href="/help/en/model-studio/rate-limit#11371335d3feh" id="9bd5822406ua6" title="" class="xref">Qwen (Qwen-Image)</a></span>.</p></li><li id="bed31a831c6ek"><p id="83ba6473b6d34">Billing details: You are billed per <b>successfully generated image</b>. Failed calls or processing errors do not incur charges or consume your <a href="/help/en/model-studio/new-free-quota" id="fce1e1c9e6zr4" title="" class="xref">new user free quota</a>.</p></li></ul></section><section id="3e1e579599soq" docid="4944974" is-conref="true" class="section"><h2 data-lake-id="OajFO" id="OajFO"><b>Error codes </b></h2><p id="bd6dca38e6emt">If the model call fails and returns an error message, see <a href="/help/en/model-studio/error-code" id="d62f02c305acr" title="" class="xref">Error messages</a> for resolution.</p></section><section id="ec6f0fd8c0ni1" class="section"><h2 id="2000000003510"><b>FAQ</b></h2><section id="9ae0d1000cjm8" class="section"><h4 id="2000000000135"><b>Q: Should I enable or disable the prompt_extend parameter?</b></h4><p id="ad8305d266288">A: Enable this option (default) if you want more diverse image content and for the model to add details. Disable it if you need tighter control over image details, and optimize your prompts using the <a href="/help/en/model-studio/text-to-image-prompt" id="646ff1f6a0ome" title="" class="xref">Text-to-Image Prompt Guide</a>.</p></section><section id="245e9a1eb2u4e" class="section"><h4 id="8c22963d65qr5"><b>Q: What are the differences between qwen-image, qwen-image-plus, qwen-image-max, qwen-image-2.0, and qwen-image-edit?</b></h4><p id="4c45465a6b5pq">A:</p><ul id="96f69c549dzlv"><li id="a1b2c3faq001"><p id="a1b2c3faq002"><b>Combined image generation and editing models:</b> Support both text-to-image and image editing.</p><ul id="a1b2c3faq003"><li id="a1b2c3faq004"><p id="a1b2c3faq005"><code data-tag="code" id="a1b2c3faq006" class="code">qwen-image-2.0-pro</code> and <code data-tag="code" id="a1b2c3faq007" class="code">qwen-image-2.0-pro-2026-03-03</code>: Same capabilities. The Pro series delivers more professional text rendering, finer realistic textures, detailed realistic scenes, and stronger semantic adherence. Supports synchronous calls only.</p></li><li id="a1b2c3faq008"><p id="a1b2c3faq009"><code data-tag="code" id="a1b2c3faq010" class="code">qwen-image-2.0</code> and <code data-tag="code" id="a1b2c3faq011" class="code">qwen-image-2.0-2026-03-03</code>: Same capabilities. The accelerated version balances model performance and quality. Supports synchronous calls only.</p></li></ul></li><li id="532330fbd5hja"><p id="53bb041f57ffq"><b>Text-to-image models:</b> Generate images from text descriptions.</p><ul data-init-id="96f69c549dzlv" id="d85fe137aa4dd"><li id="539a7d63f8bnf"><p id="7ad9fc3426zcz"><code data-tag="code" id="3c30c34e0f5o3" class="code">qwen-image-max</code> and <code data-tag="code" id="6a6e816676qi1" class="code">qwen-image-max-2025-12-30</code>: Same capabilities. Compared with <code data-tag="code" class="code react-markdown-blog-code" id="5af754229dfmj">qwen-image-plus</code>, they deliver improved realism and naturalness, with better results for character textures, details, and text rendering.</p></li><li id="fa0220a139onm"><p id="5293784b67ah1"><code data-tag="code" class="code react-markdown-blog-code" id="3666c39cf57n7">qwen-image</code> and <code data-tag="code" class="code react-markdown-blog-code" data-init-id="5af754229dfmj" id="ea315d56f8g1e">qwen-image-plus</code>: Same capabilities, but <code data-tag="code" class="code react-markdown-blog-code" id="5a382996ac58l">qwen-image-plus</code> is more cost-effective.</p></li><li id="0ab2e223d0aw5"><p id="d4d941cfd6cqs"><code data-tag="code" id="02e0fcbe77sxc" class="code">qwen-image-plus-2026-01-09</code>: A new snapshot version of Qwen-Image. It is a distilled and accelerated version of <code data-tag="code" data-init-id="3c30c34e0f5o3" id="6677e88eadsu1" class="code">qwen-image-max</code> that supports fast generation of high-quality images.</p></li></ul></li><li id="876e1b2e42tnt"><p id="95dd621220a56"><b>Image editing model:</b><br><code data-tag="code" class="code react-markdown-blog-code" id="b5c999fd4dr1f">qwen-image-edit</code>: Performs image-to-image transformations, inpainting, and other operations based on an input image and text instructions. For more information, see <a href="/help/en/model-studio/qwen-image-edit-api" id="3c011fd4b2qat" title="" class="xref">Qwen - image editing</a>.<br></p></li></ul></section><section id="e5e438ae3f5le" docid="6625971" is-conref="true" class="section"><h3 id="5fb153423ct8z"><b>Q: How do I get the domain name whitelist for image storage?</b></h3><p id="46625416de4bn">A: Images generated by models are stored in OSS. The API returns a temporary public URL. <b>To configure a firewall whitelist for this download URL</b>, note the following: The underlying storage may change dynamically. This topic does not provide a fixed OSS domain name whitelist to prevent access issues caused by outdated information. If you have security control requirements, contact your account manager to obtain the latest OSS domain name list.</p></section></section><section id="dc95e6202evqz" data-ref-searchable="yes" data-source="reuse_library" is-conref="true" class="section">
+        
+        
+  <style>
+/* Adjust table width */
+.aliyun-docs-content table.medium-width {
+  max-width: 1018px;
+  width: 100%;
+}
+
+.aliyun-docs-content table.table-no-border tr td:first-child {
+  padding-left: 0;
+}
+
+.aliyun-docs-content table.table-no-border tr td:last-child {
+  padding-right: 0;
+}
+</style>
+ 
+        
+  <style>
+/* Support sticky positioning */
+div:has(.aliyun-docs-content),
+.aliyun-docs-content .markdown-body {
+  overflow: visible;
+}
+.stick-top {
+  position: sticky;
+  top: 46px;
+}
+</style>
+ 
+        
+  <style>
+/** Code block font **/
+
+/* Reduce code block margin in tables to make table information more compact */
+.unionContainer .markdown-body table .help-code-block  {
+  margin: 0 !important;
+}
+/* Reduce code block font size in tables to make table information more compact */
+.unionContainer .markdown-body .help-code-block pre {
+  font-size: 12px !important;
+}
+/* Reduce code block font size in tables to make table information more compact */
+.unionContainer .markdown-body .help-code-block pre code {
+  font-size: 12px !important;
+}
+</style>
+ 
+        
+  <style>
+
+/** API Reference tables **/
+
+.aliyun-docs-content table.api-reference tr td:first-child {
+  margin: 0px;
+  border-bottom: 1px solid #d8d8d8;
+}
+
+.aliyun-docs-content table.api-reference tr:last-child td:first-child {  
+  border-bottom: none;
+}
+
+.aliyun-docs-content table.api-reference p {
+  color: #6e6e80;
+}
+
+.aliyun-docs-content table.api-reference b, i {
+  color: #181818;
+}
+
+.aliyun-docs-content table.api-reference .collapse {
+  border: none;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.aliyun-docs-content table.api-reference .collapse .expandable-title-bold {
+  padding: 0;
+}
+
+.aliyun-docs-content table.api-reference .collapse .expandable-title {
+  padding: 0;
+}
+
+.aliyun-docs-content table.api-reference .collapse .expandable-title-bold .title {
+  margin-left: 16px;
+}
+
+.aliyun-docs-content table.api-reference .collapse .expandable-title .title {
+  margin-left: 16px;
+}
+
+.aliyun-docs-content table.api-reference .collapse .expandable-title-bold i.icon {
+  position: absolute;
+  color: #777;
+  font-weight: 100;
+}
+
+.aliyun-docs-content table.api-reference .collapse .expandable-title i.icon {
+  position: absolute;
+  color: #777;
+  font-weight: 100;
+}
+
+.aliyun-docs-content table.api-reference .collapse.expanded .expandable-content {
+  padding: 10px 14px 10px 14px !important;
+  margin: 0;
+  border: 1px solid #e9e9e9;
+}
+
+.aliyun-docs-content table.api-reference .collapse .expandable-title-bold b {
+  font-size: 13px;
+  font-weight: normal;
+  color: #6e6e80;
+}
+
+.aliyun-docs-content table.api-reference .collapse .expandable-title b {
+  font-size: 13px;
+  font-weight: normal;
+  color: #6e6e80;
+}
+
+.aliyun-docs-content table.api-reference .tabbed-content-box {
+  border: none;
+}
+
+.aliyun-docs-content table.api-reference .tabbed-content-box section {
+  padding: 8px 0 !important;
+}
+
+.aliyun-docs-content table.api-reference .tabbed-content-box.mini .tab-box {
+  /*
+  position: absolute;
+  left: 40px;
+  right: 0;
+  */
+}
+
+.aliyun-docs-content .margin-top-33 {
+  margin-top: 33px !important;
+}
+
+.aliyun-docs-content .two-codeblocks pre {
+  max-height: calc(50vh - 136px) !important;
+  height: auto;
+}
+
+.expandable-content section {
+    border-bottom: 1px solid #e9e9e9;
+    padding-top: 6px;
+    padding-bottom: 4px;
+}
+
+.expandable-content section:last-child {
+    border-bottom: none;
+}
+
+.expandable-content section:first-child {
+    padding-top: 0;
+}
+
+</style>
+ 
+      </section>
+<style>
+          /* Reduce vertical spacing for blockquotes to avoid sparse content */
+          .unionContainer .markdown-body blockquote {
+            margin: 4px 0;
+          }
+
+          .aliyun-docs-content table.qwen blockquote {
+            border-left: none;
+            /* Remove left border for blockquotes in tables */
+            padding-left: 5px;
+            /* Add left padding */
+            margin: 4px 0;
+          }
+        </style>
+
+<style>
+          /* Style tables as column cards similar to DingTalk docs */
+          table.help-table-card td {
+            border: 10px solid #FFF !important;
+            background: #F4F6F9;
+            padding: 16px !important;
+            vertical-align: top;
+          }
+
+          /* Reduce margin for code blocks in tables for a more compact layout */
+          .unionContainer .markdown-body table .help-code-block {
+            margin: 0 !important;
+          }
+
+          /* Reduce font size for code blocks in tables for a more compact layout */
+          .unionContainer .markdown-body .help-code-block pre {
+            font-size: 12px !important;
+          }
+
+          /* Reduce font size for code blocks in tables for a more compact layout */
+          .unionContainer .markdown-body .help-code-block pre code {
+            font-size: 12px !important;
+          }
+
+          /* Reduce vertical spacing for blockquotes in tables to avoid sparse content */
+          .unionContainer .markdown-body table blockquote {
+            margin: 4px 0 0 0;
+          }
+
+        </style>
+
+<style>
+          /* Sets table images as block elements (which occupy a full line), centers them, and allows them to be clicked to view the original image. */
+          .unionContainer .markdown-body .image.break {
+            margin: 0px;
+            display: inline-block;
+            vertical-align: middle
+          }
+
+        </style>
+<p id="2970b622a9z0t"></p></div></main>
+
+</div></div><div class="aliyun-docs-pagination NextPage--pagination--CRHRWAF" style="display:none"></div></div>
