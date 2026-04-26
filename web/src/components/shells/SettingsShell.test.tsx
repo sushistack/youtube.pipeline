@@ -70,10 +70,7 @@ function installFetchMock(overrides?: {
               status: overrides?.budget_status ?? 'safe',
             },
             application: {
-              status: 'queued',
               effective_version: 1,
-              pending_version: 2,
-              queued_at: '2026-04-24T09:00:00Z',
             },
           },
         }),
@@ -136,10 +133,7 @@ function installFetchMock(overrides?: {
               status: 'safe',
             },
             application: {
-              status: 'queued',
-              effective_version: 1,
-              pending_version: 3,
-              queued_at: '2026-04-24T09:05:00Z',
+              effective_version: 3,
             },
           },
         }),
@@ -198,7 +192,6 @@ describe('SettingsShell', () => {
       await screen.findByRole('heading', { name: 'Models and cost guardrails' }),
     ).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Timeline' })).toBeInTheDocument()
-    expect(screen.getByText(/queued change set/i)).toBeInTheDocument()
   })
 
   it('shows inline client validation before submit', async () => {

@@ -81,8 +81,8 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 13 {
-		t.Errorf("user_version = %d, want %d", version, 13)
+	if version != 16 {
+		t.Errorf("user_version = %d, want %d", version, 16)
 	}
 
 	db.Close()
@@ -100,8 +100,8 @@ func TestMigrate_UserVersion(t *testing.T) {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query user_version: %v", err)
 	}
-	if version != 13 {
-		t.Errorf("user_version = %d, want %d", version, 13)
+	if version != 16 {
+		t.Errorf("user_version = %d, want %d", version, 16)
 	}
 }
 
@@ -122,7 +122,6 @@ func TestSchema_TablesExist(t *testing.T) {
 		"character_search_cache",
 		"settings_versions",
 		"settings_state",
-		"run_settings_assignments",
 	}
 	for _, table := range tables {
 		var name string
@@ -146,12 +145,11 @@ func TestSchema_SettingsStateSentinelRowExists(t *testing.T) {
 	var (
 		id        int
 		effective sql.NullInt64
-		pending   sql.NullInt64
 	)
 	err = db.QueryRow(`
-SELECT id, effective_version, pending_version
+SELECT id, effective_version
   FROM settings_state
- WHERE id = 1`).Scan(&id, &effective, &pending)
+ WHERE id = 1`).Scan(&id, &effective)
 	if err != nil {
 		t.Fatalf("sentinel settings_state row missing: %v", err)
 	}
@@ -160,9 +158,6 @@ SELECT id, effective_version, pending_version
 	}
 	if effective.Valid {
 		t.Errorf("effective_version should start NULL; got %d", effective.Int64)
-	}
-	if pending.Valid {
-		t.Errorf("pending_version should start NULL; got %d", pending.Int64)
 	}
 }
 

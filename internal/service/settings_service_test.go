@@ -16,60 +16,7 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
-func TestSettingsService_SaveQueuedWhenActiveRunExists(t *testing.T) {
-	testDB := testutil.NewTestDB(t)
-	insertActiveRun(t, testDB, "scp-049-run-1", "running")
-
-	svc, configPath := newSettingsTestService(t, testDB)
-	initialConfigBytes, _ := os.ReadFile(configPath)
-
-	snapshot, err := svc.Save(context.Background(), validSettingsInput(), nil)
-	if err != nil {
-		t.Fatalf("Save() error = %v", err)
-	}
-
-	if snapshot.Application.Status != "queued" {
-		t.Fatalf("application status = %q, want queued", snapshot.Application.Status)
-	}
-
-	// D1 guarantee: disk must NOT be rewritten while active runs exist.
-	postSaveConfigBytes, _ := os.ReadFile(configPath)
-	if string(initialConfigBytes) != string(postSaveConfigBytes) {
-		t.Fatalf("config.yaml was rewritten during queued save (disk leak)")
-	}
-
-	cfg, err := svc.LoadEffectiveRuntimeConfig(context.Background())
-	if err != nil {
-		t.Fatalf("LoadEffectiveRuntimeConfig() error = %v", err)
-	}
-	if cfg.WriterModel == "deepseek-chat-v2" {
-		t.Fatalf("effective runtime config unexpectedly promoted queued version")
-	}
-
-	promoted, err := svc.PromotePendingAtSafeSeam(context.Background())
-	if err != nil {
-		t.Fatalf("PromotePendingAtSafeSeam() error = %v", err)
-	}
-	if !promoted {
-		t.Fatal("PromotePendingAtSafeSeam() = false, want true")
-	}
-
-	cfg, err = svc.LoadEffectiveRuntimeConfig(context.Background())
-	if err != nil {
-		t.Fatalf("LoadEffectiveRuntimeConfig() after promote error = %v", err)
-	}
-	if cfg.WriterModel != "deepseek-chat-v2" {
-		t.Fatalf("effective writer_model = %q, want deepseek-chat-v2", cfg.WriterModel)
-	}
-
-	// After promotion, disk must reflect the promoted version.
-	promotedBytes, _ := os.ReadFile(configPath)
-	if !strings.Contains(string(promotedBytes), "deepseek-chat-v2") {
-		t.Fatalf("config.yaml not materialized after promotion; contents=%s", string(promotedBytes))
-	}
-}
-
-func TestSettingsService_SaveWritesDiskWhenNoActiveRuns(t *testing.T) {
+func TestSettingsService_SaveWritesEffectiveAndDisk(t *testing.T) {
 	testDB := testutil.NewTestDB(t)
 	svc, configPath := newSettingsTestService(t, testDB)
 
@@ -77,8 +24,8 @@ func TestSettingsService_SaveWritesDiskWhenNoActiveRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
-	if snapshot.Application.Status != "effective" {
-		t.Fatalf("application status = %q, want effective", snapshot.Application.Status)
+	if snapshot.Application.EffectiveVersion == nil {
+		t.Fatalf("application effective_version is nil after save")
 	}
 
 	data, err := os.ReadFile(configPath)
@@ -87,6 +34,42 @@ func TestSettingsService_SaveWritesDiskWhenNoActiveRuns(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "deepseek-chat-v2") {
 		t.Fatalf("config.yaml does not contain saved value; contents=%s", string(data))
+	}
+
+	cfg, err := svc.LoadEffectiveRuntimeConfig(context.Background())
+	if err != nil {
+		t.Fatalf("LoadEffectiveRuntimeConfig() error = %v", err)
+	}
+	if cfg.WriterModel != "deepseek-chat-v2" {
+		t.Fatalf("effective writer_model = %q, want deepseek-chat-v2", cfg.WriterModel)
+	}
+}
+
+func TestSettingsService_SaveAppliesImmediatelyEvenWithActiveRun(t *testing.T) {
+	// Settings save no longer queues — even when a run is in flight, the new
+	// version takes effect immediately. The in-flight run is unaffected
+	// because each phase executor took its own in-memory snapshot at start.
+	testDB := testutil.NewTestDB(t)
+	insertActiveRun(t, testDB, "scp-049-run-1", "running")
+
+	svc, configPath := newSettingsTestService(t, testDB)
+	if _, err := svc.Save(context.Background(), validSettingsInput(), nil); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	cfg, err := svc.LoadEffectiveRuntimeConfig(context.Background())
+	if err != nil {
+		t.Fatalf("LoadEffectiveRuntimeConfig() error = %v", err)
+	}
+	if cfg.WriterModel != "deepseek-chat-v2" {
+		t.Fatalf("effective writer_model = %q, want deepseek-chat-v2", cfg.WriterModel)
+	}
+	disk, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(disk), "deepseek-chat-v2") {
+		t.Fatalf("config.yaml not updated despite active run; contents=%s", string(disk))
 	}
 }
 
@@ -187,40 +170,6 @@ func TestSettingsService_BudgetPrefersRunningOverFailed(t *testing.T) {
 	}
 	if snapshot.Budget.Source.RunID == nil || *snapshot.Budget.Source.RunID != "run-running" {
 		t.Fatalf("budget should prefer running run over failed run; got %+v", snapshot.Budget.Source)
-	}
-}
-
-func TestSettingsService_LoadRuntimeFilesForRun_UsesPinnedVersion(t *testing.T) {
-	testDB := testutil.NewTestDB(t)
-	svc, _ := newSettingsTestService(t, testDB)
-
-	// Save an initial effective version (v1).
-	if _, err := svc.Save(context.Background(), validSettingsInput(), nil); err != nil {
-		t.Fatalf("initial save: %v", err)
-	}
-	// Simulate a run being created against v1.
-	insertActiveRun(t, testDB, "pinned-run", "running")
-	if err := svc.AssignRunToEffectiveVersion(context.Background(), "pinned-run"); err != nil {
-		t.Fatalf("assign: %v", err)
-	}
-
-	// A second save while the run is active is queued (v2 = pending).
-	second := validSettingsInput()
-	second.Config.WriterModel = "writer-v2"
-	if _, err := svc.Save(context.Background(), second, nil); err != nil {
-		t.Fatalf("second save: %v", err)
-	}
-
-	// The pinned run must still resolve to v1 even though the most-recent
-	// version is v2 (queued pending). Engine-level promotion would normally
-	// fire at the next stage boundary; until then, active stages MUST keep
-	// the snapshot they started with.
-	files, err := svc.LoadRuntimeFilesForRun(context.Background(), "pinned-run")
-	if err != nil {
-		t.Fatalf("LoadRuntimeFilesForRun: %v", err)
-	}
-	if files.Config.WriterModel == "writer-v2" {
-		t.Fatalf("pinned run adopted queued version v2; want v1 writer-v2 only after promotion")
 	}
 }
 

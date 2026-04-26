@@ -3,7 +3,6 @@ import type { SettingsConfig } from '../../contracts/settingsContracts'
 import { ApiClientError } from '../../lib/apiClient'
 import { BudgetIndicator } from '../settings/BudgetIndicator'
 import { ProviderConfigPanel } from '../settings/ProviderConfigPanel'
-import { QueuedChangeBanner } from '../settings/QueuedChangeBanner'
 import { SecretFieldsPanel, type SecretDraft } from '../settings/SecretFieldsPanel'
 import { TimelineView } from '../settings/TimelineView'
 import {
@@ -184,11 +183,7 @@ export function SettingsShell() {
       set_field_errors({})
       set_secret_drafts({})
       set_draft_config(next_snapshot.config)
-      set_submit_state(
-        next_snapshot.application.status === 'queued'
-          ? 'Settings saved and queued for the next safe seam.'
-          : 'Settings saved successfully.',
-      )
+      set_submit_state('Settings saved successfully.')
     } catch (error) {
       if (error instanceof ApiClientError) {
         if (error.status === 409) {
@@ -224,8 +219,6 @@ export function SettingsShell() {
         </div>
         <BudgetIndicator budget={snapshot.budget} />
       </div>
-
-      <QueuedChangeBanner application={snapshot.application} />
 
       <form className='settings-workspace' onSubmit={handleSubmit}>
         <div className='settings-workspace__controls'>

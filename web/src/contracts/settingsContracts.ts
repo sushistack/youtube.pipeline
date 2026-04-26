@@ -41,10 +41,7 @@ export const settingsBudgetSchema = z.object({
 })
 
 export const settingsApplicationSchema = z.object({
-  status: z.enum(['effective', 'queued']),
   effective_version: z.number().int().nonnegative().optional(),
-  pending_version: z.number().int().nonnegative().optional(),
-  queued_at: z.string().min(1).optional(),
 })
 
 export const settingsSnapshotSchema = z.object({

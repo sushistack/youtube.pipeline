@@ -58,10 +58,7 @@ type SettingsBudgetSummary struct {
 }
 
 type SettingsApplicationState struct {
-	Status           string  `json:"status"`
-	EffectiveVersion *int64  `json:"effective_version,omitempty"`
-	PendingVersion   *int64  `json:"pending_version,omitempty"`
-	QueuedAt         *string `json:"queued_at,omitempty"`
+	EffectiveVersion *int64 `json:"effective_version,omitempty"`
 }
 
 // SettingsNoneVersion is sentinel used in ETag / If-Match headers when no
@@ -88,8 +85,6 @@ type SettingsVersionRecord struct {
 
 type SettingsStateRecord struct {
 	EffectiveVersion *int64
-	PendingVersion   *int64
-	QueuedAt         *string
 }
 
 type SettingsValidationError struct {

@@ -29,14 +29,6 @@ type PhaseBExecutor interface {
 	Run(ctx context.Context, req PhaseBRequest) (PhaseBResult, error)
 }
 
-// SettingsPromoter is the narrow surface the engine uses to flip queued
-// settings versions to effective at stage boundaries. *service.SettingsService
-// satisfies it structurally. Nil is tolerated for callers (tests, tools)
-// that don't care about settings promotion.
-type SettingsPromoter interface {
-	PromotePendingAtSafeSeam(ctx context.Context) (bool, error)
-}
-
 // SegmentStore is the minimal persistence surface the Engine needs for
 // Phase B clean-slate semantics. *db.SegmentStore satisfies it structurally.
 type SegmentStore interface {
@@ -82,7 +74,6 @@ type Engine struct {
 	phaseB         PhaseBExecutor
 	phaseC         *PhaseCRunner
 	phaseCMetadata MetadataBuilder
-	settings       SettingsPromoter
 	clock          clock.Clock
 	outputDir      string
 	logger         *slog.Logger
@@ -125,12 +116,6 @@ func (e *Engine) SetPhaseCMetadataBuilder(builder MetadataBuilder) {
 	e.phaseCMetadata = builder
 }
 
-// SetSettingsPromoter wires the queued-settings promoter that fires at every
-// stage-advance boundary. Nil disables promotion (acceptable for tests).
-func (e *Engine) SetSettingsPromoter(p SettingsPromoter) {
-	e.settings = p
-}
-
 // SetHITLSessionStore wires the full HITL session store used to upsert
 // hitl_sessions rows when Advance transitions a run INTO a HITL stage
 // (scenario_review, batch_review, metadata_ack). Without this, the row stays
@@ -154,26 +139,6 @@ func (e *Engine) upsertHITLSessionAtTransition(ctx context.Context, runID string
 	if _, err := UpsertSessionFromState(ctx, e.hitlSessions, e.clock, runID, stage, domain.StatusWaiting); err != nil {
 		e.logger.Warn("upsert hitl session at transition failed",
 			"run_id", runID, "stage", string(stage), "error", err.Error())
-	}
-}
-
-// promoteSettingsAtBoundary fires the queued-settings promoter at a stage
-// boundary. Errors are logged but not propagated — a promotion failure
-// should not block a stage transition that succeeded otherwise. The next
-// boundary will retry.
-func (e *Engine) promoteSettingsAtBoundary(ctx context.Context, runID string, from, to domain.Stage) {
-	if e.settings == nil {
-		return
-	}
-	promoted, err := e.settings.PromotePendingAtSafeSeam(ctx)
-	if err != nil {
-		e.logger.Warn("settings promotion at stage boundary failed",
-			"run_id", runID, "from", from, "to", to, "error", err.Error())
-		return
-	}
-	if promoted {
-		e.logger.Info("settings promoted at stage boundary",
-			"run_id", runID, "from", from, "to", to)
 	}
 }
 
@@ -204,7 +169,6 @@ func (e *Engine) Advance(ctx context.Context, runID string) error {
 		if err != nil {
 			return fmt.Errorf("advance %s: load segments: %w", runID, err)
 		}
-		e.promoteSettingsAtBoundary(ctx, runID, run.Stage, run.Stage)
 		if err := e.runPhaseB(ctx, runID, run, segs); err != nil {
 			return fmt.Errorf("advance %s: %w", runID, err)
 		}
@@ -217,7 +181,6 @@ func (e *Engine) Advance(ctx context.Context, runID string) error {
 		if err != nil {
 			return fmt.Errorf("advance %s: load segments: %w", runID, err)
 		}
-		e.promoteSettingsAtBoundary(ctx, runID, run.Stage, run.Stage)
 		if err := e.runPhaseC(ctx, runID, run, segs); err != nil {
 			return fmt.Errorf("advance %s: %w", runID, err)
 		}
@@ -232,11 +195,6 @@ func (e *Engine) advancePhaseA(ctx context.Context, runID string, run *domain.Ru
 	if e.phaseA == nil {
 		return fmt.Errorf("advance %s: %w: phase a executor is nil", runID, domain.ErrValidation)
 	}
-
-	// Promote queued settings BEFORE Phase A begins so the full chain runs
-	// against a coherent snapshot. Mid-chain promotion would violate the
-	// invariant that each stage sees exactly one config.
-	e.promoteSettingsAtBoundary(ctx, runID, run.Stage, domain.StageResearch)
 
 	state := &agents.PipelineState{
 		RunID: run.ID,
@@ -369,9 +327,6 @@ func (e *Engine) runPhaseC(ctx context.Context, runID string, run *domain.Run, s
 	if err != nil {
 		return fmt.Errorf("compute next stage: %w", err)
 	}
-	// Stage boundary — promote queued settings so metadata entry runs
-	// against the newly-approved config.
-	e.promoteSettingsAtBoundary(ctx, runID, run.Stage, nextStage)
 	res := domain.PhaseAAdvanceResult{
 		Stage:        nextStage,
 		Status:       StatusForStage(nextStage),
@@ -413,8 +368,21 @@ func (e *Engine) Resume(ctx context.Context, runID string) (*domain.Inconsistenc
 	return e.ResumeWithOptions(ctx, runID, ResumeOptions{})
 }
 
-// ResumeWithOptions is the full Resume orchestration. The order of steps
-// is load-bearing for correctness — see story 2.3 AC-ENGINE-RESUME:
+// ResumeWithOptions is the full Resume orchestration: PrepareResume +
+// ExecuteResume in one synchronous call. Used by the CLI; the API splits
+// these so Phase B/C work runs detached from the HTTP request lifetime.
+func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts ResumeOptions) (*domain.InconsistencyReport, error) {
+	_, report, err := e.PrepareResume(ctx, runID, opts)
+	if err != nil {
+		return report, err
+	}
+	if err := e.ExecuteResume(ctx, runID); err != nil {
+		return report, err
+	}
+	return report, nil
+}
+
+// PrepareResume performs the synchronous portion of Resume:
 //
 //  1. Load run.
 //  2. Validate: stage is a known constant AND stage != complete AND status
@@ -432,31 +400,36 @@ func (e *Engine) Resume(ctx context.Context, runID string) (*domain.Inconsistenc
 //     retry_reason, and increments retry_count atomically (no torn-state
 //     window between two UPDATEs).
 //
-// Returns the InconsistencyReport for caller surfacing (CLI warnings,
-// API envelope), and any terminal error.
-func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts ResumeOptions) (*domain.InconsistencyReport, error) {
+// On nil error the run is in `running`/`waiting` status, segments and
+// filesystem are clean, and the returned snapshot reflects the post-reset
+// state. The caller MUST follow with ExecuteResume to actually run the
+// stage's automated work. Splitting these lets the API return 202 fast and
+// dispatch Phase B (TTS/image, minutes-long) on a context detached from
+// the inbound HTTP request — http.Server.WriteTimeout would otherwise
+// cancel mid-flight.
+func (e *Engine) PrepareResume(ctx context.Context, runID string, opts ResumeOptions) (*domain.Run, *domain.InconsistencyReport, error) {
 	run, err := e.runs.Get(ctx, runID)
 	if err != nil {
-		return nil, fmt.Errorf("resume %s: %w", runID, err)
+		return nil, nil, fmt.Errorf("resume %s: %w", runID, err)
 	}
 
 	if !run.Stage.IsValid() {
-		return nil, fmt.Errorf("resume %s: %w: invalid stage %q", runID, domain.ErrValidation, run.Stage)
+		return nil, nil, fmt.Errorf("resume %s: %w: invalid stage %q", runID, domain.ErrValidation, run.Stage)
 	}
 	if err := validateResumable(run); err != nil {
-		return nil, fmt.Errorf("resume %s: %w", runID, err)
+		return nil, nil, fmt.Errorf("resume %s: %w", runID, err)
 	}
 
 	segments, err := e.segments.ListByRunID(ctx, runID)
 	if err != nil {
-		return nil, fmt.Errorf("resume %s: %w", runID, err)
+		return nil, nil, fmt.Errorf("resume %s: %w", runID, err)
 	}
 
 	runDir := filepath.Join(e.outputDir, runID)
 
 	report, err := CheckConsistency(runDir, run, segments)
 	if err != nil {
-		return nil, fmt.Errorf("resume %s: consistency check: %w", runID, err)
+		return nil, nil, fmt.Errorf("resume %s: consistency check: %w", runID, err)
 	}
 	if len(report.Mismatches) > 0 {
 		for _, m := range report.Mismatches {
@@ -465,7 +438,7 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 				"kind", m.Kind, "path", m.Path, "detail", m.Detail)
 		}
 		if !opts.Force {
-			return report, fmt.Errorf("resume %s: %w: %s", runID, domain.ErrValidation, report.Error())
+			return nil, report, fmt.Errorf("resume %s: %w: %s", runID, domain.ErrValidation, report.Error())
 		}
 	}
 
@@ -473,31 +446,31 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 	if isPhaseB(run.Stage) {
 		if preserveSibling {
 			if err := cleanFailedPhaseBTrack(runDir, run.Stage); err != nil {
-				return report, fmt.Errorf("resume %s: clean failed phase b track: %w", runID, err)
+				return nil, report, fmt.Errorf("resume %s: clean failed phase b track: %w", runID, err)
 			}
 		} else {
 			if err := CleanStageArtifacts(runDir, domain.StageImage); err != nil {
-				return report, fmt.Errorf("resume %s: clean images: %w", runID, err)
+				return nil, report, fmt.Errorf("resume %s: clean images: %w", runID, err)
 			}
 			if err := CleanStageArtifacts(runDir, domain.StageTTS); err != nil {
-				return report, fmt.Errorf("resume %s: clean tts: %w", runID, err)
+				return nil, report, fmt.Errorf("resume %s: clean tts: %w", runID, err)
 			}
 		}
 	} else {
 		if err := CleanStageArtifacts(runDir, run.Stage); err != nil {
-			return report, fmt.Errorf("resume %s: clean artifacts: %w", runID, err)
+			return nil, report, fmt.Errorf("resume %s: clean artifacts: %w", runID, err)
 		}
 	}
 
 	if isPhaseB(run.Stage) {
 		if preserveSibling {
 			if err := clearFailedPhaseBTrack(ctx, e.segments, runID, run.Stage); err != nil {
-				return report, fmt.Errorf("resume %s: clear failed phase b track state: %w", runID, err)
+				return nil, report, fmt.Errorf("resume %s: clear failed phase b track state: %w", runID, err)
 			}
 		} else {
 			n, err := e.segments.DeleteByRunID(ctx, runID)
 			if err != nil {
-				return report, fmt.Errorf("resume %s: delete segments: %w", runID, err)
+				return nil, report, fmt.Errorf("resume %s: delete segments: %w", runID, err)
 			}
 			e.logger.Info("segments deleted for phase b resume",
 				"run_id", runID, "count", n)
@@ -507,7 +480,7 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 		// consistency checks don't flag every segment forever.
 		n, err := e.segments.ClearClipPathsByRunID(ctx, runID)
 		if err != nil {
-			return report, fmt.Errorf("resume %s: clear clip_paths: %w", runID, err)
+			return nil, report, fmt.Errorf("resume %s: clear clip_paths: %w", runID, err)
 		}
 		e.logger.Info("clip_paths cleared for assemble resume",
 			"run_id", runID, "count", n)
@@ -515,51 +488,69 @@ func (e *Engine) ResumeWithOptions(ctx context.Context, runID string, opts Resum
 
 	newStatus := StatusForStage(run.Stage)
 	if err := e.runs.ResetForResume(ctx, runID, newStatus); err != nil {
-		return report, fmt.Errorf("resume %s: reset: %w", runID, err)
+		return nil, report, fmt.Errorf("resume %s: reset: %w", runID, err)
 	}
 
-	// Resume is a fresh stage entry: promote queued settings before the
-	// stage executes so the retried stage sees the latest approved config.
-	e.promoteSettingsAtBoundary(ctx, runID, run.Stage, run.Stage)
+	updated, err := e.runs.Get(ctx, runID)
+	if err != nil {
+		return nil, report, fmt.Errorf("resume %s: reload: %w", runID, err)
+	}
+
+	e.logger.Info("run resume prepared",
+		"run_id", runID, "stage", updated.Stage, "status", updated.Status,
+		"force", opts.Force, "warnings", len(report.Mismatches))
+	return updated, report, nil
+}
+
+// ExecuteResume runs the long-running portion of Resume (Phase B/C/metadata
+// + HITL session cleanup) for a run that PrepareResume has already prepared.
+// Re-loads the run + segments to operate on the post-reset state.
+//
+// Failures inside Phase B/C/metadata are responsible for transitioning the
+// run back to `failed` status via ApplyPhaseAResult; this method just
+// surfaces the error. Callers that dispatch this in a goroutine should
+// use a context detached from any HTTP request lifetime.
+func (e *Engine) ExecuteResume(ctx context.Context, runID string) error {
+	run, err := e.runs.Get(ctx, runID)
+	if err != nil {
+		return fmt.Errorf("resume %s: %w", runID, err)
+	}
+	segments, err := e.segments.ListByRunID(ctx, runID)
+	if err != nil {
+		return fmt.Errorf("resume %s: %w", runID, err)
+	}
 
 	if isPhaseB(run.Stage) && e.phaseB != nil {
 		if err := e.runPhaseB(ctx, runID, run, segments); err != nil {
-			return report, fmt.Errorf("resume %s: %w", runID, err)
+			return fmt.Errorf("resume %s: %w", runID, err)
 		}
 	}
 
-	// Execute StageAssemble if Phase C runner is configured.
 	if run.Stage == domain.StageAssemble && e.phaseC != nil {
 		if err := e.runPhaseC(ctx, runID, run, segments); err != nil {
-			return report, fmt.Errorf("resume %s: %w", runID, err)
+			return fmt.Errorf("resume %s: %w", runID, err)
 		}
 	}
 
-	// Re-run metadata entry when resuming from StageMetadataAck (artifacts were
-	// cleaned by CleanStageArtifacts and must be regenerated before HITL review).
 	if run.Stage == domain.StageMetadataAck && e.phaseCMetadata != nil {
 		if err := PhaseCMetadataEntry(ctx, e.phaseCMetadata, runID); err != nil {
-			return report, fmt.Errorf("resume %s: phase c metadata entry: %w", runID, err)
+			return fmt.Errorf("resume %s: phase c metadata entry: %w", runID, err)
 		}
 	}
 
 	// Story 2.6 cleanup: drop the hitl_sessions row when the run exits HITL
-	// state (new status != waiting). If still waiting (e.g. retry within the
-	// same HITL stage), the session row stays and is updated by the next
-	// decision event.
-	if e.sessions != nil && newStatus != domain.StatusWaiting {
+	// state. If still waiting (retry within the same HITL stage), the session
+	// row stays and is updated by the next decision event.
+	if e.sessions != nil && run.Status != domain.StatusWaiting {
 		if err := e.sessions.DeleteSession(ctx, runID); err != nil {
-			// Non-fatal: log and continue. Invariant repair happens on next
-			// Cancel or new decision-capture upsert.
 			e.logger.Warn("resume: delete hitl_session failed",
 				"run_id", runID, "error", err.Error())
 		}
 	}
 
-	e.logger.Info("run resumed",
-		"run_id", runID, "stage", run.Stage, "status", newStatus,
-		"force", opts.Force, "warnings", len(report.Mismatches))
-	return report, nil
+	e.logger.Info("run resume executed",
+		"run_id", runID, "stage", run.Stage, "status", run.Status)
+	return nil
 }
 
 // validateResumable returns ErrConflict when the run cannot be resumed.

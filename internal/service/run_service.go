@@ -38,19 +38,10 @@ type Resumer interface {
 	ResumeWithOptions(ctx context.Context, runID string, opts pipeline.ResumeOptions) (*domain.InconsistencyReport, error)
 }
 
-// SettingsRuntime is the narrow surface RunService needs from the settings
-// service: promote queued settings at safe seams and pin newly-created runs
-// to the effective version so AC-4's per-run guarantee holds.
-type SettingsRuntime interface {
-	PromotePendingAtSafeSeam(ctx context.Context) (bool, error)
-	AssignRunToEffectiveVersion(ctx context.Context, runID string) error
-}
-
 // RunService implements pipeline run lifecycle management.
 type RunService struct {
 	store        RunStore
 	resumer      Resumer
-	settings     SettingsRuntime
 	prompt       PromptVersionProvider
 	hitlSessions pipeline.HITLSessionStore // optional; needed by ApproveScenarioReview to maintain hitl_sessions invariant
 	clock        clock.Clock               // for last_interaction_timestamp on hitl_sessions upsert
@@ -61,10 +52,6 @@ type RunService struct {
 // runtime Resume calls with a nil resumer return ErrValidation rather than panicking.
 func NewRunService(store RunStore, resumer Resumer) *RunService {
 	return &RunService{store: store, resumer: resumer}
-}
-
-func (s *RunService) SetSettingsRuntime(settings SettingsRuntime) {
-	s.settings = settings
 }
 
 // SetHITLSessionStore wires the hitl_sessions writer used by
@@ -91,16 +78,9 @@ func (s *RunService) SetPromptVersionProvider(provider PromptVersionProvider) {
 
 // Create creates a new pipeline run for the given SCP ID and returns it.
 // scpID is validated against scpIDPattern to block path-escape and injection.
-// The order is load-bearing: validation must happen BEFORE any settings
-// side-effect so a malformed request can't drive premature promotion.
 func (s *RunService) Create(ctx context.Context, scpID, outputDir string) (*domain.Run, error) {
 	if !scpIDPattern.MatchString(scpID) {
 		return nil, fmt.Errorf("create run: invalid scp_id %q: %w", scpID, domain.ErrValidation)
-	}
-	if s.settings != nil {
-		if _, err := s.settings.PromotePendingAtSafeSeam(ctx); err != nil {
-			return nil, fmt.Errorf("create run: promote pending settings: %w", err)
-		}
 	}
 	var tag *db.PromptVersionTag
 	if s.prompt != nil {
@@ -109,15 +89,6 @@ func (s *RunService) Create(ctx context.Context, scpID, outputDir string) (*doma
 	run, err := s.store.CreateWithPromptVersion(ctx, scpID, outputDir, tag)
 	if err != nil {
 		return nil, fmt.Errorf("create run: %w", err)
-	}
-	if s.settings != nil {
-		// Pin the run to the now-effective version so its Phase B executor
-		// resolves to this snapshot even if another save+promotion happens
-		// mid-run. Failure here is non-fatal: the run proceeds, and
-		// LoadRuntimeFilesForRun falls back to the current effective version.
-		if err := s.settings.AssignRunToEffectiveVersion(ctx, run.ID); err != nil {
-			return nil, fmt.Errorf("create run: pin settings version: %w", err)
-		}
 	}
 	return run, nil
 }
@@ -209,11 +180,6 @@ func (s *RunService) ApproveScenarioReview(ctx context.Context, runID string) (*
 	}
 	if run.Status != domain.StatusWaiting {
 		return nil, fmt.Errorf("approve scenario review: %w: run status is %s", domain.ErrConflict, run.Status)
-	}
-	if s.settings != nil {
-		if _, err := s.settings.PromotePendingAtSafeSeam(ctx); err != nil {
-			return nil, fmt.Errorf("approve scenario review: promote pending settings: %w", err)
-		}
 	}
 	nextStage, err := pipeline.NextStage(run.Stage, domain.EventApprove)
 	if err != nil {

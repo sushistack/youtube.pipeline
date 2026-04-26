@@ -7,7 +7,6 @@ import (
 	"math"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/db"
@@ -22,12 +21,8 @@ var ErrSettingsConflict = errors.New("settings: concurrent update detected")
 type SettingsStore interface {
 	LoadState(ctx context.Context) (db.SettingsStateRow, error)
 	LoadVersion(ctx context.Context, version int64) (db.SettingsVersionRow, error)
-	SaveSnapshot(ctx context.Context, files domain.SettingsFileSnapshot, queued bool, queuedAt *string) (db.SettingsStateRow, int64, error)
-	PromotePending(ctx context.Context) (db.SettingsStateRow, bool, error)
+	SaveSnapshot(ctx context.Context, files domain.SettingsFileSnapshot) (db.SettingsStateRow, int64, error)
 	EnsureEffectiveVersion(ctx context.Context, files domain.SettingsFileSnapshot) (db.SettingsStateRow, int64, error)
-	AssignRunToVersion(ctx context.Context, runID string, version int64) error
-	LoadVersionForRun(ctx context.Context, runID string) (int64, error)
-	ActiveRunsExist(ctx context.Context) (bool, error)
 	BudgetSourceRun(ctx context.Context) (*domain.SettingsBudgetRun, error)
 }
 
@@ -40,9 +35,9 @@ type SettingsService struct {
 	store SettingsStore
 	files SettingsFileAccess
 	clk   clock.Clock
-	// mu serializes Save/Promote against disk writes to avoid torn writes
-	// under two simultaneous operator saves. DB ops inside the hold remain
-	// fast — we only guard the read-modify-write envelope.
+	// mu serializes Save against disk writes to avoid torn writes under two
+	// simultaneous operator saves. DB ops inside the hold remain fast — we
+	// only guard the read-modify-write envelope.
 	mu sync.Mutex
 }
 
@@ -56,7 +51,7 @@ func NewSettingsService(store SettingsStore, files SettingsFileAccess, clk clock
 // Bootstrap seeds settings_state.effective_version from the current disk
 // snapshot if no version has ever been recorded. Intended to be called once
 // at server startup so LoadEffectiveRuntimeFiles never has to fall back to
-// raw disk reads (which would defeat the queued/effective distinction).
+// raw disk reads.
 func (s *SettingsService) Bootstrap(ctx context.Context) error {
 	files, err := s.files.Load()
 	if err != nil {
@@ -87,26 +82,12 @@ func (s *SettingsService) ResetToDefaults(ctx context.Context) (*SettingsSnapsho
 	}
 	next := domain.SettingsFileSnapshot{Config: domain.DefaultConfig(), Env: disk.Env}
 
-	hasActiveRuns, err := s.store.ActiveRunsExist(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("reset settings: active runs: %w", err)
-	}
-
-	var queuedAt *string
-	if hasActiveRuns {
-		ts := s.clk.Now().UTC().Format(time.RFC3339Nano)
-		queuedAt = &ts
-	}
-
-	state, _, err := s.store.SaveSnapshot(ctx, next, hasActiveRuns, queuedAt)
+	state, _, err := s.store.SaveSnapshot(ctx, next)
 	if err != nil {
 		return nil, fmt.Errorf("reset settings: persist: %w", err)
 	}
-
-	if !hasActiveRuns {
-		if err := s.files.Write(next); err != nil {
-			return nil, fmt.Errorf("reset settings: write disk: %w", err)
-		}
+	if err := s.files.Write(next); err != nil {
+		return nil, fmt.Errorf("reset settings: write disk: %w", err)
 	}
 	return s.buildSnapshot(ctx, next, state)
 }
@@ -123,13 +104,8 @@ func (s *SettingsService) Snapshot(ctx context.Context) (*SettingsSnapshot, erro
 	return s.buildSnapshot(ctx, files, state)
 }
 
-// Save persists a settings edit. When active runs exist, the new version is
-// recorded as pending and neither config.yaml nor .env is rewritten — disk
-// mutation is deferred until PromotePendingAtSafeSeam flips the pending
-// version to effective. This preserves the "safe seam" contract even across
-// process restarts: if the server crashes after Save but before promotion,
-// the queued version is still discoverable in settings_state.pending_version
-// and the on-disk files still reflect the pre-save state.
+// Save persists a settings edit by writing a new effective version to the DB
+// and the new snapshot to disk in a single read-modify-write envelope.
 //
 // ifMatchVersion, when non-nil, is checked against the current effective
 // version before the save is accepted. A mismatch returns ErrSettingsConflict.
@@ -163,49 +139,13 @@ func (s *SettingsService) Save(
 		return nil, fmt.Errorf("save settings: %w", validationErr)
 	}
 
-	hasActiveRuns, err := s.store.ActiveRunsExist(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("save settings: active runs: %w", err)
-	}
-
-	// If a change was previously queued AND no runs are active now, any
-	// superseded pending version would be lost silently. Promote it first so
-	// queued intent reaches effective exactly once, then layer the new save
-	// on top.
-	if !hasActiveRuns && state.PendingVersion != nil {
-		if _, _, err := s.store.PromotePending(ctx); err != nil {
-			return nil, fmt.Errorf("save settings: promote superseded pending: %w", err)
-		}
-		// Persist the disk state that was queued but never materialized, so
-		// the promoted version is reflected on disk before we layer the new
-		// save. This reads the just-promoted version from the store.
-		if err := s.materializeEffectiveToDisk(ctx); err != nil {
-			return nil, fmt.Errorf("save settings: materialize promoted version: %w", err)
-		}
-	}
-
-	var queuedAt *string
-	if hasActiveRuns {
-		timestamp := s.clk.Now().UTC().Format(time.RFC3339Nano)
-		queuedAt = &timestamp
-	}
-
-	newState, _, err := s.store.SaveSnapshot(ctx, nextFiles, hasActiveRuns, queuedAt)
+	newState, _, err := s.store.SaveSnapshot(ctx, nextFiles)
 	if err != nil {
 		return nil, fmt.Errorf("save settings: persist version state: %w", err)
 	}
-
-	// Only when the save is NOT queued do we commit the disk mutation. A
-	// queued save is a DB-only WAL entry; disk stays at the last-promoted
-	// state. This is what defeats the prior "queued leaks into active run"
-	// bypass — runtime readers of .env and config.yaml observe the current
-	// effective snapshot, never a queued one.
-	if !hasActiveRuns {
-		if err := s.files.Write(nextFiles); err != nil {
-			return nil, fmt.Errorf("save settings: persist files: %w", err)
-		}
+	if err := s.files.Write(nextFiles); err != nil {
+		return nil, fmt.Errorf("save settings: persist files: %w", err)
 	}
-
 	return s.buildSnapshot(ctx, nextFiles, newState)
 }
 
@@ -219,81 +159,17 @@ func (s *SettingsService) LoadEffectiveRuntimeConfig(ctx context.Context) (domai
 
 // LoadEffectiveRuntimeFiles returns the snapshot the pipeline should execute
 // against right now. It reads from the DB effective_version — not from disk —
-// to preserve queued/effective separation. If effective_version is unset
-// (freshly migrated database before Bootstrap runs), it falls back to the
-// on-disk snapshot for resilience; Bootstrap should run at startup to make
-// this branch unreachable in normal operation.
+// so the in-memory snapshot taken by each phase executor is sourced from the
+// authoritative DB state. If effective_version is unset (freshly migrated
+// database before Bootstrap runs), it falls back to the on-disk snapshot for
+// resilience; Bootstrap should run at startup to make this branch unreachable
+// in normal operation.
 func (s *SettingsService) LoadEffectiveRuntimeFiles(ctx context.Context) (domain.SettingsFileSnapshot, error) {
 	state, err := s.store.LoadState(ctx)
 	if err != nil {
 		return domain.SettingsFileSnapshot{}, fmt.Errorf("load effective runtime config: %w", err)
 	}
 	return s.effectiveSnapshotFromState(ctx, state)
-}
-
-// LoadRuntimeFilesForRun returns the snapshot pinned to a specific run via
-// run_settings_assignments, falling back to the current effective version if
-// no assignment exists. Secrets (.env) always come from disk regardless of
-// pin, since they are never DB-backed; only the non-secret config portion is
-// resolved from the pinned version.
-func (s *SettingsService) LoadRuntimeFilesForRun(ctx context.Context, runID string) (domain.SettingsFileSnapshot, error) {
-	version, err := s.store.LoadVersionForRun(ctx, runID)
-	if err != nil {
-		// Fallback to current effective if the run predates pinning.
-		if errors.Is(err, domain.ErrNotFound) {
-			return s.LoadEffectiveRuntimeFiles(ctx)
-		}
-		return domain.SettingsFileSnapshot{}, fmt.Errorf("load runtime files for run %s: %w", runID, err)
-	}
-	row, err := s.store.LoadVersion(ctx, version)
-	if err != nil {
-		return domain.SettingsFileSnapshot{}, fmt.Errorf("load runtime files for run %s: %w", runID, err)
-	}
-	// Secrets come from disk (.env is the source of truth); merge them in.
-	disk, err := s.files.Load()
-	if err != nil {
-		return domain.SettingsFileSnapshot{}, fmt.Errorf("load runtime files for run %s: read .env: %w", runID, err)
-	}
-	return domain.SettingsFileSnapshot{Config: row.Config, Env: disk.Env}, nil
-}
-
-// PromotePendingAtSafeSeam flips the pending version to effective and writes
-// the newly-effective config to disk in the same operation. The disk write
-// happens AFTER the DB flip so any observer who raced past the DB read sees
-// either (old effective, old disk) or (new effective, new disk) — never the
-// mixed state that breaks the queued/effective invariant.
-func (s *SettingsService) PromotePendingAtSafeSeam(ctx context.Context) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	_, promoted, err := s.store.PromotePending(ctx)
-	if err != nil {
-		return false, fmt.Errorf("promote pending settings: %w", err)
-	}
-	if !promoted {
-		return false, nil
-	}
-	if err := s.materializeEffectiveToDisk(ctx); err != nil {
-		return false, fmt.Errorf("promote pending settings: %w", err)
-	}
-	return true, nil
-}
-
-// AssignRunToEffectiveVersion pins a newly-created run to the current
-// effective version so its Phase B executor always resolves to the snapshot
-// that was live at creation — even if another operator promotes a new
-// version mid-run.
-func (s *SettingsService) AssignRunToEffectiveVersion(ctx context.Context, runID string) error {
-	state, err := s.store.LoadState(ctx)
-	if err != nil {
-		return fmt.Errorf("assign run settings: %w", err)
-	}
-	if state.EffectiveVersion == nil {
-		// No effective version yet (pre-Bootstrap edge); skip assignment
-		// silently. LoadVersionForRun will fall back to disk.
-		return nil
-	}
-	return s.store.AssignRunToVersion(ctx, runID, *state.EffectiveVersion)
 }
 
 // EffectiveVersion returns the current effective version number, or 0 if
@@ -326,31 +202,6 @@ func (s *SettingsService) effectiveSnapshotFromState(ctx context.Context, state 
 		return domain.SettingsFileSnapshot{}, fmt.Errorf("load effective version: %w", err)
 	}
 	return domain.SettingsFileSnapshot{Config: version.Config, Env: disk.Env}, nil
-}
-
-func (s *SettingsService) materializeEffectiveToDisk(ctx context.Context) error {
-	state, err := s.store.LoadState(ctx)
-	if err != nil {
-		return fmt.Errorf("materialize: load state: %w", err)
-	}
-	if state.EffectiveVersion == nil {
-		return nil
-	}
-	version, err := s.store.LoadVersion(ctx, *state.EffectiveVersion)
-	if err != nil {
-		return fmt.Errorf("materialize: load version %d: %w", *state.EffectiveVersion, err)
-	}
-	disk, err := s.files.Load()
-	if err != nil {
-		return fmt.Errorf("materialize: read disk: %w", err)
-	}
-	// config switches to the promoted version; env stays as-is on disk (it
-	// was already written at Save time, since secrets are file-backed only).
-	files := domain.SettingsFileSnapshot{Config: version.Config, Env: disk.Env}
-	if err := s.files.Write(files); err != nil {
-		return fmt.Errorf("materialize: write files: %w", err)
-	}
-	return nil
 }
 
 func (s *SettingsService) buildSnapshot(ctx context.Context, files domain.SettingsFileSnapshot, state db.SettingsStateRow) (*SettingsSnapshot, error) {
@@ -531,15 +382,8 @@ func normalizeSecretState(env map[string]string) map[string]SettingsSecretState 
 }
 
 func normalizeApplicationState(state db.SettingsStateRow) SettingsApplicationState {
-	status := "effective"
-	if state.PendingVersion != nil {
-		status = "queued"
-	}
 	return SettingsApplicationState{
-		Status:           status,
 		EffectiveVersion: state.EffectiveVersion,
-		PendingVersion:   state.PendingVersion,
-		QueuedAt:         state.QueuedAt,
 	}
 }
 

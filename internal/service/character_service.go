@@ -57,9 +57,6 @@ type CharacterService struct {
 	// reads the path verbatim — only safe in tests that seed an absolute
 	// path.
 	outputDir string
-	settings  interface {
-		PromotePendingAtSafeSeam(ctx context.Context) (bool, error)
-	}
 }
 
 func NewCharacterService(runs CharacterRunStore, cache CharacterCacheStore, client CharacterSearchClient) *CharacterService {
@@ -76,12 +73,6 @@ func (s *CharacterService) SetDescriptorRecorder(r DescriptorDecisionRecorder) {
 // from its stored "scenario.json" literal to the actual on-disk file.
 func (s *CharacterService) SetOutputDir(outputDir string) {
 	s.outputDir = outputDir
-}
-
-func (s *CharacterService) SetSettingsRuntime(settings interface {
-	PromotePendingAtSafeSeam(ctx context.Context) (bool, error)
-}) {
-	s.settings = settings
 }
 
 func (s *CharacterService) Search(ctx context.Context, runID, query string) (*domain.CharacterGroup, error) {
@@ -143,11 +134,6 @@ func (s *CharacterService) Pick(ctx context.Context, runID, candidateID, frozenD
 	}
 	if !containsCandidate(group, candidateID) {
 		return nil, fmt.Errorf("character pick: unknown candidate %q: %w", candidateID, domain.ErrValidation)
-	}
-	if s.settings != nil {
-		if _, err := s.settings.PromotePendingAtSafeSeam(ctx); err != nil {
-			return nil, fmt.Errorf("character pick: promote pending settings: %w", err)
-		}
 	}
 	nextStage, err := pipeline.NextStage(run.Stage, domain.EventApprove)
 	if err != nil {

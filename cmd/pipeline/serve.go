@@ -150,10 +150,11 @@ type dynamicPhaseBExecutor struct {
 }
 
 func (e *dynamicPhaseBExecutor) Run(ctx context.Context, req pipeline.PhaseBRequest) (pipeline.PhaseBResult, error) {
-	// Resolve per-run pinned version so a run already in flight keeps its
-	// assigned config even if a newer version was promoted after the run
-	// started.
-	files, err := e.settings.LoadRuntimeFilesForRun(ctx, req.RunID)
+	// Phase B always reads the current effective settings — there is no
+	// per-run pinning. The executor takes a single in-memory snapshot here
+	// and runs Phase B against it; mid-execution settings changes affect
+	// only the next executor invocation, never the in-flight one.
+	files, err := e.settings.LoadEffectiveRuntimeFiles(ctx)
 	if err != nil {
 		return pipeline.PhaseBResult{}, fmt.Errorf("load settings for phase b run %s: %w", req.RunID, err)
 	}
@@ -220,10 +221,8 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	}
 
 	engine := pipeline.NewEngine(store, segStore, decisionStore, clock.RealClock{}, cfg.OutputDir, logger)
-	engine.SetSettingsPromoter(settingsSvc)
 	engine.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore))
 	svc := service.NewRunService(store, engine)
-	svc.SetSettingsRuntime(settingsSvc)
 	svc.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore), clock.RealClock{})
 
 	limiterFactory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
@@ -258,7 +257,6 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	characterClient := service.NewDuckDuckGoClient(nil)
 	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
 	characterSvc.SetDescriptorRecorder(decisionStore)
-	characterSvc.SetSettingsRuntime(settingsSvc)
 	sceneSvc := service.NewSceneService(store, segStore, decisionStore, clock.RealClock{})
 	sceneSvc.SetSceneRegenerator(service.NewNoOpSceneRegenerator(segStore))
 
