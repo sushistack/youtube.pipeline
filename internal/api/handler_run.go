@@ -171,6 +171,22 @@ func (h *RunHandler) AcknowledgeMetadata(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, toRunResponse(run))
 }
 
+// ApproveScenarioReview handles POST /api/runs/{id}/scenario/approve.
+// No request body. Transitions scenario_review/waiting → character_pick/waiting.
+// Returns 409 ErrConflict when the run is not paused at scenario_review,
+// 404 ErrNotFound when the run does not exist.
+func (h *RunHandler) ApproveScenarioReview(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	run, err := h.svc.ApproveScenarioReview(r.Context(), runID)
+	if err != nil {
+		h.logger.Error("approve scenario review", "run_id", runID, "error", err)
+		writeDomainError(w, err)
+		return
+	}
+	h.logger.Info("scenario review approved", "run_id", runID, "stage", run.Stage, "status", run.Status)
+	writeJSON(w, http.StatusOK, toRunResponse(run))
+}
+
 // resumeRequest is the optional request body for POST /api/runs/{id}/resume.
 // confirm_inconsistent mirrors the CLI --force flag: when true, the server
 // proceeds with the resume even if a filesystem/DB mismatch is detected.

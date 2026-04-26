@@ -224,6 +224,7 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	engine.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore))
 	svc := service.NewRunService(store, engine)
 	svc.SetSettingsRuntime(settingsSvc)
+	svc.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore), clock.RealClock{})
 
 	limiterFactory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
 		DashScope: llmclient.LimitConfig{RequestsPerMinute: 10, MaxConcurrent: 2, AcquireTimeout: 30 * time.Second},

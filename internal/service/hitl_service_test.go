@@ -35,8 +35,11 @@ func (f *fakeRunStore) Get(_ context.Context, id string) (*domain.Run, error) {
 func (f *fakeRunStore) List(_ context.Context) ([]*domain.Run, error) {
 	return nil, errors.New("unused")
 }
-func (f *fakeRunStore) Cancel(_ context.Context, _ string) error { return errors.New("unused") }
+func (f *fakeRunStore) Cancel(_ context.Context, _ string) error      { return errors.New("unused") }
 func (f *fakeRunStore) MarkComplete(_ context.Context, _ string) error { return errors.New("unused") }
+func (f *fakeRunStore) ApplyPhaseAResult(_ context.Context, _ string, _ domain.PhaseAAdvanceResult) error {
+	return errors.New("unused")
+}
 
 type fakeDecisionReader struct {
 	decisions []*domain.Decision

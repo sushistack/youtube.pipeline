@@ -290,3 +290,107 @@ func TestRunService_Create_ProviderReturningNilLeavesColumnsNull(t *testing.T) {
 			run.CriticPromptVersion, run.CriticPromptHash)
 	}
 }
+
+// --- ApproveScenarioReview ------------------------------------------------
+
+type fakeHITLSessionStore struct {
+	upserts []*domain.HITLSession
+	deletes []string
+	session *domain.HITLSession
+}
+
+func (f *fakeHITLSessionStore) ListByRunID(_ context.Context, _ string) ([]*domain.Decision, error) {
+	return nil, nil
+}
+func (f *fakeHITLSessionStore) DecisionCountsByRunID(_ context.Context, _ string) (pipeline.DecisionCounts, error) {
+	return pipeline.DecisionCounts{TotalScenes: 8}, nil
+}
+func (f *fakeHITLSessionStore) GetSession(_ context.Context, _ string) (*domain.HITLSession, error) {
+	return f.session, nil
+}
+func (f *fakeHITLSessionStore) UpsertSession(_ context.Context, s *domain.HITLSession) error {
+	clone := *s
+	f.upserts = append(f.upserts, &clone)
+	f.session = &clone
+	return nil
+}
+func (f *fakeHITLSessionStore) DeleteSession(_ context.Context, runID string) error {
+	f.deletes = append(f.deletes, runID)
+	f.session = nil
+	return nil
+}
+
+
+func TestRunService_ApproveScenarioReview_Happy(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	if _, err := database.ExecContext(context.Background(),
+		`INSERT INTO runs (id, scp_id, stage, status, scenario_path) VALUES (?, ?, ?, ?, ?)`,
+		"scp-049-run-1", "049", string(domain.StageScenarioReview), string(domain.StatusWaiting), "scenario.json"); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	sessions := &fakeHITLSessionStore{}
+	svc := service.NewRunService(store, nil)
+	svc.SetHITLSessionStore(sessions, nil)
+
+	got, err := svc.ApproveScenarioReview(context.Background(), "scp-049-run-1")
+	if err != nil {
+		t.Fatalf("ApproveScenarioReview: %v", err)
+	}
+	if got.Stage != domain.StageCharacterPick {
+		t.Fatalf("stage = %q, want character_pick", got.Stage)
+	}
+	if got.Status != domain.StatusWaiting {
+		t.Fatalf("status = %q, want waiting", got.Status)
+	}
+	if len(sessions.deletes) != 1 || sessions.deletes[0] != "scp-049-run-1" {
+		t.Fatalf("delete calls = %+v, want one for scp-049-run-1", sessions.deletes)
+	}
+	if len(sessions.upserts) != 1 || sessions.upserts[0].Stage != domain.StageCharacterPick {
+		t.Fatalf("upsert calls = %+v, want one for character_pick", sessions.upserts)
+	}
+}
+
+func TestRunService_ApproveScenarioReview_WrongStage(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	if _, err := database.ExecContext(context.Background(),
+		`INSERT INTO runs (id, scp_id, stage, status) VALUES (?, ?, ?, ?)`,
+		"scp-049-run-1", "049", string(domain.StageWrite), string(domain.StatusFailed)); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	svc := service.NewRunService(store, nil)
+	_, err := svc.ApproveScenarioReview(context.Background(), "scp-049-run-1")
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestRunService_ApproveScenarioReview_WrongStatus(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	if _, err := database.ExecContext(context.Background(),
+		`INSERT INTO runs (id, scp_id, stage, status) VALUES (?, ?, ?, ?)`,
+		"scp-049-run-1", "049", string(domain.StageScenarioReview), string(domain.StatusRunning)); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	svc := service.NewRunService(store, nil)
+	_, err := svc.ApproveScenarioReview(context.Background(), "scp-049-run-1")
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestRunService_ApproveScenarioReview_NotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	_, err := svc.ApproveScenarioReview(context.Background(), "scp-999-run-1")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}

@@ -566,3 +566,86 @@ func TestRunHandler_SMOKE_07_ComplianceGate(t *testing.T) {
 		testutil.AssertEqual(t, rec.Code, http.StatusConflict)
 	})
 }
+
+func TestRunHandler_ApproveScenarioReview_Success(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	logger, _ := testutil.CaptureLog(t)
+	outDir := t.TempDir()
+	decisionStore := db.NewDecisionStore(database)
+	hitl := service.NewHITLService(store, decisionStore, logger)
+	h := api.NewRunHandler(svc, hitl, outDir, logger)
+
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "049", outDir); err != nil {
+		t.Fatalf("seed create run: %v", err)
+	}
+	if _, err := database.ExecContext(ctx,
+		`UPDATE runs SET stage = 'scenario_review', status = 'waiting', scenario_path = 'scenario.json' WHERE scp_id = '049'`,
+	); err != nil {
+		t.Fatalf("seed stage/status: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/scp-049-run-1/scenario/approve", nil)
+	req.SetPathValue("id", "scp-049-run-1")
+	rec := httptest.NewRecorder()
+	h.ApproveScenarioReview(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusOK)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	if env.Data == nil {
+		t.Fatal("data is nil")
+	}
+	testutil.AssertEqual(t, env.Data.Stage, "character_pick")
+	testutil.AssertEqual(t, env.Data.Status, "waiting")
+}
+
+func TestRunHandler_ApproveScenarioReview_WrongStage(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	logger, _ := testutil.CaptureLog(t)
+	outDir := t.TempDir()
+	decisionStore := db.NewDecisionStore(database)
+	hitl := service.NewHITLService(store, decisionStore, logger)
+	h := api.NewRunHandler(svc, hitl, outDir, logger)
+
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "049", outDir); err != nil {
+		t.Fatalf("seed create run: %v", err)
+	}
+	// Run stays at pending/pending — wrong stage for scenario approve.
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/scp-049-run-1/scenario/approve", nil)
+	req.SetPathValue("id", "scp-049-run-1")
+	rec := httptest.NewRecorder()
+	h.ApproveScenarioReview(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusConflict)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	testutil.AssertEqual(t, env.Error.Code, "CONFLICT")
+}
+
+func TestRunHandler_ApproveScenarioReview_NotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	logger, _ := testutil.CaptureLog(t)
+	outDir := t.TempDir()
+	decisionStore := db.NewDecisionStore(database)
+	hitl := service.NewHITLService(store, decisionStore, logger)
+	h := api.NewRunHandler(svc, hitl, outDir, logger)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/scp-999-run-1/scenario/approve", nil)
+	req.SetPathValue("id", "scp-999-run-1")
+	rec := httptest.NewRecorder()
+	h.ApproveScenarioReview(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusNotFound)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	testutil.AssertEqual(t, env.Error.Code, "NOT_FOUND")
+}

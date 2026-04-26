@@ -303,6 +303,21 @@ export function pickCharacterWithDescriptor(
   );
 }
 
+// --- Scenario review approve gate ---
+
+/**
+ * POST /api/runs/{id}/scenario/approve — operator approve at scenario_review.
+ * Transitions scenario_review/waiting → character_pick/waiting. Returns 409
+ * when the run is not paused at scenario_review.
+ */
+export function approveScenarioReview(run_id: string) {
+  return apiRequest(
+    `/runs/${encodeURIComponent(run_id)}/scenario/approve`,
+    runDetailResponseSchema,
+    { method: "POST" },
+  );
+}
+
 // --- Story 9.4: Compliance gate ---
 
 /** POST /api/runs/{id}/metadata/ack — NFR-L1 gate. Transitions metadata_ack → complete. */

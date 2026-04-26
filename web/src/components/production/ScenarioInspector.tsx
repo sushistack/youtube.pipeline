@@ -1,6 +1,10 @@
 import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEditNarration, useRunScenes } from '../../hooks/useRunScenes'
 import { InlineNarrationEditor } from './InlineNarrationEditor'
+import { approveScenarioReview, ApiClientError } from '../../lib/apiClient'
+import type { RunSummary } from '../../contracts/runContracts'
+import { queryKeys } from '../../lib/queryKeys'
 
 interface ScenarioInspectorProps {
   run_id: string
@@ -10,6 +14,18 @@ export function ScenarioInspector({ run_id }: ScenarioInspectorProps) {
   const scenes_query = useRunScenes(run_id)
   const mutation = useEditNarration(run_id)
   const [active_index, set_active_index] = useState<number | null>(null)
+  const query_client = useQueryClient()
+  const approve_mutation = useMutation<RunSummary, ApiClientError>({
+    mutationFn: () => approveScenarioReview(run_id),
+    onSuccess: () => {
+      // Same narrow invalidation as CharacterPick: list + status + detail.
+      // The run flips to character_pick/waiting so this inspector unmounts
+      // and the CharacterPick panel mounts on the next render.
+      query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
+      query_client.invalidateQueries({ queryKey: queryKeys.runs.status(run_id) })
+      query_client.invalidateQueries({ queryKey: queryKeys.runs.detail(run_id) })
+    },
+  })
 
   if (scenes_query.isPending) {
     return (
@@ -63,6 +79,23 @@ export function ScenarioInspector({ run_id }: ScenarioInspectorProps) {
           </li>
         ))}
       </ol>
+
+      <footer className="scenario-inspector__footer">
+        <button
+          type="button"
+          className="scenario-inspector__approve"
+          onClick={() => approve_mutation.mutate()}
+          disabled={approve_mutation.isPending}
+          aria-label="Approve scenario and advance to character pick"
+        >
+          {approve_mutation.isPending ? 'Approving…' : 'Approve scenario'}
+        </button>
+        {approve_mutation.isError ? (
+          <p className="scenario-inspector__approve-error" role="alert">
+            {approve_mutation.error?.message ?? 'Failed to approve scenario.'}
+          </p>
+        ) : null}
+      </footer>
     </section>
   )
 }

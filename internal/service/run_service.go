@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/sushistack/youtube.pipeline/internal/clock"
 	"github.com/sushistack/youtube.pipeline/internal/db"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline"
@@ -24,7 +25,8 @@ type RunStore interface {
 	Get(ctx context.Context, id string) (*domain.Run, error)
 	List(ctx context.Context) ([]*domain.Run, error)
 	Cancel(ctx context.Context, id string) error
-	MarkComplete(ctx context.Context, id string) error // NEW: sets stage=complete, status=completed
+	MarkComplete(ctx context.Context, id string) error                                              // NEW: sets stage=complete, status=completed
+	ApplyPhaseAResult(ctx context.Context, runID string, res domain.PhaseAAdvanceResult) error      // atomic stage advance write used by ApproveScenarioReview
 }
 
 // Resumer is the minimal engine surface that RunService delegates Resume to.
@@ -46,10 +48,12 @@ type SettingsRuntime interface {
 
 // RunService implements pipeline run lifecycle management.
 type RunService struct {
-	store    RunStore
-	resumer  Resumer
-	settings SettingsRuntime
-	prompt   PromptVersionProvider
+	store        RunStore
+	resumer      Resumer
+	settings     SettingsRuntime
+	prompt       PromptVersionProvider
+	hitlSessions pipeline.HITLSessionStore // optional; needed by ApproveScenarioReview to maintain hitl_sessions invariant
+	clock        clock.Clock               // for last_interaction_timestamp on hitl_sessions upsert
 }
 
 // NewRunService creates a RunService backed by the provided RunStore.
@@ -61,6 +65,19 @@ func NewRunService(store RunStore, resumer Resumer) *RunService {
 
 func (s *RunService) SetSettingsRuntime(settings SettingsRuntime) {
 	s.settings = settings
+}
+
+// SetHITLSessionStore wires the hitl_sessions writer used by
+// ApproveScenarioReview to drop the scenario_review session row and create
+// the character_pick row at the boundary. Nil disables HITL row management
+// for that path (acceptable for tests/tools that don't observe the rows).
+// clk MAY be nil; nil falls back to clock.RealClock{} (RFC3339 wall clock).
+func (s *RunService) SetHITLSessionStore(store pipeline.HITLSessionStore, clk clock.Clock) {
+	s.hitlSessions = store
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	s.clock = clk
 }
 
 // SetPromptVersionProvider wires the Story 10.2 AC-3 stamping path. When
@@ -166,6 +183,76 @@ func (s *RunService) Resume(ctx context.Context, id string, force bool) (*domain
 func (s *RunService) AcknowledgeMetadata(ctx context.Context, runID string) (*domain.Run, error) {
 	if err := s.store.MarkComplete(ctx, runID); err != nil {
 		return nil, fmt.Errorf("acknowledge metadata: %w", err)
+	}
+	return s.store.Get(ctx, runID)
+}
+
+// ApproveScenarioReview transitions a run from scenario_review/waiting to
+// character_pick/waiting on operator approve. This is the only code path that
+// resolves the scenario_review HITL gate; without it, every run that reaches
+// scenario_review is permanently stuck (P0 unblocker).
+//
+// Mirrors CharacterService.Pick semantics: stage/status guard → settings
+// promote at boundary → atomic stage advance preserving CriticScore and
+// ScenarioPath → drop the scenario_review hitl_sessions row and upsert the
+// character_pick row so the UI sees a session anchor on its next poll.
+//
+// Returns ErrConflict when the run is not at scenario_review/waiting,
+// ErrNotFound when the run does not exist.
+func (s *RunService) ApproveScenarioReview(ctx context.Context, runID string) (*domain.Run, error) {
+	run, err := s.store.Get(ctx, runID)
+	if err != nil {
+		return nil, fmt.Errorf("approve scenario review: %w", err)
+	}
+	if run.Stage != domain.StageScenarioReview {
+		return nil, fmt.Errorf("approve scenario review: %w: run stage is %s", domain.ErrConflict, run.Stage)
+	}
+	if run.Status != domain.StatusWaiting {
+		return nil, fmt.Errorf("approve scenario review: %w: run status is %s", domain.ErrConflict, run.Status)
+	}
+	if s.settings != nil {
+		if _, err := s.settings.PromotePendingAtSafeSeam(ctx); err != nil {
+			return nil, fmt.Errorf("approve scenario review: promote pending settings: %w", err)
+		}
+	}
+	nextStage, err := pipeline.NextStage(run.Stage, domain.EventApprove)
+	if err != nil {
+		return nil, fmt.Errorf("approve scenario review: next stage: %w", err)
+	}
+	res := domain.PhaseAAdvanceResult{
+		Stage:        nextStage,
+		Status:       pipeline.StatusForStage(nextStage),
+		CriticScore:  run.CriticScore,
+		ScenarioPath: run.ScenarioPath,
+		// RetryReason intentionally cleared: an approve is the success path,
+		// any prior write/critic retry reason is no longer relevant.
+		RetryReason: nil,
+	}
+	if err := s.store.ApplyPhaseAResult(ctx, runID, res); err != nil {
+		return nil, fmt.Errorf("approve scenario review: %w", err)
+	}
+	// HITL row management is best-effort: a row inconsistency is recoverable
+	// (read-time backfill) but a stage advance failure is not. So failures
+	// past this point do NOT roll back the transition.
+	if s.hitlSessions != nil {
+		clk := s.clock
+		if clk == nil {
+			clk = clock.RealClock{}
+		}
+		// Drop the scenario_review row so the existing UpsertSessionFromState
+		// helper builds a fresh character_pick row in one call. The helper
+		// already deletes when the run is non-HITL — but here both the old
+		// and the new state are HITL, so we must explicitly delete first.
+		if err := s.hitlSessions.DeleteSession(ctx, runID); err != nil {
+			// Tolerable — the upsert below will overwrite the row anyway,
+			// but log so the gap is visible if it ever blocks debugging.
+			_ = err
+		}
+		if _, err := pipeline.UpsertSessionFromState(ctx, s.hitlSessions, clk, runID, nextStage, pipeline.StatusForStage(nextStage)); err != nil {
+			// Non-fatal: the run is already in character_pick/waiting; the
+			// next read-time path will rebuild the row.
+			_ = err
+		}
 	}
 	return s.store.Get(ctx, runID)
 }

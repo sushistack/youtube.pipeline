@@ -46,6 +46,7 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("POST /api/runs/{id}/undo", deps.Scene.Undo)
 	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/edit", deps.Scene.Edit)
 	api.HandleFunc("POST /api/runs/{id}/scenes/{idx}/regen", deps.Scene.Regenerate)
+	api.HandleFunc("POST /api/runs/{id}/scenario/approve", deps.Run.ApproveScenarioReview)
 
 	// Compliance gate + artifact serving (Story 9.4).
 	api.HandleFunc("POST /api/runs/{id}/metadata/ack", deps.Run.AcknowledgeMetadata)
