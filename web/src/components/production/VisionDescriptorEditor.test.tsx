@@ -168,7 +168,6 @@ describe('VisionDescriptorEditor', () => {
     on_change.mockClear()
     await user.click(screen.getByRole('button', { name: /save edit/i }))
     expect(on_change).toHaveBeenCalledWith('edited via button')
-    // Read-mode is restored — the role=button div with aria-label "Vision Descriptor draft. Press Tab..." is back.
     expect(
       screen.getByRole('button', { name: /vision descriptor draft\. press tab/i }),
     ).toBeInTheDocument()

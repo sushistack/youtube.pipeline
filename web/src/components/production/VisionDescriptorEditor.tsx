@@ -81,13 +81,9 @@ export function VisionDescriptorEditor({
   }, [draft, onDescriptorChange])
 
   const handle_edit_toggle = useCallback(() => {
-    if (edit_mode) {
-      onDescriptorChange(draft.trim())
-      set_edit_mode(false)
-    } else {
-      set_edit_mode(true)
-    }
-  }, [draft, edit_mode, onDescriptorChange])
+    if (edit_mode) handle_blur()
+    else set_edit_mode(true)
+  }, [edit_mode, handle_blur])
 
   return (
     <section
