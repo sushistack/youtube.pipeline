@@ -128,6 +128,7 @@ func writeConfigFile(path string, cfg domain.PipelineConfig, existingMode os.Fil
 		AutoApprovalThreshold: cfg.AutoApprovalThreshold,
 		BlockedVoiceIDs:       cfg.BlockedVoiceIDs,
 		ArtifactRetentionDays: cfg.ArtifactRetentionDays,
+		DryRun:                cfg.DryRun,
 	}
 	data, err := yaml.Marshal(&ordered)
 	if err != nil {
@@ -407,4 +408,5 @@ type orderedPipelineConfig struct {
 	AutoApprovalThreshold float64  `yaml:"auto_approval_threshold"`
 	BlockedVoiceIDs       []string `yaml:"blocked_voice_ids,omitempty"`
 	ArtifactRetentionDays int      `yaml:"artifact_retention_days"`
+	DryRun                bool     `yaml:"dry_run,omitempty"`
 }

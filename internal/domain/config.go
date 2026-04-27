@@ -96,6 +96,14 @@ type PipelineConfig struct {
 	// indefinitely per NFR-O2. Must be >= 1; 0 or negative is rejected as
 	// domain.ErrValidation by the loader.
 	ArtifactRetentionDays int `yaml:"artifact_retention_days" mapstructure:"artifact_retention_days"`
+
+	// DryRun, when true, swaps the Phase B image and TTS clients for in-process
+	// fakes that produce placeholder PNG and silent WAV files at zero cost.
+	// Snapshotted on each new run via runs.dry_run; toggling at runtime affects
+	// only subsequently created runs, never in-flight ones. Final video assembly
+	// (Phase D / StageAssemble) is blocked for runs created in this mode so a
+	// placeholder asset never composes into a publishable artifact.
+	DryRun bool `yaml:"dry_run" mapstructure:"dry_run"`
 }
 
 // DefaultConfig returns a PipelineConfig with sensible defaults.

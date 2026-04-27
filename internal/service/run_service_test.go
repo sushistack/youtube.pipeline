@@ -304,6 +304,74 @@ func TestRunService_Create_ProviderReturningNilLeavesColumnsNull(t *testing.T) {
 	}
 }
 
+type fakeDryRunProvider struct {
+	value bool
+	err   error
+}
+
+func (f *fakeDryRunProvider) EffectiveDryRun(_ context.Context) (bool, error) {
+	return f.value, f.err
+}
+
+func TestRunService_Create_SnapshotsDryRunFromProvider(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	svc.SetDryRunProvider(&fakeDryRunProvider{value: true})
+
+	run, err := svc.Create(context.Background(), "049", t.TempDir())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !run.DryRun {
+		t.Errorf("DryRun = false, want true (provider returned true)")
+	}
+}
+
+func TestRunService_Create_NilDryRunProviderDefaultsFalse(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	// No SetDryRunProvider — production-default safety stance.
+
+	run, err := svc.Create(context.Background(), "049", t.TempDir())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if run.DryRun {
+		t.Errorf("DryRun = true, want false (no provider)")
+	}
+}
+
+func TestRunService_Create_DryRunFlagPersistsAfterToggle(t *testing.T) {
+	// Settings toggling after row creation must not retroactively change
+	// runs.dry_run. The snapshot is the contract.
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	provider := &fakeDryRunProvider{value: true}
+	svc.SetDryRunProvider(provider)
+
+	run, err := svc.Create(context.Background(), "049", t.TempDir())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Operator flips Settings off mid-life.
+	provider.value = false
+
+	got, err := svc.Get(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.DryRun {
+		t.Errorf("DryRun = false after Settings toggle, want true (snapshot must be immutable)")
+	}
+}
+
 // --- ApproveScenarioReview ------------------------------------------------
 
 type fakeHITLSessionStore struct {
@@ -336,7 +404,6 @@ func (f *fakeHITLSessionStore) DeleteSession(_ context.Context, runID string) er
 	f.session = nil
 	return nil
 }
-
 
 func TestRunService_ApproveScenarioReview_Happy(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
@@ -521,4 +588,3 @@ func TestRunService_FinalizeBatchReview_NotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
-

@@ -30,6 +30,7 @@ function defaultConfig(): SettingsConfig {
     cost_cap_tts: 0,
     cost_cap_assemble: 0,
     cost_cap_per_run: 0,
+    dry_run: false,
   }
 }
 

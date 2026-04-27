@@ -41,6 +41,7 @@ function installFetchMock(overrides?: {
               cost_cap_tts: 1,
               cost_cap_assemble: 0.1,
               cost_cap_per_run: 5,
+              dry_run: false,
             },
             env: {
               DASHSCOPE_API_KEY: { configured: true },
@@ -118,6 +119,7 @@ function installFetchMock(overrides?: {
               cost_cap_tts: 1,
               cost_cap_assemble: 0.1,
               cost_cap_per_run: 5,
+              dry_run: false,
             },
             env: {
               DASHSCOPE_API_KEY: { configured: true },

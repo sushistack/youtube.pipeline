@@ -21,12 +21,20 @@ var scpIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // Defined here (consumer) and implemented by internal/db.RunStore.
 type RunStore interface {
 	Create(ctx context.Context, scpID, outputDir string) (*domain.Run, error)
-	CreateWithPromptVersion(ctx context.Context, scpID, outputDir string, tag *db.PromptVersionTag) (*domain.Run, error)
+	CreateWithPromptVersion(ctx context.Context, scpID, outputDir string, tag *db.PromptVersionTag, dryRun bool) (*domain.Run, error)
 	Get(ctx context.Context, id string) (*domain.Run, error)
 	List(ctx context.Context) ([]*domain.Run, error)
 	Cancel(ctx context.Context, id string) error
-	MarkComplete(ctx context.Context, id string) error                                              // NEW: sets stage=complete, status=completed
-	ApplyPhaseAResult(ctx context.Context, runID string, res domain.PhaseAAdvanceResult) error      // atomic stage advance write used by ApproveScenarioReview
+	MarkComplete(ctx context.Context, id string) error                                         // NEW: sets stage=complete, status=completed
+	ApplyPhaseAResult(ctx context.Context, runID string, res domain.PhaseAAdvanceResult) error // atomic stage advance write used by ApproveScenarioReview
+}
+
+// DryRunProvider returns the effective Phase B dry-run mode at the moment a
+// new run is created. Implemented by *SettingsService via
+// LoadEffectiveRuntimeConfig. A nil provider (tests, headless flows) leaves
+// dry_run = false, matching the production-default safety stance.
+type DryRunProvider interface {
+	EffectiveDryRun(ctx context.Context) (bool, error)
 }
 
 // Resumer is the minimal engine surface that RunService delegates Resume to.
@@ -57,6 +65,7 @@ type RunService struct {
 	resumer      Resumer
 	advancer     Advancer
 	prompt       PromptVersionProvider
+	dryRun       DryRunProvider
 	hitlSessions pipeline.HITLSessionStore // optional; needed by ApproveScenarioReview to maintain hitl_sessions invariant
 	clock        clock.Clock               // for last_interaction_timestamp on hitl_sessions upsert
 }
@@ -98,8 +107,20 @@ func (s *RunService) SetPromptVersionProvider(provider PromptVersionProvider) {
 	s.prompt = provider
 }
 
+// SetDryRunProvider wires the effective-config reader Create consults to
+// snapshot Phase B dry-run mode onto the new run row. Nil disables the
+// path (Create persists dry_run=false), matching the safety-default stance
+// for legacy/test entry points that don't observe Settings.
+func (s *RunService) SetDryRunProvider(provider DryRunProvider) {
+	s.dryRun = provider
+}
+
 // Create creates a new pipeline run for the given SCP ID and returns it.
 // scpID is validated against scpIDPattern to block path-escape and injection.
+//
+// At creation time the active Critic prompt tag and the effective Phase B
+// dry-run flag are snapshotted onto the new row. Both providers are
+// optional; when absent, fields default to NULL / false.
 func (s *RunService) Create(ctx context.Context, scpID, outputDir string) (*domain.Run, error) {
 	if !scpIDPattern.MatchString(scpID) {
 		return nil, fmt.Errorf("create run: invalid scp_id %q: %w", scpID, domain.ErrValidation)
@@ -108,7 +129,19 @@ func (s *RunService) Create(ctx context.Context, scpID, outputDir string) (*doma
 	if s.prompt != nil {
 		tag = s.prompt.ActivePromptVersion()
 	}
-	run, err := s.store.CreateWithPromptVersion(ctx, scpID, outputDir, tag)
+	var dryRun bool
+	if s.dryRun != nil {
+		// On provider error, default to dryRun=false rather than failing
+		// Create. Real-mode is the safety-default stance: a real run hits
+		// real APIs and the operator notices billing immediately. A
+		// hard-fail on transient SettingsService hiccups would block run
+		// creation entirely. Mirrors PromptVersionProvider's nil-tolerant
+		// philosophy at the same call site.
+		if v, err := s.dryRun.EffectiveDryRun(ctx); err == nil {
+			dryRun = v
+		}
+	}
+	run, err := s.store.CreateWithPromptVersion(ctx, scpID, outputDir, tag, dryRun)
 	if err != nil {
 		return nil, fmt.Errorf("create run: %w", err)
 	}

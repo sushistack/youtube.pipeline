@@ -36,6 +36,8 @@ type SettingsConfigInput struct {
 	CostCapTTS      float64 `json:"cost_cap_tts"`
 	CostCapAssemble float64 `json:"cost_cap_assemble"`
 	CostCapPerRun   float64 `json:"cost_cap_per_run"`
+
+	DryRun bool `json:"dry_run"`
 }
 
 type SettingsSecretState struct {

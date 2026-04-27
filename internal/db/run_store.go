@@ -61,22 +61,25 @@ type PromptVersionTag struct {
 // BEFORE the transaction commits so a failed mkdir rolls back the DB row,
 // avoiding orphans.
 func (s *RunStore) Create(ctx context.Context, scpID, outputDir string) (*domain.Run, error) {
-	return s.CreateWithPromptVersion(ctx, scpID, outputDir, nil)
+	return s.CreateWithPromptVersion(ctx, scpID, outputDir, nil, false)
 }
 
 // CreateWithPromptVersion is the AC-3 variant of Create that also stamps the
 // active Critic prompt version/hash on the new row. When tag is nil the
 // behavior is identical to Create — the columns remain NULL, matching the
 // "existing rows stay NULL" rule for runs created before a prompt was ever
-// saved through the Tuning surface.
+// saved through the Tuning surface. dryRun snapshots the effective Phase B
+// dry-run mode at row creation; Settings toggles after creation do not
+// retroactively change this row.
 func (s *RunStore) CreateWithPromptVersion(
 	ctx context.Context,
 	scpID, outputDir string,
 	tag *PromptVersionTag,
+	dryRun bool,
 ) (*domain.Run, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxCreateRetries; attempt++ {
-		run, err := s.createOnce(ctx, scpID, outputDir, tag)
+		run, err := s.createOnce(ctx, scpID, outputDir, tag, dryRun)
 		if err == nil {
 			return run, nil
 		}
@@ -88,7 +91,7 @@ func (s *RunStore) CreateWithPromptVersion(
 	return nil, fmt.Errorf("create run after %d retries: %w", maxCreateRetries, lastErr)
 }
 
-func (s *RunStore) createOnce(ctx context.Context, scpID, outputDir string, tag *PromptVersionTag) (*domain.Run, error) {
+func (s *RunStore) createOnce(ctx context.Context, scpID, outputDir string, tag *PromptVersionTag, dryRun bool) (*domain.Run, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
@@ -110,11 +113,15 @@ func (s *RunStore) createOnce(ctx context.Context, scpID, outputDir string, tag 
 		promptHash = sql.NullString{String: tag.Hash, Valid: true}
 	}
 
+	dryRunVal := 0
+	if dryRun {
+		dryRunVal = 1
+	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO runs (id, scp_id, stage, status, critic_prompt_version, critic_prompt_hash)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO runs (id, scp_id, stage, status, critic_prompt_version, critic_prompt_hash, dry_run)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		id, scpID, string(domain.StagePending), string(domain.StatusPending),
-		promptVersion, promptHash,
+		promptVersion, promptHash, dryRunVal,
 	); err != nil {
 		return nil, fmt.Errorf("insert run: %w", err)
 	}
@@ -159,6 +166,7 @@ func (s *RunStore) Get(ctx context.Context, id string) (*domain.Run, error) {
 		        human_override, scenario_path, character_query_key,
 		        selected_character_id, frozen_descriptor,
 		        critic_prompt_version, critic_prompt_hash,
+		        dry_run,
 		        created_at, updated_at
 		   FROM runs WHERE id = ?`, id)
 
@@ -206,6 +214,7 @@ func (s *RunStore) List(ctx context.Context) ([]*domain.Run, error) {
 		        human_override, scenario_path, character_query_key,
 		        selected_character_id, frozen_descriptor,
 		        critic_prompt_version, critic_prompt_hash,
+		        dry_run,
 		        created_at, updated_at
 		   FROM runs ORDER BY created_at ASC`)
 	if err != nil {
@@ -483,11 +492,11 @@ func (s *RunStore) SetFrozenDescriptor(ctx context.Context, id, descriptor strin
 // the full run row — updated_at is included so callers can log the age that
 // caused a run to be eligible.
 type ArchiveCandidate struct {
-	ID            string
-	Status        domain.Status
-	ScenarioPath  *string
-	OutputPath    *string
-	UpdatedAt     string
+	ID           string
+	Status       domain.Status
+	ScenarioPath *string
+	OutputPath   *string
+	UpdatedAt    string
 }
 
 // ListArchiveCandidates returns terminal runs whose updated_at is strictly
@@ -920,6 +929,7 @@ func scanRun(s scanner) (*domain.Run, error) {
 	var criticPromptVersion sql.NullString
 	var criticPromptHash sql.NullString
 	var humanOverride int
+	var dryRun int
 
 	err := s.Scan(
 		&r.ID, &r.SCPID, &r.Stage, &r.Status,
@@ -928,6 +938,7 @@ func scanRun(s scanner) (*domain.Run, error) {
 		&humanOverride, &scenarioPath, &characterQueryKey, &selectedCharacterID,
 		&frozenDescriptor,
 		&criticPromptVersion, &criticPromptHash,
+		&dryRun,
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
@@ -935,6 +946,7 @@ func scanRun(s scanner) (*domain.Run, error) {
 	}
 
 	r.HumanOverride = humanOverride != 0
+	r.DryRun = dryRun != 0
 	if retryReason.Valid {
 		r.RetryReason = &retryReason.String
 	}

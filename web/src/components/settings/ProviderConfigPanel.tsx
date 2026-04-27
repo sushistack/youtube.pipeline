@@ -3,7 +3,7 @@ import type { SettingsConfig } from '../../contracts/settingsContracts'
 interface ProviderConfigPanelProps {
   config: SettingsConfig
   field_errors: Record<string, string>
-  onChange: (field: keyof SettingsConfig, value: string | number) => void
+  onChange: (field: keyof SettingsConfig, value: string | number | boolean) => void
 }
 
 function FieldError({ message }: { message?: string }) {
@@ -99,6 +99,24 @@ export function ProviderConfigPanel({
           )
         })}
       </div>
+
+      <label className='settings-form__field settings-form__field--toggle'>
+        <input
+          type='checkbox'
+          className='settings-form__checkbox'
+          checked={config.dry_run}
+          onChange={(event) => {
+            onChange('dry_run', event.target.checked)
+          }}
+        />
+        <span>
+          <strong>Dry run (Phase B)</strong>
+          <small>
+            Skip DashScope image and TTS calls. Generates placeholder assets at
+            zero cost. Final video assembly is blocked while enabled.
+          </small>
+        </span>
+      </label>
     </section>
   )
 }

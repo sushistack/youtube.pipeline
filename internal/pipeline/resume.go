@@ -81,9 +81,9 @@ type ResumeOptions struct {
 // boundaries; Resume re-enters a failed/waiting stage with cleanup and
 // consistency-check semantics. The Engine satisfies pipeline.Runner.
 type Engine struct {
-	runs           RunStore
-	segments       SegmentStore
-	sessions       HITLSessionCleaner
+	runs     RunStore
+	segments SegmentStore
+	sessions HITLSessionCleaner
 	// hitlSessions is the full session store used to upsert hitl_sessions
 	// rows when Advance transitions a run INTO a HITL stage (scenario_review,
 	// batch_review, metadata_ack). Optional — nil keeps the legacy behavior
@@ -393,6 +393,16 @@ func (e *Engine) runPhaseB(ctx context.Context, runID string, run *domain.Run, s
 // Callers are responsible for promoting settings and loading segments before
 // calling this method.
 func (e *Engine) runPhaseC(ctx context.Context, runID string, run *domain.Run, segments []*domain.Episode) error {
+	// Block dry-run rows from composing placeholder image/audio into a final
+	// video. The runs.dry_run column is an immutable snapshot of the effective
+	// DryRun flag at row creation, so this guard cannot be bypassed by
+	// toggling Settings off mid-flight. Centralized here (not at the
+	// Engine.Advance dispatch site) so Resume — which also reaches Phase C
+	// via ExecuteResume — is covered without a second guard. Error is wrapped
+	// as ErrValidation so the API layer surfaces it as 4xx, not 5xx.
+	if run.DryRun {
+		return fmt.Errorf("phase c: %w: run was created in dry-run mode; placeholder image/audio cannot be assembled", domain.ErrValidation)
+	}
 	// Mark running before dispatching so the UI stops showing the "Generate
 	// Video" gate and reflects in-progress state while assembly executes.
 	// Mirrors runPhaseB's manual-gate flow.

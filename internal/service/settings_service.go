@@ -172,6 +172,19 @@ func (s *SettingsService) LoadEffectiveRuntimeFiles(ctx context.Context) (domain
 	return s.effectiveSnapshotFromState(ctx, state)
 }
 
+// EffectiveDryRun returns the effective Phase B dry-run flag from the
+// current effective config, or false if effective_version is unset.
+// Implements service.DryRunProvider so RunService can snapshot the value
+// onto each newly-created run without taking a hard dependency on the full
+// SettingsService surface.
+func (s *SettingsService) EffectiveDryRun(ctx context.Context) (bool, error) {
+	cfg, err := s.LoadEffectiveRuntimeConfig(ctx)
+	if err != nil {
+		return false, err
+	}
+	return cfg.DryRun, nil
+}
+
 // EffectiveVersion returns the current effective version number, or 0 if
 // none is set. Used by handlers building ETag headers for If-Match checks.
 func (s *SettingsService) EffectiveVersion(ctx context.Context) (int64, error) {
@@ -372,6 +385,7 @@ func normalizeSettingsConfig(cfg domain.PipelineConfig) SettingsConfigInput {
 		CostCapTTS:      cfg.CostCapTTS,
 		CostCapAssemble: cfg.CostCapAssemble,
 		CostCapPerRun:   cfg.CostCapPerRun,
+		DryRun:          cfg.DryRun,
 	}
 }
 
@@ -408,6 +422,7 @@ func applyEditableConfig(cfg *domain.PipelineConfig, input SettingsConfigInput) 
 	cfg.CostCapTTS = input.CostCapTTS
 	cfg.CostCapAssemble = input.CostCapAssemble
 	cfg.CostCapPerRun = input.CostCapPerRun
+	cfg.DryRun = input.DryRun
 }
 
 func cloneSecretMap(values map[string]string) map[string]string {

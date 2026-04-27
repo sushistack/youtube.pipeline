@@ -26,6 +26,7 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/llmclient"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient/dashscope"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient/deepseek"
+	"github.com/sushistack/youtube.pipeline/internal/llmclient/dryrun"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient/gemini"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline/agents"
@@ -68,6 +69,13 @@ func imageEndpointForRegion(region string) string {
 // construction step fails; the caller decides how to handle the absence
 // (warn + skip vs. fatal).
 //
+// When cfg.DryRun is true, the DashScope clients are swapped for in-process
+// fakes from the dryrun package — the API key is not required and no
+// outbound HTTP traffic is generated. This is the single switch that makes
+// Phase B free during prompt iteration. Phase C / StageAssemble is gated
+// separately in pipeline.Engine.Advance using runs.dry_run, so a placeholder
+// asset cannot compose into a final video.
+//
 // The limiter factory is injected rather than created per-call so TTS and
 // image tracks continue to share a single DashScope limiter budget across
 // stages and retries — otherwise each rebuild would hand each track a fresh
@@ -82,7 +90,7 @@ func buildPhaseBRunner(
 	characterResolver pipeline.CharacterResolver,
 	logger *slog.Logger,
 ) (*pipeline.PhaseBRunner, error) {
-	if dashScopeAPIKey == "" {
+	if !cfg.DryRun && dashScopeAPIKey == "" {
 		return nil, fmt.Errorf("DASHSCOPE_API_KEY not set")
 	}
 	if limiterFactory == nil {
@@ -94,32 +102,43 @@ func buildPhaseBRunner(
 
 	httpClient := &http.Client{Timeout: 120 * time.Second}
 
-	ttsClient, err := dashscope.NewTTSClient(httpClient, dashscope.TTSClientConfig{
-		APIKey:       dashScopeAPIKey,
-		Endpoint:     ttsEndpointForRegion(cfg.DashScopeRegion),
-		LanguageType: "Korean",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build tts client: %w", err)
-	}
-
-	imageClient, err := dashscope.NewImageClient(httpClient, dashscope.ImageClientConfig{
-		APIKey:   dashScopeAPIKey,
-		Endpoint: imageEndpointForRegion(cfg.DashScopeRegion),
-		Clock:    clock.RealClock{},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build image client: %w", err)
+	var (
+		ttsClient   domain.TTSSynthesizer
+		imageClient domain.ImageGenerator
+	)
+	if cfg.DryRun {
+		logger.Info("phase b dry-run mode active: image + tts calls swapped for placeholder fakes")
+		ttsClient = dryrun.NewTTSClient()
+		imageClient = dryrun.NewImageClient()
+	} else {
+		realTTS, err := dashscope.NewTTSClient(httpClient, dashscope.TTSClientConfig{
+			APIKey:       dashScopeAPIKey,
+			Endpoint:     ttsEndpointForRegion(cfg.DashScopeRegion),
+			LanguageType: "Korean",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("build tts client: %w", err)
+		}
+		realImage, err := dashscope.NewImageClient(httpClient, dashscope.ImageClientConfig{
+			APIKey:   dashScopeAPIKey,
+			Endpoint: imageEndpointForRegion(cfg.DashScopeRegion),
+			Clock:    clock.RealClock{},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("build image client: %w", err)
+		}
+		ttsClient = realTTS
+		imageClient = realImage
 	}
 
 	// Compliance audit logging — creates {outputDir}/{runID}/audit.log.
 	auditLogger := pipeline.NewFileAuditLogger(cfg.OutputDir)
 
 	imageTrack, err := pipeline.NewImageTrack(pipeline.ImageTrackConfig{
-		OutputDir:         cfg.OutputDir,
-		Provider:          cfg.ImageProvider,
-		GenerateModel:     cfg.ImageModel,
-		EditModel:         cfg.ImageEditModel,
+		OutputDir:     cfg.OutputDir,
+		Provider:      cfg.ImageProvider,
+		GenerateModel: cfg.ImageModel,
+		EditModel:     cfg.ImageEditModel,
 		// 16:9 at qwen-image-2.0's recommended resolution (2688×1536 =
 		// 4,128,768 px, just under the 2048² total-pixel cap). YouTube's native
 		// frame is 16:9; keeping image generation aligned avoids letterboxing
@@ -437,16 +456,29 @@ type dynamicPhaseBExecutor struct {
 }
 
 func (e *dynamicPhaseBExecutor) Run(ctx context.Context, req pipeline.PhaseBRequest) (pipeline.PhaseBResult, error) {
-	// Phase B always reads the current effective settings — there is no
-	// per-run pinning. The executor takes a single in-memory snapshot here
-	// and runs Phase B against it; mid-execution settings changes affect
-	// only the next executor invocation, never the in-flight one.
+	// Phase B reads the current effective settings for everything except
+	// dry-run mode — there is no per-run pinning of model/voice/etc., and
+	// mid-execution settings changes affect only the next executor invocation,
+	// never the in-flight one.
+	//
+	// Dry-run is the exception: the runs.dry_run column was snapshotted at
+	// row creation, and that snapshot governs which clients (real DashScope
+	// vs. dryrun fakes) Phase B uses for THIS run. Without the override
+	// below, a Settings flip between Create and Phase B execution would
+	// silently flip the run's mode mid-flight, defeating the snapshot
+	// promise that "the per-run state is durable".
 	files, err := e.settings.LoadEffectiveRuntimeFiles(ctx)
 	if err != nil {
 		return pipeline.PhaseBResult{}, fmt.Errorf("load settings for phase b run %s: %w", req.RunID, err)
 	}
+	run, err := e.runStore.Get(ctx, req.RunID)
+	if err != nil {
+		return pipeline.PhaseBResult{}, fmt.Errorf("load run for phase b %s: %w", req.RunID, err)
+	}
+	cfg := files.Config
+	cfg.DryRun = run.DryRun
 	runner, err := buildPhaseBRunner(
-		files.Config,
+		cfg,
 		files.Env[domain.SettingsSecretDashScope],
 		e.limiterFactory,
 		e.runStore,
@@ -624,6 +656,10 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	// RunService stamps newly-created runs with the active Critic prompt
 	// version so later metrics can group runs by prompt version (AC-3).
 	svc.SetPromptVersionProvider(tuningSvc)
+	// And with the effective Phase B dry-run flag so the run row carries
+	// its own snapshot — Settings toggles after creation don't retroactively
+	// change in-flight or completed runs.
+	svc.SetDryRunProvider(settingsSvc)
 
 	deps := api.NewDependencies(svc, settingsSvc, hitlSvc, characterSvc, sceneSvc, segStore, tuningSvc, cfg.OutputDir, logger, web.FS)
 	mux := http.NewServeMux()

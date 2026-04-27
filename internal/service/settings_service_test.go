@@ -231,6 +231,47 @@ func validSettingsInput() SettingsUpdateInput {
 	}
 }
 
+func TestSettingsService_DryRunRoundTripsThroughSaveAndLoad(t *testing.T) {
+	testDB := testutil.NewTestDB(t)
+	svc, _ := newSettingsTestService(t, testDB)
+
+	// Default after Bootstrap is false.
+	if dry, err := svc.EffectiveDryRun(context.Background()); err != nil || dry {
+		t.Fatalf("initial EffectiveDryRun = (%v, %v), want (false, nil)", dry, err)
+	}
+
+	input := validSettingsInput()
+	input.Config.DryRun = true
+	if _, err := svc.Save(context.Background(), input, nil); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	dry, err := svc.EffectiveDryRun(context.Background())
+	if err != nil {
+		t.Fatalf("EffectiveDryRun after save: %v", err)
+	}
+	if !dry {
+		t.Errorf("EffectiveDryRun = false, want true after save")
+	}
+
+	cfg, err := svc.LoadEffectiveRuntimeConfig(context.Background())
+	if err != nil {
+		t.Fatalf("LoadEffectiveRuntimeConfig: %v", err)
+	}
+	if !cfg.DryRun {
+		t.Errorf("LoadEffectiveRuntimeConfig DryRun = false, want true")
+	}
+
+	// Snapshot exposes the same value (UI consumes Snapshot, not effective config directly).
+	snap, err := svc.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if !snap.Config.DryRun {
+		t.Errorf("Snapshot.Config.DryRun = false, want true")
+	}
+}
+
 func newSettingsTestService(t *testing.T, database *sql.DB) (*SettingsService, string) {
 	t.Helper()
 

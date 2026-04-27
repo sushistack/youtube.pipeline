@@ -128,6 +128,7 @@ type Run struct {
 	FrozenDescriptor    *string  `json:"frozen_descriptor,omitempty"`
 	CriticPromptVersion *string  `json:"critic_prompt_version,omitempty"`
 	CriticPromptHash    *string  `json:"critic_prompt_hash,omitempty"`
+	DryRun              bool     `json:"dry_run"`
 	CreatedAt           string   `json:"created_at"`
 	UpdatedAt           string   `json:"updated_at"`
 }

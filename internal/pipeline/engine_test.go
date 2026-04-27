@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sushistack/youtube.pipeline/internal/clock"
@@ -360,6 +361,55 @@ func TestEngineAdvance_PhaseCRunnerNil_ReturnsValidation(t *testing.T) {
 	err := engine.Advance(context.Background(), "run-1")
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+}
+
+// trackingPhaseCDep records whether a Phase C update method ran. The
+// guard short-circuits inside runPhaseC before either updater is touched,
+// so on a successful guard fire both flags stay false.
+type trackingPhaseCDep struct{ called bool }
+
+func (d *trackingPhaseCDep) UpdateClipPath(_ context.Context, _ string, _ int, _ string) error {
+	d.called = true
+	return nil
+}
+func (d *trackingPhaseCDep) UpdateOutputPath(_ context.Context, _ string, _ string) error {
+	d.called = true
+	return nil
+}
+
+func TestEngine_RunPhaseC_DryRunBlocksAssembly(t *testing.T) {
+	// Centralized guard inside runPhaseC covers BOTH Engine.Advance and
+	// ExecuteResume — placeholder image/audio cannot reach ffmpeg via either
+	// dispatch path. Test wires a real PhaseCRunner with tracking stubs and
+	// asserts: guard fires (ErrValidation + "dry-run" message) AND no
+	// Phase C dependency was touched.
+	testutil.BlockExternalHTTP(t)
+
+	runs := &engineTestRunStore{
+		run: &domain.Run{
+			ID:     "run-dry",
+			Stage:  domain.StageAssemble,
+			Status: domain.StatusWaiting,
+			DryRun: true,
+		},
+	}
+	clipUpdater := &trackingPhaseCDep{}
+	outputUpdater := &trackingPhaseCDep{}
+	phaseC := NewPhaseCRunner(clipUpdater, outputUpdater, nil, clock.RealClock{}, slog.Default())
+
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, t.TempDir(), slog.Default())
+	engine.SetPhaseCRunner(phaseC)
+
+	err := engine.Advance(context.Background(), "run-dry")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "dry-run") {
+		t.Errorf("error does not name dry-run reason: %v", err)
+	}
+	if clipUpdater.called || outputUpdater.called {
+		t.Errorf("Phase C dependencies were touched despite DryRun=true; guard failed to short-circuit")
 	}
 }
 

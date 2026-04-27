@@ -18,6 +18,7 @@ export const settingsConfigSchema = z.object({
   cost_cap_tts: z.number().nonnegative(),
   cost_cap_assemble: z.number().nonnegative(),
   cost_cap_per_run: z.number().nonnegative(),
+  dry_run: z.boolean(),
 })
 
 export const settingsSecretSchema = z.object({

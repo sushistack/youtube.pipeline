@@ -1305,7 +1305,7 @@ func TestRunStore_CreateWithPromptVersion_StampsColumns(t *testing.T) {
 		Version: "20260424T031522Z-f6b34b6",
 		Hash:    "abc123def",
 	}
-	run, err := store.CreateWithPromptVersion(context.Background(), "049", t.TempDir(), tag)
+	run, err := store.CreateWithPromptVersion(context.Background(), "049", t.TempDir(), tag, false)
 	if err != nil {
 		t.Fatalf("CreateWithPromptVersion: %v", err)
 	}
@@ -1331,12 +1331,45 @@ func TestRunStore_CreateWithPromptVersion_NilTagKeepsColumnsNull(t *testing.T) {
 	database := testutil.NewTestDB(t)
 	store := db.NewRunStore(database)
 
-	run, err := store.CreateWithPromptVersion(context.Background(), "049", t.TempDir(), nil)
+	run, err := store.CreateWithPromptVersion(context.Background(), "049", t.TempDir(), nil, false)
 	if err != nil {
 		t.Fatalf("CreateWithPromptVersion: %v", err)
 	}
 	if run.CriticPromptVersion != nil || run.CriticPromptHash != nil {
 		t.Errorf("want both nil, got version=%v hash=%v", run.CriticPromptVersion, run.CriticPromptHash)
+	}
+}
+
+func TestRunStore_CreateWithPromptVersion_DryRunRoundTrip(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+
+	run, err := store.CreateWithPromptVersion(context.Background(), "049", t.TempDir(), nil, true)
+	if err != nil {
+		t.Fatalf("CreateWithPromptVersion: %v", err)
+	}
+	if !run.DryRun {
+		t.Errorf("DryRun = false from Create, want true")
+	}
+
+	fetched, err := store.Get(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !fetched.DryRun {
+		t.Errorf("Get DryRun = false, want true (column did not round-trip)")
+	}
+
+	// List path also reads the column.
+	all, err := store.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, r := range all {
+		if r.ID == run.ID && !r.DryRun {
+			t.Errorf("List DryRun = false for created row, want true")
+		}
 	}
 }
 
