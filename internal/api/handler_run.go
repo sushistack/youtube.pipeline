@@ -249,6 +249,24 @@ func (h *RunHandler) ApproveScenarioReview(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, toRunResponse(run))
 }
 
+// FinalizeBatchReview handles POST /api/runs/{id}/batch-review/approve.
+// No request body. Transitions batch_review/waiting → assemble/waiting once
+// every scene has a decision; the operator then dispatches Phase C via
+// /advance (manual gate, mirrors image/waiting). Returns 409 ErrConflict
+// when the run is not paused at batch_review OR when scenes are still
+// pending; 404 ErrNotFound when the run does not exist.
+func (h *RunHandler) FinalizeBatchReview(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	run, err := h.svc.FinalizeBatchReview(r.Context(), runID)
+	if err != nil {
+		h.logger.Error("finalize batch review", "run_id", runID, "error", err)
+		writeDomainError(w, err)
+		return
+	}
+	h.logger.Info("batch review finalized", "run_id", runID, "stage", run.Stage, "status", run.Status)
+	writeJSON(w, http.StatusOK, toRunResponse(run))
+}
+
 // resumeRequest is the optional request body for POST /api/runs/{id}/resume.
 // confirm_inconsistent mirrors the CLI --force flag: when true, the server
 // proceeds with the resume even if a filesystem/DB mismatch is detected.

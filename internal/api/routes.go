@@ -54,6 +54,7 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 		api.HandleFunc("GET /api/runs/{id}/scenes/{idx}/shots/{shot}/image", deps.Media.Image)
 	}
 	api.HandleFunc("POST /api/runs/{id}/scenario/approve", deps.Run.ApproveScenarioReview)
+	api.HandleFunc("POST /api/runs/{id}/batch-review/approve", deps.Run.FinalizeBatchReview)
 
 	// Compliance gate + artifact serving (Story 9.4).
 	api.HandleFunc("POST /api/runs/{id}/metadata/ack", deps.Run.AcknowledgeMetadata)

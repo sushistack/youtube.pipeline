@@ -142,45 +142,6 @@ describe("BatchReview", () => {
     expect(screen.getAllByText("Hook scene narration")).toHaveLength(2);
   });
 
-  it("keeps selection and detail synchronized with J/K navigation and bounds edges", async () => {
-    const user = userEvent.setup();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify(responsePayload), {
-        headers: { "Content-Type": "application/json" },
-        status: 200,
-      }),
-    );
-
-    renderWithProviders(
-      <KeyboardShortcutsProvider>
-        <BatchReview run={run} />
-      </KeyboardShortcutsProvider>,
-    );
-
-    await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("j");
-    expect(screen.getByLabelText(/scene 2 detail/i)).toBeInTheDocument();
-
-    await user.keyboard("j");
-    expect(screen.getByLabelText(/scene 3 detail/i)).toBeInTheDocument();
-
-    await user.keyboard("j");
-    await waitFor(() => {
-      expect(screen.getByLabelText(/scene 3 detail/i)).toBeInTheDocument();
-    });
-
-    await user.keyboard("k");
-    expect(screen.getByLabelText(/scene 2 detail/i)).toBeInTheDocument();
-
-    await user.keyboard("k");
-    expect(screen.getByLabelText(/scene 1 detail/i)).toBeInTheDocument();
-
-    await user.keyboard("k");
-    await waitFor(() => {
-      expect(screen.getByLabelText(/scene 1 detail/i)).toBeInTheDocument();
-    });
-  });
-
   it("approves the selected scene, moves forward, and updates the visible remaining count", async () => {
     const user = userEvent.setup();
     const fetch_mock = vi.spyOn(globalThis, "fetch");
@@ -255,7 +216,7 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: /^approve$/i }));
 
     await waitFor(() => {
       expect(screen.getByLabelText(/scene 2 detail/i)).toBeInTheDocument();
@@ -263,7 +224,7 @@ describe("BatchReview", () => {
     expect(screen.getByText("1 scenes remaining")).toBeInTheDocument();
   });
 
-  it("Shift+Enter opens the inline approve-all confirmation panel with alertdialog semantics", async () => {
+  it("Approve All button opens the inline approve-all confirmation panel with alertdialog semantics", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(responsePayload), {
@@ -279,7 +240,9 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Shift>}{Enter}{/Shift}");
+    await user.click(
+      screen.getByRole("button", { name: /^approve all remaining$/i }),
+    );
 
     const panel = await screen.findByRole("alertdialog");
     expect(panel).toBeInTheDocument();
@@ -308,7 +271,7 @@ describe("BatchReview", () => {
 
     await screen.findByLabelText(/scene 1 detail/i);
     const trigger = screen.getByRole("button", {
-      name: /shift\+enter.*approve all remaining/i,
+      name: /^approve all remaining$/i,
     });
     await user.click(trigger);
 
@@ -415,11 +378,17 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Shift>}{Enter}{/Shift}");
-    await user.keyboard("{Enter}");
+    await user.click(
+      screen.getByRole("button", { name: /^approve all remaining$/i }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: /\[enter\] confirm/i }),
+    );
 
     await waitFor(() => {
-      expect(screen.getByText("All scenes reviewed")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /continue to assemble/i }),
+      ).toBeInTheDocument();
     });
 
     const undoStack = useUIStore.getState().undo_stacks[run.id];
@@ -427,67 +396,14 @@ describe("BatchReview", () => {
     expect(undoStack[0].kind).toBe("approve_all_remaining");
     expect(undoStack[0].scene_indices).toEqual([0, 1]);
 
-    await user.keyboard("{Control>}z{/Control}");
+    await user.click(screen.getByRole("button", { name: /^undo$/i }));
     const undo_calls = fetch_mock.mock.calls.filter(([input]) =>
       requestUrl(input).endsWith("/undo"),
     );
     expect(undo_calls).toHaveLength(1);
   });
 
-  it("suppresses action shortcuts while focus is inside an input", async () => {
-    const user = userEvent.setup();
-    const fetch_mock = vi.spyOn(globalThis, "fetch");
-    fetch_mock.mockResolvedValue(
-      new Response(JSON.stringify(responsePayload), {
-        headers: { "Content-Type": "application/json" },
-        status: 200,
-      }),
-    );
-
-    renderWithProviders(
-      <KeyboardShortcutsProvider>
-        <div>
-          <input aria-label="edit field" />
-          <BatchReview run={run} />
-        </div>
-      </KeyboardShortcutsProvider>,
-    );
-
-    await screen.findByLabelText(/scene 1 detail/i);
-    await user.click(screen.getByLabelText(/edit field/i));
-    await user.keyboard("{Enter}");
-
-    expect(fetch_mock).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses space for audio without triggering approve or reject handlers", async () => {
-    const user = userEvent.setup();
-    const fetch_mock = vi.spyOn(globalThis, "fetch");
-    fetch_mock.mockImplementation(async (input) => {
-      const url = requestUrl(input);
-      if (url.endsWith("/review-items")) {
-        return new Response(JSON.stringify(responsePayload), {
-          headers: { "Content-Type": "application/json" },
-          status: 200,
-        });
-      }
-      throw new Error(`Unexpected fetch ${url}`);
-    });
-
-    renderWithProviders(
-      <KeyboardShortcutsProvider>
-        <BatchReview run={run} />
-      </KeyboardShortcutsProvider>,
-    );
-
-    await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard(" ");
-
-    expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
-    expect(fetch_mock).toHaveBeenCalledTimes(1);
-  });
-
-  it("Ctrl+Z fires undo endpoint after an approval and restores scene selection", async () => {
+  it("Undo button fires undo endpoint after an approval and restores scene selection", async () => {
     const user = userEvent.setup();
     const fetch_mock = vi.spyOn(globalThis, "fetch");
     let approved = false;
@@ -566,14 +482,14 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: /^approve$/i }));
 
     await waitFor(() => {
       expect(screen.getByLabelText(/scene 2 detail/i)).toBeInTheDocument();
     });
 
-    // Ctrl+Z should undo the approval and restore selection to scene 0 (scene 1 in 1-indexed label).
-    await user.keyboard("{Control>}z{/Control}");
+    // Undo should reverse the approval and restore selection to scene 0 (scene 1 in 1-indexed label).
+    await user.click(screen.getByRole("button", { name: /^undo$/i }));
 
     await waitFor(() => {
       expect(screen.getByLabelText(/scene 1 detail/i)).toBeInTheDocument();
@@ -583,36 +499,6 @@ describe("BatchReview", () => {
       requestUrl(input).endsWith("/undo"),
     );
     expect(undo_calls).toHaveLength(1);
-  });
-
-  it("Ctrl+Z is suppressed when focus is inside a textarea", async () => {
-    const user = userEvent.setup();
-    const fetch_mock = vi.spyOn(globalThis, "fetch");
-    fetch_mock.mockResolvedValue(
-      new Response(JSON.stringify(responsePayload), {
-        headers: { "Content-Type": "application/json" },
-        status: 200,
-      }),
-    );
-
-    renderWithProviders(
-      <KeyboardShortcutsProvider>
-        <div>
-          <textarea aria-label="draft area" />
-          <BatchReview run={run} />
-        </div>
-      </KeyboardShortcutsProvider>,
-    );
-
-    await screen.findByLabelText(/scene 1 detail/i);
-    await user.click(screen.getByLabelText(/draft area/i));
-    await user.keyboard("{Control>}z{/Control}");
-
-    // Only the initial review-items fetch should fire, no /undo call.
-    const undo_calls = fetch_mock.mock.calls.filter(([input]) =>
-      requestUrl(input).endsWith("/undo"),
-    );
-    expect(undo_calls).toHaveLength(0);
   });
 
   it("Undo button is disabled when undo stack is empty", async () => {
@@ -630,13 +516,13 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    const undo_btn = screen.getByRole("button", { name: /ctrl\+z.*undo/i });
+    const undo_btn = screen.getByRole("button", { name: /^undo$/i });
     expect(undo_btn).toBeDisabled();
   });
 
   // ── Story 8.4 — inline reject composer, FR53, regen, retry-exhausted ─────
 
-  it("Esc opens the inline composer without firing an immediate reject mutation", async () => {
+  it("Reject button opens the inline composer without firing an immediate reject mutation", async () => {
     const user = userEvent.setup();
     const fetch_mock = vi.spyOn(globalThis, "fetch");
     fetch_mock.mockImplementation(async (input) => {
@@ -657,7 +543,7 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /^reject$/i }));
 
     // Composer appears inline; never renders a dialog role.
     expect(
@@ -691,7 +577,7 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /^reject$/i }));
     const confirm = await screen.findByRole("button", {
       name: /confirm reject/i,
     });
@@ -723,12 +609,13 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /^reject$/i }));
     expect(
       await screen.findByLabelText(/reject composer for scene 1/i),
     ).toBeInTheDocument();
 
-    // Esc inside an empty textarea cancels the composer state.
+    // Esc inside an empty textarea cancels the composer state (composer owns
+    // its own keydown handler — independent of the removed global shortcuts).
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(
@@ -804,7 +691,7 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /^reject$/i }));
     const textarea = await screen.findByLabelText(/rejection reason/i);
     await user.type(textarea, "tone is off");
     const confirm = screen.getByRole("button", { name: /confirm reject/i });
@@ -859,7 +746,7 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /^reject$/i }));
     expect(
       await screen.findByText(/we've seen this scene fail before/i),
     ).toBeInTheDocument();
@@ -903,10 +790,10 @@ describe("BatchReview", () => {
     ).toBeInTheDocument();
     // Normal reject/approve buttons must not render alongside the exhausted CTAs.
     expect(
-      screen.queryByRole("button", { name: /\[enter\] approve/i }),
+      screen.queryByRole("button", { name: /^approve$/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /\[esc\] reject/i }),
+      screen.queryByRole("button", { name: /^reject$/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -1028,22 +915,22 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /^reject$/i }));
     await user.type(screen.getByLabelText(/rejection reason/i), "rephrase");
     await user.click(screen.getByRole("button", { name: /confirm reject/i }));
 
-    // List still renders the other scenes and J/K still navigates.
+    // List still renders the other scenes and remains clickable.
     await waitFor(() => {
       expect(
         screen.queryByLabelText(/reject composer for scene 1/i),
       ).not.toBeInTheDocument();
     });
-    await user.keyboard("j");
+    const sceneCards = screen.getAllByRole("option");
+    await user.click(sceneCards[1]);
     expect(screen.getByLabelText(/scene 2 detail/i)).toBeInTheDocument();
   });
 
-  it("Shift+Enter does not open the confirmation panel when zero scenes are actionable (AC-1)", async () => {
-    const user = userEvent.setup();
+  it("renders Continue to Assemble CTA when zero scenes are actionable (AC-1)", async () => {
     const allApprovedPayload = {
       ...responsePayload,
       data: {
@@ -1067,16 +954,10 @@ describe("BatchReview", () => {
       </KeyboardShortcutsProvider>,
     );
 
-    await screen.findByText(/all scenes reviewed for this run/i);
-    // The trigger is not rendered when there is no selected actionable item;
-    // the action bar collapses to the "all reviewed" empty state.
     expect(
-      screen.queryByRole("button", {
-        name: /shift\+enter.*approve all remaining/i,
-      }),
-    ).not.toBeInTheDocument();
-
-    await user.keyboard("{Shift>}{Enter}{/Shift}");
+      await screen.findByRole("button", { name: /continue to assemble/i }),
+    ).toBeInTheDocument();
+    // The approve-all confirmation panel must not be open at rest.
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
@@ -1137,8 +1018,12 @@ describe("BatchReview", () => {
     );
 
     await screen.findByLabelText(/scene 1 detail/i);
-    await user.keyboard("{Shift>}{Enter}{/Shift}");
-    await user.keyboard("{Enter}");
+    await user.click(
+      screen.getByRole("button", { name: /^approve all remaining$/i }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: /\[enter\] confirm/i }),
+    );
 
     await waitFor(() => {
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();

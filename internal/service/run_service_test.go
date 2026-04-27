@@ -310,12 +310,16 @@ type fakeHITLSessionStore struct {
 	upserts []*domain.HITLSession
 	deletes []string
 	session *domain.HITLSession
+	counts  *pipeline.DecisionCounts // override: returned by DecisionCountsByRunID when non-nil
 }
 
 func (f *fakeHITLSessionStore) ListByRunID(_ context.Context, _ string) ([]*domain.Decision, error) {
 	return nil, nil
 }
 func (f *fakeHITLSessionStore) DecisionCountsByRunID(_ context.Context, _ string) (pipeline.DecisionCounts, error) {
+	if f.counts != nil {
+		return *f.counts, nil
+	}
 	return pipeline.DecisionCounts{TotalScenes: 8}, nil
 }
 func (f *fakeHITLSessionStore) GetSession(_ context.Context, _ string) (*domain.HITLSession, error) {
@@ -407,3 +411,114 @@ func TestRunService_ApproveScenarioReview_NotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+// --- FinalizeBatchReview --------------------------------------------------
+
+func TestRunService_FinalizeBatchReview_Happy(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	if _, err := database.ExecContext(context.Background(),
+		`INSERT INTO runs (id, scp_id, stage, status, scenario_path) VALUES (?, ?, ?, ?, ?)`,
+		"scp-049-run-1", "049", string(domain.StageBatchReview), string(domain.StatusWaiting), "scenario.json"); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	sessions := &fakeHITLSessionStore{
+		counts: &pipeline.DecisionCounts{Approved: 3, TotalScenes: 3},
+	}
+	svc := service.NewRunService(store, nil)
+	svc.SetHITLSessionStore(sessions, nil)
+
+	got, err := svc.FinalizeBatchReview(context.Background(), "scp-049-run-1")
+	if err != nil {
+		t.Fatalf("FinalizeBatchReview: %v", err)
+	}
+	if got.Stage != domain.StageAssemble {
+		t.Fatalf("stage = %q, want assemble", got.Stage)
+	}
+	if got.Status != domain.StatusWaiting {
+		t.Fatalf("status = %q, want waiting (manual gate)", got.Status)
+	}
+	// Assemble is non-HITL, so the hitl_sessions row must be dropped — no
+	// upsert should happen for the new stage.
+	if len(sessions.deletes) != 1 || sessions.deletes[0] != "scp-049-run-1" {
+		t.Fatalf("delete calls = %+v, want one for scp-049-run-1", sessions.deletes)
+	}
+	if len(sessions.upserts) != 0 {
+		t.Fatalf("upsert calls = %+v, want none (assemble is non-HITL)", sessions.upserts)
+	}
+}
+
+func TestRunService_FinalizeBatchReview_PendingScenes(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	if _, err := database.ExecContext(context.Background(),
+		`INSERT INTO runs (id, scp_id, stage, status) VALUES (?, ?, ?, ?)`,
+		"scp-049-run-1", "049", string(domain.StageBatchReview), string(domain.StatusWaiting)); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	// 3 scenes, only 1 approved → 2 still pending.
+	sessions := &fakeHITLSessionStore{
+		counts: &pipeline.DecisionCounts{Approved: 1, TotalScenes: 3},
+	}
+	svc := service.NewRunService(store, nil)
+	svc.SetHITLSessionStore(sessions, nil)
+
+	_, err := svc.FinalizeBatchReview(context.Background(), "scp-049-run-1")
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected ErrConflict for pending scenes, got %v", err)
+	}
+	// Verify the run was NOT advanced.
+	run, err := store.Get(context.Background(), "scp-049-run-1")
+	if err != nil {
+		t.Fatalf("re-fetch run: %v", err)
+	}
+	if run.Stage != domain.StageBatchReview {
+		t.Fatalf("stage = %q, want batch_review (transition must abort)", run.Stage)
+	}
+}
+
+func TestRunService_FinalizeBatchReview_WrongStage(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	if _, err := database.ExecContext(context.Background(),
+		`INSERT INTO runs (id, scp_id, stage, status) VALUES (?, ?, ?, ?)`,
+		"scp-049-run-1", "049", string(domain.StageScenarioReview), string(domain.StatusWaiting)); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	svc := service.NewRunService(store, nil)
+	_, err := svc.FinalizeBatchReview(context.Background(), "scp-049-run-1")
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestRunService_FinalizeBatchReview_WrongStatus(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	if _, err := database.ExecContext(context.Background(),
+		`INSERT INTO runs (id, scp_id, stage, status) VALUES (?, ?, ?, ?)`,
+		"scp-049-run-1", "049", string(domain.StageBatchReview), string(domain.StatusRunning)); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	svc := service.NewRunService(store, nil)
+	_, err := svc.FinalizeBatchReview(context.Background(), "scp-049-run-1")
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestRunService_FinalizeBatchReview_NotFound(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	_, err := svc.FinalizeBatchReview(context.Background(), "scp-999-run-1")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+

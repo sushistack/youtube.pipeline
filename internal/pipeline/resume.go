@@ -393,6 +393,21 @@ func (e *Engine) runPhaseB(ctx context.Context, runID string, run *domain.Run, s
 // Callers are responsible for promoting settings and loading segments before
 // calling this method.
 func (e *Engine) runPhaseC(ctx context.Context, runID string, run *domain.Run, segments []*domain.Episode) error {
+	// Mark running before dispatching so the UI stops showing the "Generate
+	// Video" gate and reflects in-progress state while assembly executes.
+	// Mirrors runPhaseB's manual-gate flow.
+	if err := e.runs.ApplyPhaseAResult(ctx, runID, domain.PhaseAAdvanceResult{
+		Stage:        run.Stage,
+		Status:       domain.StatusRunning,
+		CriticScore:  run.CriticScore,
+		ScenarioPath: run.ScenarioPath,
+		RetryReason:  run.RetryReason,
+	}); err != nil {
+		return fmt.Errorf("mark phase c running: %w", err)
+	}
+	// Reflect the new status locally so downstream rollback paths preserve
+	// "running"-derived metadata if Phase C errors out.
+	run.Status = domain.StatusRunning
 	runDir := filepath.Join(e.outputDir, runID)
 	req := PhaseCRequest{
 		RunID:    runID,

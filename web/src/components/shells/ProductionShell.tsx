@@ -312,6 +312,38 @@ export function ProductionShell() {
         </section>
       )
     }
+    if (current_run.stage === 'assemble' && current_run.status === 'waiting') {
+      const is_pending = advance_mutation.isPending && advance_mutation.variables === current_run.id
+      return (
+        <section className="production__pending-state" aria-label="Video assembly gate">
+          <div className="production__pending-state-copy">
+            <p className="production-dashboard__eyebrow">Ready to assemble</p>
+            <h2 className="production-dashboard__section-title">Generate Video</h2>
+          </div>
+          <p className="route-shell__body">
+            All scenes approved. Click <strong>Generate Video</strong> to compose
+            per-scene clips and concatenate them into the final upload-ready file.
+          </p>
+          <div className="production__pending-state-actions">
+            <button
+              type="button"
+              className="production__pending-resume-btn"
+              disabled={is_pending}
+              onClick={() => advance_mutation.mutate(current_run.id)}
+            >
+              {is_pending ? 'Starting…' : 'Generate Video'}
+            </button>
+            {advance_mutation.isError && advance_mutation.variables === current_run.id ? (
+              <span className="production__pending-resume-error" role="status">
+                Failed: {advance_mutation.error instanceof Error
+                  ? advance_mutation.error.message
+                  : 'Unknown error — check the run log and retry.'}
+              </span>
+            ) : null}
+          </div>
+        </section>
+      )
+    }
     if (current_run.stage === 'scenario_review' && current_run.status === 'waiting') {
       // key on run.id matches sibling stage branches: switching runs while in
       // scenario_review must remount the inspector to flush its

@@ -5,10 +5,10 @@ import type {
   ReviewItem,
   SceneDecisionRequest,
 } from "../../contracts/runContracts";
-import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import {
   ApiClientError,
   approveAllRemaining,
+  approveBatchReview,
   dispatchSceneRegeneration,
   fetchBatchReviewItems,
   recordSceneDecision,
@@ -20,6 +20,12 @@ import { DetailPanel } from "../shared/DetailPanel";
 import { InlineConfirmPanel } from "../shared/InlineConfirmPanel";
 import { RejectComposer } from "../shared/RejectComposer";
 import { SceneCard } from "../shared/SceneCard";
+
+// Removed: useKeyboardShortcuts. The previous global shortcut surface
+// (Enter / Esc / S / Ctrl+Z / Shift+Enter / J / K) was unreliable in
+// practice — operators reach for the on-screen buttons. Inline shortcuts
+// inside RejectComposer and InlineConfirmPanel still work because they
+// own their own keydown handlers locally.
 
 interface BatchReviewProps {
   run: RunSummary;
@@ -263,6 +269,20 @@ export function BatchReview({ run }: BatchReviewProps) {
     },
   });
 
+  const finalize_mutation = useMutation({
+    mutationFn: () => approveBatchReview(run.id),
+    onSuccess: () => {
+      // Status invalidation triggers ProductionShell to swap from BatchReview
+      // to the assemble/waiting "Generate Video" gate.
+      void query_client.invalidateQueries({
+        queryKey: queryKeys.runs.status(run.id),
+      });
+      void query_client.invalidateQueries({
+        queryKey: queryKeys.runs.list(),
+      });
+    },
+  });
+
   const undo_mutation = useMutation({
     mutationFn: () => undoLastDecision(run.id),
     onSuccess: (result) => {
@@ -379,36 +399,21 @@ export function BatchReview({ run }: BatchReviewProps) {
     }
   }
 
-  function submitDecision(
-    decision_type: SceneDecisionRequest["decision_type"],
-  ) {
+  function approveSelectedScene() {
     if (!selected_item || decision_mutation.isPending) {
       return;
     }
-
     decision_mutation.mutate({
       scene_index: selected_item.scene_index,
-      decision_type,
-      context_snapshot:
-        decision_type === "skip_and_remember"
-          ? buildSkipSnapshot(selected_item)
-          : undefined,
+      decision_type: "approve",
     });
   }
 
-  function approveSelectedScene() {
-    submitDecision("approve");
-  }
-
   function rejectSelectedScene() {
-    // Story 8.4 AC-1: Esc / Reject now opens the inline composer instead of
-    // firing an immediate reject. Exhausted scenes route to the dedicated
-    // CTA surface rendered below the action bar.
+    // Story 8.4 AC-1: Reject opens the inline composer instead of firing an
+    // immediate reject. Exhausted scenes route to the dedicated CTA surface
+    // rendered below the action bar.
     openRejectComposer();
-  }
-
-  function skipSelectedScene() {
-    submitDecision("skip_and_remember");
   }
 
   function skipAndFlagExhausted() {
@@ -456,88 +461,6 @@ export function BatchReview({ run }: BatchReviewProps) {
   const composer_open_pre =
     reject_composer_scene != null &&
     selected_item?.scene_index === reject_composer_scene;
-  const shortcuts_enabled = !composer_open_pre && !approve_all_open;
-  useKeyboardShortcuts(
-    [
-      {
-        action: "review-next",
-        handler: () => {
-          if (items.length === 0) {
-            return;
-          }
-          const current_index = items.findIndex(
-            (item) => item.scene_index === effective_selected_scene_index,
-          );
-          const next_index =
-            current_index < 0
-              ? 0
-              : Math.min(items.length - 1, current_index + 1);
-          set_selected_scene_index(items[next_index].scene_index);
-        },
-        key: "j",
-        prevent_default: true,
-        scope: "context",
-      },
-      {
-        action: "review-prev",
-        handler: () => {
-          if (items.length === 0) {
-            return;
-          }
-          const current_index = items.findIndex(
-            (item) => item.scene_index === effective_selected_scene_index,
-          );
-          const next_index =
-            current_index < 0 ? 0 : Math.max(0, current_index - 1);
-          set_selected_scene_index(items[next_index].scene_index);
-        },
-        key: "k",
-        prevent_default: true,
-        scope: "context",
-      },
-      {
-        action: "approve",
-        handler: approveSelectedScene,
-        key: "enter",
-        prevent_default: true,
-        scope: "context",
-      },
-      {
-        action: "reject",
-        handler: rejectSelectedScene,
-        key: "escape",
-        prevent_default: true,
-        scope: "context",
-      },
-      {
-        action: "review-skip",
-        handler: skipSelectedScene,
-        key: "s",
-        prevent_default: true,
-        scope: "context",
-      },
-      {
-        action: "undo",
-        allow_in_editable: false,
-        handler: undoAction,
-        key: "ctrl+z",
-        prevent_default: true,
-        scope: "context",
-      },
-      {
-        action: "approve-all-remaining",
-        handler: openApproveAllPanel,
-        key: "shift+enter",
-        prevent_default: true,
-        scope: "context",
-      },
-    ],
-    // Story 8.4 AC-1: while the inline composer is open, suppress global
-    // shortcuts so that Enter (newline) / J-K / S behave as the operator
-    // types inside the textarea. The composer's own keydown handler owns
-    // Esc/submit semantics locally.
-    { enabled: shortcuts_enabled },
-  );
 
   if (review_items_query.isPending) {
     return (
@@ -614,6 +537,51 @@ export function BatchReview({ run }: BatchReviewProps) {
       </aside>
 
       <div className="batch-review__detail-pane">
+        {actionable_count === 0 ? (
+          <div
+            className="batch-review__finalize"
+            role="status"
+            aria-live="polite"
+          >
+            <p className="batch-review__finalize-title">All scenes reviewed</p>
+            <div
+              className="batch-review__actions"
+              aria-label="Finalize batch review"
+            >
+              <button
+                type="button"
+                className="batch-review__action-button batch-review__action-button--primary"
+                disabled={finalize_mutation.isPending}
+                onClick={() => finalize_mutation.mutate()}
+              >
+                {finalize_mutation.isPending
+                  ? "Finalizing…"
+                  : "Continue to Assemble"}
+              </button>
+              <button
+                type="button"
+                className="batch-review__action-button"
+                disabled={
+                  !can_undo ||
+                  undo_mutation.isPending ||
+                  finalize_mutation.isPending
+                }
+                onClick={undoAction}
+              >
+                Undo
+              </button>
+            </div>
+            {finalize_mutation.isError ? (
+              <p className="batch-review__finalize-error" role="alert">
+                Finalize failed:{" "}
+                {finalize_mutation.error instanceof Error
+                  ? finalize_mutation.error.message
+                  : "Unknown error — try again."}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {selected_item ? (
           <>
             <DetailPanel
@@ -682,7 +650,7 @@ export function BatchReview({ run }: BatchReviewProps) {
               />
             ) : null}
 
-            {!composer_open && !is_exhausted ? (
+            {!composer_open && !is_exhausted && actionable_count > 0 ? (
               <div
                 className="batch-review__actions"
                 aria-label="Review actions"
@@ -697,7 +665,7 @@ export function BatchReview({ run }: BatchReviewProps) {
                   }
                   onClick={approveSelectedScene}
                 >
-                  [Enter] Approve
+                  Approve
                 </button>
                 <button
                   type="button"
@@ -709,40 +677,20 @@ export function BatchReview({ run }: BatchReviewProps) {
                   }
                   onClick={rejectSelectedScene}
                 >
-                  [Esc] Reject
+                  Reject
                 </button>
                 <button
                   ref={approve_all_trigger_ref}
                   type="button"
                   className="batch-review__action-button"
                   disabled={
-                    actionable_count === 0 ||
                     decision_mutation.isPending ||
                     approve_all_mutation.isPending ||
                     is_selected_regenerating
                   }
                   onClick={openApproveAllPanel}
                 >
-                  [Shift+Enter] Approve All Remaining
-                </button>
-                <button
-                  type="button"
-                  className="batch-review__action-button"
-                  disabled={
-                    decision_mutation.isPending ||
-                    is_selected_regenerating ||
-                    approve_all_open
-                  }
-                  onClick={skipSelectedScene}
-                >
-                  [S] Skip
-                </button>
-                <button
-                  type="button"
-                  className="batch-review__action-button"
-                  disabled
-                >
-                  [Tab] Edit
+                  Approve All Remaining
                 </button>
                 <button
                   type="button"
@@ -755,14 +703,15 @@ export function BatchReview({ run }: BatchReviewProps) {
                   }
                   onClick={undoAction}
                 >
-                  [Ctrl+Z] Undo
+                  Undo
                 </button>
               </div>
             ) : null}
+
           </>
-        ) : (
+        ) : actionable_count === 0 ? null : (
           <div className="batch-review__empty">
-            All scenes reviewed for this run.
+            Select a scene to review.
           </div>
         )}
       </div>

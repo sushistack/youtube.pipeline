@@ -3462,6 +3462,43 @@
     color: rgb(var(--muted));
   }
 
+  .batch-review__finalize {
+    border: 1px solid rgb(var(--accent));
+    border-radius: 0.7rem;
+    padding: 0.6rem 0.85rem;
+    background: rgba(var(--accent), 0.08);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .batch-review__finalize-title {
+    margin: 0;
+    font-weight: 600;
+    flex: 1 1 auto;
+  }
+
+  .batch-review__finalize-error {
+    margin: 0;
+    color: rgb(var(--danger));
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .batch-review__action-button--primary {
+    border: 2px solid rgb(var(--accent));
+    background: rgb(var(--accent));
+    color: rgb(var(--bg-base));
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .batch-review__action-button--primary:hover:not(:disabled) {
+    background: rgba(var(--accent), 0.88);
+    border-color: rgba(var(--accent), 0.88);
+  }
+
   .scene-card[data-regenerating="true"] {
     outline: 1px dashed rgb(var(--accent, 96 144 255));
     outline-offset: 2px;

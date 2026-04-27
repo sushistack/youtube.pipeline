@@ -327,3 +327,73 @@ func (s *RunService) ApproveScenarioReview(ctx context.Context, runID string) (*
 	}
 	return s.store.Get(ctx, runID)
 }
+
+// FinalizeBatchReview transitions a run from batch_review/waiting to
+// assemble/waiting once every scene has a decision. Mirrors the manual gate
+// pattern introduced by character_pick → image (commit 596e9be): the run
+// parks at assemble/waiting so the UI surfaces a "Generate Video" button,
+// and the operator dispatches Phase C via /advance.
+//
+// Returns ErrConflict when the run is not at batch_review/waiting OR when
+// any scene is still pending review (PendingCount > 0). Returns ErrNotFound
+// when the run does not exist. The pending-count guard treats skipped scenes
+// as decided (snapshotStatusSkipped), matching BuildSessionSnapshot.
+func (s *RunService) FinalizeBatchReview(ctx context.Context, runID string) (*domain.Run, error) {
+	run, err := s.store.Get(ctx, runID)
+	if err != nil {
+		return nil, fmt.Errorf("finalize batch review: %w", err)
+	}
+	if run.Stage != domain.StageBatchReview {
+		return nil, fmt.Errorf("finalize batch review: %w: run stage is %s", domain.ErrConflict, run.Stage)
+	}
+	if run.Status != domain.StatusWaiting {
+		return nil, fmt.Errorf("finalize batch review: %w: run status is %s", domain.ErrConflict, run.Status)
+	}
+
+	// Pending guard: refuse the transition while any scene still needs a
+	// decision. Mirrors the UI's actionable_count: pending = total - approved
+	// - rejected. V1 skip_and_remember leaves segments.review_status unchanged
+	// (BatchReview UI counts the scene as still actionable), so skipped scenes
+	// intentionally block finalize here too — keeps backend and UI aligned.
+	if s.hitlSessions != nil {
+		counts, err := s.hitlSessions.DecisionCountsByRunID(ctx, runID)
+		if err != nil {
+			return nil, fmt.Errorf("finalize batch review: decision counts: %w", err)
+		}
+		pending := counts.TotalScenes - counts.Approved - counts.Rejected
+		if pending > 0 {
+			return nil, fmt.Errorf("finalize batch review: %w: %d scenes still pending review", domain.ErrConflict, pending)
+		}
+	}
+
+	nextStage, err := pipeline.NextStage(run.Stage, domain.EventApprove)
+	if err != nil {
+		return nil, fmt.Errorf("finalize batch review: next stage: %w", err)
+	}
+	// Manual gate: park at assemble/waiting (override StatusForStage's default
+	// of StatusRunning). Operator triggers Phase C via /advance.
+	res := domain.PhaseAAdvanceResult{
+		Stage:        nextStage,
+		Status:       domain.StatusWaiting,
+		CriticScore:  run.CriticScore,
+		ScenarioPath: run.ScenarioPath,
+		RetryReason:  nil,
+	}
+	if err := s.store.ApplyPhaseAResult(ctx, runID, res); err != nil {
+		return nil, fmt.Errorf("finalize batch review: %w", err)
+	}
+	// Drop the batch_review hitl_sessions row — assemble is non-HITL so
+	// UpsertSessionFromState short-circuits to DeleteSession.
+	if s.hitlSessions != nil {
+		clk := s.clock
+		if clk == nil {
+			clk = clock.RealClock{}
+		}
+		if _, err := pipeline.UpsertSessionFromState(ctx, s.hitlSessions, clk, runID, nextStage, domain.StatusWaiting); err != nil {
+			// Best-effort: row inconsistency is recoverable, the stage
+			// advance is not. Mirrors ApproveScenarioReview.
+			_ = err
+		}
+	}
+	return s.store.Get(ctx, runID)
+}

@@ -345,6 +345,20 @@ export function approveScenarioReview(run_id: string) {
   );
 }
 
+/**
+ * POST /api/runs/{id}/batch-review/approve — operator finalizes batch review.
+ * Transitions batch_review/waiting → assemble/waiting once every scene has a
+ * decision. Returns 409 when scenes are still pending or the run is not at
+ * batch_review/waiting. Operator triggers Phase C separately via /advance.
+ */
+export function approveBatchReview(run_id: string) {
+  return apiRequest(
+    `/runs/${encodeURIComponent(run_id)}/batch-review/approve`,
+    runDetailResponseSchema,
+    { method: "POST" },
+  );
+}
+
 // --- Story 9.4: Compliance gate ---
 
 /** POST /api/runs/{id}/metadata/ack — NFR-L1 gate. Transitions metadata_ack → complete. */
