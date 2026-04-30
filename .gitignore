@@ -32,3 +32,6 @@ _bmad
 node_modules
 web/test-results
 /test-results
+
+# Local-only ComfyUI e2e outputs (large PNGs, regenerated on every run)
+_bmad-output/comfyui-e2e/
