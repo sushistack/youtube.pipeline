@@ -45,6 +45,12 @@ type PipelineConfig struct {
 	// DashScope
 	DashScopeRegion string `yaml:"dashscope_region" mapstructure:"dashscope_region"`
 
+	// ComfyUIEndpoint is the local ComfyUI HTTP base URL used when
+	// ImageProvider == "comfyui". The default points at the standard ComfyUI
+	// 0.12.3 listener; operators on a non-default port override this through
+	// Settings. Trailing slashes are stripped at construction time.
+	ComfyUIEndpoint string `yaml:"comfyui_endpoint" mapstructure:"comfyui_endpoint"`
+
 	// Paths
 	DataDir   string `yaml:"data_dir"   mapstructure:"data_dir"`
 	OutputDir string `yaml:"output_dir" mapstructure:"output_dir"`
@@ -125,6 +131,7 @@ func DefaultConfig() PipelineConfig {
 		ImageProvider:         "dashscope",
 		TTSProvider:           "dashscope",
 		DashScopeRegion:       "cn-beijing",
+		ComfyUIEndpoint:       "http://127.0.0.1:8188",
 		DataDir:               "/mnt/data/raw",
 		OutputDir:             filepath.Join(base, "output"),
 		DBPath:                filepath.Join(base, "pipeline.db"),

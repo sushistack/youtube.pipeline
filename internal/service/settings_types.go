@@ -29,6 +29,7 @@ type SettingsConfigInput struct {
 	ImageProvider   string `json:"image_provider"`
 	TTSProvider     string `json:"tts_provider"`
 	DashScopeRegion string `json:"dashscope_region"`
+	ComfyUIEndpoint string `json:"comfyui_endpoint"`
 
 	CostCapResearch float64 `json:"cost_cap_research"`
 	CostCapWrite    float64 `json:"cost_cap_write"`

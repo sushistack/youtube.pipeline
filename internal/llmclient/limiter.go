@@ -184,16 +184,22 @@ func (l *CallLimiter) acquire(ctx context.Context) error {
 
 // ProviderLimiterConfig wires one shared DashScope limiter plus isolated text
 // provider limiters. AcquireTimeout defaults to 30s when omitted.
+//
+// ComfyUI is the local FLUX.2 Klein 4B image provider (no shared DashScope
+// budget); MaxConcurrent=1 is required to avoid GPU OOM and AcquireTimeout
+// must exceed pollMaxDuration (300s) + cold-start.
 type ProviderLimiterConfig struct {
 	DashScope LimitConfig
 	DeepSeek  LimitConfig
 	Gemini    LimitConfig
+	ComfyUI   LimitConfig
 }
 
 type ProviderLimiterFactory struct {
 	dashScope *CallLimiter
 	deepSeek  *CallLimiter
 	gemini    *CallLimiter
+	comfyui   *CallLimiter
 }
 
 func NewProviderLimiterFactory(cfg ProviderLimiterConfig, clk clock.Clock) (*ProviderLimiterFactory, error) {
@@ -212,10 +218,16 @@ func NewProviderLimiterFactory(cfg ProviderLimiterConfig, clk clock.Clock) (*Pro
 		return nil, fmt.Errorf("gemini limiter: %w", err)
 	}
 	gemini.SetName("gemini")
+	comfyui, err := NewCallLimiter(normalizeComfyUIConfig(cfg.ComfyUI), clk)
+	if err != nil {
+		return nil, fmt.Errorf("comfyui limiter: %w", err)
+	}
+	comfyui.SetName("comfyui")
 	return &ProviderLimiterFactory{
 		dashScope: dashScope,
 		deepSeek:  deepSeek,
 		gemini:    gemini,
+		comfyui:   comfyui,
 	}, nil
 }
 
@@ -229,6 +241,7 @@ func (f *ProviderLimiterFactory) SetLogger(logger *slog.Logger) {
 	f.dashScope.SetLogger(logger)
 	f.deepSeek.SetLogger(logger)
 	f.gemini.SetLogger(logger)
+	f.comfyui.SetLogger(logger)
 }
 
 func (f *ProviderLimiterFactory) DashScopeImage() *CallLimiter { return f.dashScope }
@@ -237,9 +250,34 @@ func (f *ProviderLimiterFactory) DashScopeText() *CallLimiter  { return f.dashSc
 func (f *ProviderLimiterFactory) DeepSeekText() *CallLimiter   { return f.deepSeek }
 func (f *ProviderLimiterFactory) GeminiText() *CallLimiter     { return f.gemini }
 
+// ComfyUIImage returns the limiter for the local ComfyUI FLUX.2 Klein 4B
+// image provider. It is intentionally separate from the DashScope budget —
+// ComfyUI runs locally with no shared rate ceiling, so coupling it to the
+// DashScope token bucket would starve DashScope-routed runs whenever Phase B
+// switches to ComfyUI mode.
+func (f *ProviderLimiterFactory) ComfyUIImage() *CallLimiter { return f.comfyui }
+
 func normalizeLimitConfig(cfg LimitConfig) LimitConfig {
 	if cfg.AcquireTimeout == 0 {
 		cfg.AcquireTimeout = defaultAcquireTimeout
+	}
+	return cfg
+}
+
+// normalizeComfyUIConfig fills in safe defaults for a ComfyUI limiter.
+// CallLimiter rejects RequestsPerMinute<=0; the local backend has no real
+// rate ceiling so we default to a high-bound 600 RPM. MaxConcurrent=1 is
+// the GPU-OOM guard; AcquireTimeout=10m must exceed pollMaxDuration
+// (300s) plus cold-start (~180s).
+func normalizeComfyUIConfig(cfg LimitConfig) LimitConfig {
+	if cfg.RequestsPerMinute == 0 {
+		cfg.RequestsPerMinute = 600
+	}
+	if cfg.MaxConcurrent == 0 {
+		cfg.MaxConcurrent = 1
+	}
+	if cfg.AcquireTimeout == 0 {
+		cfg.AcquireTimeout = 10 * time.Minute
 	}
 	return cfg
 }

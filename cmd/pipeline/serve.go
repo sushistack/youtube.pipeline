@@ -24,6 +24,7 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/db"
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient"
+	"github.com/sushistack/youtube.pipeline/internal/llmclient/comfyui"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient/dashscope"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient/deepseek"
 	"github.com/sushistack/youtube.pipeline/internal/llmclient/dryrun"
@@ -90,17 +91,37 @@ func buildPhaseBRunner(
 	characterResolver pipeline.CharacterResolver,
 	logger *slog.Logger,
 ) (*pipeline.PhaseBRunner, error) {
-	if !cfg.DryRun && dashScopeAPIKey == "" {
-		return nil, fmt.Errorf("DASHSCOPE_API_KEY not set")
-	}
 	if limiterFactory == nil {
 		return nil, fmt.Errorf("phase b runner: nil limiter factory")
 	}
 	if characterResolver == nil {
 		return nil, fmt.Errorf("phase b runner: nil character resolver")
 	}
+	// Whitelist image providers up front so a typo like "comfy_ui" or "ComfyUI"
+	// fails fast at server start instead of silently routing to the dashscope
+	// branch. Empty value is rejected by validateSettingsConfig before this
+	// point, but defense-in-depth.
+	switch cfg.ImageProvider {
+	case "dashscope", "comfyui":
+	default:
+		return nil, fmt.Errorf("phase b runner: %w: unknown image_provider %q", domain.ErrValidation, cfg.ImageProvider)
+	}
+	// DashScope API key is only required when at least one of image/tts routes
+	// through DashScope. TTSProvider defaults to "dashscope" when empty, so the
+	// empty-string clause keeps existing behavior. ComfyUI image + DashScope
+	// TTS is the expected production combo and still needs the key.
+	usingDashScope := cfg.ImageProvider == "dashscope" || cfg.TTSProvider == "dashscope" || cfg.TTSProvider == ""
+	if !cfg.DryRun && usingDashScope && dashScopeAPIKey == "" {
+		return nil, fmt.Errorf("DASHSCOPE_API_KEY not set")
+	}
 
 	httpClient := &http.Client{Timeout: 120 * time.Second}
+
+	// imageLimiter is selected to match the image client below. ComfyUI runs
+	// locally with its own queue so it must not consume the DashScope token
+	// budget; DashScope and dry-run continue to share the DashScope limiter
+	// pointer so existing budget invariants hold.
+	imageLimiter := limiterFactory.DashScopeImage()
 
 	var (
 		ttsClient   domain.TTSSynthesizer
@@ -110,6 +131,32 @@ func buildPhaseBRunner(
 		logger.Info("phase b dry-run mode active: image + tts calls swapped for placeholder fakes")
 		ttsClient = dryrun.NewTTSClient()
 		imageClient = dryrun.NewImageClient()
+	} else if cfg.ImageProvider == "comfyui" {
+		// Local ComfyUI image path. TTS still routes through DashScope —
+		// this branch only swaps the image client (and its limiter).
+		realTTS, err := dashscope.NewTTSClient(httpClient, dashscope.TTSClientConfig{
+			APIKey:       dashScopeAPIKey,
+			Endpoint:     ttsEndpointForRegion(cfg.DashScopeRegion),
+			LanguageType: "Korean",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("build tts client: %w", err)
+		}
+		comfyClient, err := comfyui.NewImageClient(httpClient, comfyui.ImageClientConfig{
+			Endpoint: cfg.ComfyUIEndpoint,
+			Clock:    clock.RealClock{},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("build comfyui image client: %w", err)
+		}
+		logger.Info("phase b image provider: comfyui",
+			"endpoint", cfg.ComfyUIEndpoint,
+			"generate_model", cfg.ImageModel,
+			"edit_model", cfg.ImageEditModel,
+		)
+		ttsClient = realTTS
+		imageClient = comfyClient
+		imageLimiter = limiterFactory.ComfyUIImage()
 	} else {
 		realTTS, err := dashscope.NewTTSClient(httpClient, dashscope.TTSClientConfig{
 			APIKey:       dashScopeAPIKey,
@@ -148,7 +195,7 @@ func buildPhaseBRunner(
 		Images:            imageClient,
 		CharacterResolver: characterResolver,
 		Shots:             segStore,
-		Limiter:           limiterFactory.DashScopeImage(),
+		Limiter:           imageLimiter,
 		Clock:             clock.RealClock{},
 		Logger:            logger,
 		AuditLogger:       auditLogger,
@@ -563,6 +610,10 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 		DashScope: llmclient.LimitConfig{RequestsPerMinute: 10, MaxConcurrent: 2, AcquireTimeout: 30 * time.Second},
 		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 5 * time.Minute},
 		Gemini:    llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 5, AcquireTimeout: 30 * time.Second},
+		// RPM=600 is a high-bound; ComfyUI's queue is the real throttle.
+		// MaxConcurrent=1 prevents GPU OOM on the local FLUX.2 Klein 4B model.
+		// AcquireTimeout=10m must exceed the 300s polling cap + cold-start (~180s).
+		ComfyUI: llmclient.LimitConfig{RequestsPerMinute: 600, MaxConcurrent: 1, AcquireTimeout: 10 * time.Minute},
 	}, clock.RealClock{})
 	if err != nil {
 		return fmt.Errorf("build limiter factory: %w", err)

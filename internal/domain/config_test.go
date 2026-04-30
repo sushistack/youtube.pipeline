@@ -108,6 +108,13 @@ func TestDefaultConfig_ArtifactRetentionDays(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ComfyUIEndpoint(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.ComfyUIEndpoint != "http://127.0.0.1:8188" {
+		t.Errorf("ComfyUIEndpoint = %q, want \"http://127.0.0.1:8188\"", cfg.ComfyUIEndpoint)
+	}
+}
+
 func TestDefaultConfig_PathsUnderHome(t *testing.T) {
 	cfg := DefaultConfig()
 	if !strings.Contains(cfg.OutputDir, ".youtube-pipeline") {

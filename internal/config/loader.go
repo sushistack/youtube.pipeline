@@ -42,6 +42,7 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("writer_provider", cfg.WriterProvider)
 	v.SetDefault("critic_provider", cfg.CriticProvider)
 	v.SetDefault("dashscope_region", cfg.DashScopeRegion)
+	v.SetDefault("comfyui_endpoint", cfg.ComfyUIEndpoint)
 	v.SetDefault("data_dir", cfg.DataDir)
 	v.SetDefault("output_dir", cfg.OutputDir)
 	v.SetDefault("db_path", cfg.DBPath)

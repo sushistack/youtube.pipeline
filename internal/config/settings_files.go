@@ -113,6 +113,7 @@ func writeConfigFile(path string, cfg domain.PipelineConfig, existingMode os.Fil
 		ImageProvider:         cfg.ImageProvider,
 		TTSProvider:           cfg.TTSProvider,
 		DashScopeRegion:       cfg.DashScopeRegion,
+		ComfyUIEndpoint:       cfg.ComfyUIEndpoint,
 		DataDir:               cfg.DataDir,
 		OutputDir:             cfg.OutputDir,
 		DBPath:                cfg.DBPath,
@@ -393,6 +394,7 @@ type orderedPipelineConfig struct {
 	ImageProvider         string   `yaml:"image_provider"`
 	TTSProvider           string   `yaml:"tts_provider"`
 	DashScopeRegion       string   `yaml:"dashscope_region"`
+	ComfyUIEndpoint       string   `yaml:"comfyui_endpoint"`
 	DataDir               string   `yaml:"data_dir"`
 	OutputDir             string   `yaml:"output_dir"`
 	DBPath                string   `yaml:"db_path"`

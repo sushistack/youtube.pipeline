@@ -379,6 +379,7 @@ func normalizeSettingsConfig(cfg domain.PipelineConfig) SettingsConfigInput {
 		ImageProvider:   cfg.ImageProvider,
 		TTSProvider:     cfg.TTSProvider,
 		DashScopeRegion: cfg.DashScopeRegion,
+		ComfyUIEndpoint: cfg.ComfyUIEndpoint,
 		CostCapResearch: cfg.CostCapResearch,
 		CostCapWrite:    cfg.CostCapWrite,
 		CostCapImage:    cfg.CostCapImage,
@@ -416,6 +417,7 @@ func applyEditableConfig(cfg *domain.PipelineConfig, input SettingsConfigInput) 
 	cfg.ImageProvider = input.ImageProvider
 	cfg.TTSProvider = input.TTSProvider
 	cfg.DashScopeRegion = input.DashScopeRegion
+	cfg.ComfyUIEndpoint = input.ComfyUIEndpoint
 	cfg.CostCapResearch = input.CostCapResearch
 	cfg.CostCapWrite = input.CostCapWrite
 	cfg.CostCapImage = input.CostCapImage

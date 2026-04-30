@@ -274,6 +274,57 @@ func TestDashScopeLimiterFactory_NonDashScopeProvidersAreIsolated(t *testing.T) 
 	if factory.DashScopeImage() == factory.GeminiText() {
 		t.Fatal("gemini should not share the dashscope limiter")
 	}
+	if factory.DashScopeImage() == factory.ComfyUIImage() {
+		t.Fatal("comfyui should not share the dashscope limiter")
+	}
+}
+
+func TestProviderLimiterFactory_ComfyUIImageDefaults(t *testing.T) {
+	// Spec rule: ComfyUI defaults must produce a usable limiter even when
+	// callers pass a zero-value LimitConfig — RPM=600, MaxConcurrent=1,
+	// AcquireTimeout=10m. Without normalization, NewCallLimiter would reject
+	// RequestsPerMinute=0 with ErrValidation.
+	testutil.BlockExternalHTTP(t)
+	clk := clock.NewFakeClock(time.Unix(0, 0))
+	factory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
+		DashScope: llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 1},
+		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 1},
+		Gemini:    llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 1},
+	}, clk)
+	if err != nil {
+		t.Fatalf("NewProviderLimiterFactory with zero ComfyUI cfg: %v", err)
+	}
+	if factory.ComfyUIImage() == nil {
+		t.Fatal("ComfyUIImage() returned nil")
+	}
+}
+
+func TestProviderLimiterFactory_ComfyUIImageHonorsExplicit(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	clk := clock.NewFakeClock(time.Unix(0, 0))
+	factory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{
+		DashScope: llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 1},
+		DeepSeek:  llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 1},
+		Gemini:    llmclient.LimitConfig{RequestsPerMinute: 60, MaxConcurrent: 1},
+		ComfyUI:   llmclient.LimitConfig{RequestsPerMinute: 600, MaxConcurrent: 1, AcquireTimeout: 10 * time.Minute},
+	}, clk)
+	if err != nil {
+		t.Fatalf("factory: %v", err)
+	}
+	limiter := factory.ComfyUIImage()
+	if limiter == nil {
+		t.Fatal("nil limiter")
+	}
+	// Smoke-test: a no-op call returns nil within the cache budget.
+	done := make(chan error, 1)
+	go func() {
+		done <- limiter.Do(context.Background(), func(context.Context) error { return nil })
+	}()
+	waitForResult(t, done, clk, 10*time.Millisecond, 200, func(err error) {
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+	})
 }
 
 func TestSharedDashScopeLimiter_CombinedRPMWithinFivePercent(t *testing.T) {
