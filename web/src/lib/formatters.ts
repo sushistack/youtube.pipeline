@@ -117,12 +117,12 @@ const STAGE_TO_NODE: Record<RunStage, StageNodeKey> = {
 }
 
 const STAGE_NODE_LABELS: Record<StageNodeKey, string> = {
-  assemble: 'Assemble',
-  assets: 'Assets',
-  character: 'Character',
+  assemble: 'Cut',
+  assets: 'Media',
+  character: 'Cast',
   complete: 'Complete',
   pending: 'Pending',
-  scenario: 'Scenario',
+  scenario: 'Story',
 }
 
 const NODE_ORDER: StageNodeKey[] = [

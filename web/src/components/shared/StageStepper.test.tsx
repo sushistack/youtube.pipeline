@@ -4,24 +4,24 @@ import { describe, expect, it } from 'vitest'
 import { StageStepper } from './StageStepper'
 
 describe('StageStepper', () => {
-  it('renders the full six-node contract with labels', () => {
+  it('renders the four-node work-phase contract with labels', () => {
     render(<StageStepper stage="image" status="running" variant="full" />)
 
-    expect(screen.getAllByRole('listitem')).toHaveLength(6)
-    expect(screen.getByText('Pending')).toBeInTheDocument()
-    expect(screen.getByText('Scenario')).toBeInTheDocument()
-    expect(screen.getByText('Character')).toBeInTheDocument()
-    expect(screen.getByText('Assets')).toBeInTheDocument()
-    expect(screen.getByText('Assemble')).toBeInTheDocument()
-    expect(screen.getByText('Complete')).toBeInTheDocument()
-    expect(screen.getByLabelText('Assets: active')).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+    expect(screen.queryByText('Pending')).not.toBeInTheDocument()
+    expect(screen.queryByText('Complete')).not.toBeInTheDocument()
+    expect(screen.getByText('Story')).toBeInTheDocument()
+    expect(screen.getByText('Cast')).toBeInTheDocument()
+    expect(screen.getByText('Media')).toBeInTheDocument()
+    expect(screen.getByText('Cut')).toBeInTheDocument()
+    expect(screen.getByLabelText('Media: active')).toBeInTheDocument()
   })
 
   it('keeps compact mode accessible while hiding visible labels', () => {
     render(<StageStepper stage="character_pick" status="waiting" variant="compact" />)
 
-    expect(screen.getAllByRole('listitem')).toHaveLength(6)
-    expect(screen.getByLabelText('Character: active')).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+    expect(screen.getByLabelText('Cast: active')).toBeInTheDocument()
   })
 
   describe('expanded variant (graph canvas)', () => {

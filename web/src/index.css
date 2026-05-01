@@ -1128,42 +1128,43 @@
 
   .stage-stepper {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 0.5rem;
-    padding: 0;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    padding: 0.25rem 0 0.1rem;
     margin: 0;
     list-style: none;
   }
 
+  /* ── COMPACT variant: pill chips (icon-only) ─────────────────────────── */
   .stage-stepper[data-variant="compact"] {
     gap: 0.35rem;
   }
 
-  .stage-stepper__node {
+  .stage-stepper[data-variant="compact"] .stage-stepper__node {
     position: relative;
     display: flex;
     min-width: 0;
+    min-height: 2rem;
     align-items: center;
+    justify-content: center;
     gap: 0.45rem;
     border: 1px solid rgb(var(--border));
     border-radius: 999px;
     background: rgba(var(--bg-input), 0.66);
     color: rgb(var(--muted));
-    padding: 0.45rem 0.6rem;
+    padding: 0.35rem;
   }
 
-  .stage-stepper__node[data-state="completed"] {
+  .stage-stepper[data-variant="compact"] .stage-stepper__node[data-state="completed"] {
     border-color: rgba(var(--success), 0.34);
     color: rgb(var(--success));
   }
-
-  .stage-stepper__node[data-state="active"] {
+  .stage-stepper[data-variant="compact"] .stage-stepper__node[data-state="active"] {
     border-color: rgba(var(--accent), 0.45);
     background: rgba(var(--accent), 0.12);
     color: rgb(var(--accent));
   }
-
-  .stage-stepper__node[data-state="failed"] {
+  .stage-stepper[data-variant="compact"] .stage-stepper__node[data-state="failed"] {
     border-color: rgba(var(--warning), 0.44);
     background: rgba(var(--warning), 0.12);
     color: rgb(var(--warning));
@@ -1177,23 +1178,172 @@
     height: 1rem;
     flex-shrink: 0;
   }
-
   .stage-stepper__icon {
     width: 0.9rem;
     height: 0.9rem;
   }
 
+  /* ── FULL variant: rich vertical step (circle + caption + label + status) ─ */
+  .stage-stepper[data-variant="full"] .stage-stepper__node {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+    padding: 0 0.5rem;
+    color: rgb(var(--muted));
+  }
+
+  /* Connector line: right of this indicator → left of next indicator
+     (width-based so it reliably extends across the cell boundary) */
+  .stage-stepper[data-variant="full"] .stage-stepper__node:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: calc(0.75rem - 1px);   /* center of 1.5rem indicator, minus half line height */
+    left: calc(50% + 0.875rem); /* clear the indicator (0.75rem half + 0.125rem gap) */
+    width: calc(100% - 1.75rem);
+    height: 2px;
+    background: rgb(var(--border-active));
+    border-radius: 1px;
+    z-index: 0;
+  }
+  .stage-stepper[data-variant="full"] .stage-stepper__node[data-state="completed"]:not(:last-child)::after {
+    background: rgb(var(--success));
+    box-shadow: 0 0 6px rgba(var(--success), 0.35);
+  }
+  .stage-stepper[data-variant="full"] .stage-stepper__node[data-state="completed"]:has(+ .stage-stepper__node[data-state="active"])::after {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--success)) 0%,
+      rgb(var(--accent)) 100%
+    );
+  }
+  .stage-stepper[data-variant="full"] .stage-stepper__node[data-state="failed"]:not(:last-child)::after {
+    background: rgb(var(--warning));
+  }
+
+  /* Indicator circle (1.5rem ≈ 70% of prior 2.25rem) */
+  .stage-stepper__indicator {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: rgb(var(--bg-input));
+    border: 1.5px solid rgb(var(--border-active));
+    color: rgb(var(--muted));
+    font-size: 0.6875rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    transition: all 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Completed: solid green fill, dark check */
+  .stage-stepper__node[data-state="completed"] .stage-stepper__indicator {
+    background-color: rgb(var(--success));
+    background-image: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(0, 0, 0, 0.12) 100%
+    );
+    border-color: rgb(var(--success));
+    color: #0a0d12;
+    box-shadow: 0 2px 6px rgba(var(--success), 0.3);
+  }
+
+  /* Active: ripple rings expanding outward + soft always-on glow */
+  .stage-stepper__node[data-state="active"] .stage-stepper__indicator {
+    background: rgba(var(--accent), 0.2);
+    border-color: rgb(var(--accent));
+    color: rgb(var(--accent));
+    box-shadow: 0 0 10px rgba(var(--accent), 0.45);
+  }
+  .stage-stepper__node[data-state="active"] .stage-stepper__indicator::before,
+  .stage-stepper__node[data-state="active"] .stage-stepper__indicator::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 50%;
+    border: 1.5px solid rgb(var(--accent));
+    pointer-events: none;
+    animation: stage-stepper-ripple 1.6s ease-out infinite;
+  }
+  .stage-stepper__node[data-state="active"] .stage-stepper__indicator::after {
+    animation-delay: 0.8s;
+  }
+  @keyframes stage-stepper-ripple {
+    0% {
+      transform: scale(1);
+      opacity: 0.7;
+    }
+    100% {
+      transform: scale(1.9);
+      opacity: 0;
+    }
+  }
+  .stage-stepper__node[data-state="active"] .stage-stepper__pulse-dot {
+    animation: stage-stepper-dot-breathe 1.6s ease-in-out infinite;
+  }
+  @keyframes stage-stepper-dot-breathe {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(0.7);
+      opacity: 0.8;
+    }
+  }
+
+  /* Failed: solid amber */
+  .stage-stepper__node[data-state="failed"] .stage-stepper__indicator {
+    background: rgb(var(--warning));
+    border-color: rgb(var(--warning));
+    color: #0a0d12;
+    box-shadow: 0 2px 6px rgba(var(--warning), 0.3);
+  }
+
+  .stage-stepper__indicator-icon {
+    width: 0.85rem;
+    height: 0.85rem;
+  }
+  .stage-stepper__pulse-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: rgb(var(--accent));
+    box-shadow: 0 0 6px rgba(var(--accent), 0.7);
+  }
+  .stage-stepper__num {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: rgb(var(--muted));
+    line-height: 1;
+  }
+
+  /* Label below indicator */
   .stage-stepper__label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgb(var(--foreground));
+    margin-top: 0.45rem;
+    line-height: 1.2;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--type-caption-size);
   }
-
-  .stage-stepper[data-variant="compact"] .stage-stepper__node {
-    justify-content: center;
-    min-height: 2rem;
-    padding: 0.35rem;
+  .stage-stepper__node[data-state="upcoming"] .stage-stepper__label {
+    color: rgb(var(--muted));
+  }
+  .stage-stepper__node[data-state="active"] .stage-stepper__label {
+    color: rgb(var(--accent));
+  }
+  .stage-stepper__node[data-state="failed"] .stage-stepper__label {
+    color: rgb(var(--warning));
   }
 
   .stage-graph {
@@ -1370,6 +1520,12 @@
   @media (prefers-reduced-motion: reduce) {
     .stage-graph .react-flow__edge.animated .react-flow__edge-path {
       stroke-dasharray: 6 3;
+      animation: none;
+    }
+    .stage-stepper__node[data-state="active"] .stage-stepper__indicator,
+    .stage-stepper__node[data-state="active"] .stage-stepper__indicator::before,
+    .stage-stepper__node[data-state="active"] .stage-stepper__indicator::after,
+    .stage-stepper__node[data-state="active"] .stage-stepper__pulse-dot {
       animation: none;
     }
   }
@@ -2123,7 +2279,13 @@
     }
 
     .stage-stepper {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: 1rem;
+    }
+
+    /* In 2-col layout, hide connector on the last item of each row */
+    .stage-stepper[data-variant="full"] .stage-stepper__node:nth-child(2n)::after {
+      display: none;
     }
   }
 

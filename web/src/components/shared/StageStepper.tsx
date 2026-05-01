@@ -5,6 +5,7 @@ import {
   FileText,
   Image,
   UserRound,
+  X,
 } from 'lucide-react'
 import {
   buildStageNodes,
@@ -51,7 +52,9 @@ export function StageStepper({
     )
   }
 
-  const nodes = buildStageNodes(stage, status)
+  const nodes = buildStageNodes(stage, status).filter(
+    (node) => node.key !== 'pending' && node.key !== 'complete',
+  )
 
   return (
     <ol
@@ -59,8 +62,25 @@ export function StageStepper({
       data-variant={variant}
       aria-label={`Pipeline progress: ${getStageNodeLabel(active_node)}`}
     >
-      {nodes.map((node) => {
+      {nodes.map((node, idx) => {
         const Icon = NODE_ICONS[node.key]
+        const step_num = idx + 1
+
+        if (variant === 'compact') {
+          return (
+            <li
+              key={node.key}
+              className="stage-stepper__node"
+              data-state={node.state}
+              aria-label={`${node.label}: ${node.state}`}
+            >
+              <span className="stage-stepper__icon-wrap" aria-hidden="true">
+                <Icon className="stage-stepper__icon" strokeWidth={2} />
+              </span>
+              <span className="stage-stepper__sr-only">{node.label}</span>
+            </li>
+          )
+        }
 
         return (
           <li
@@ -69,14 +89,18 @@ export function StageStepper({
             data-state={node.state}
             aria-label={`${node.label}: ${node.state}`}
           >
-            <span className="stage-stepper__icon-wrap" aria-hidden="true">
-              <Icon className="stage-stepper__icon" strokeWidth={2} />
+            <span className="stage-stepper__indicator" aria-hidden="true">
+              {node.state === 'completed' ? (
+                <Check className="stage-stepper__indicator-icon" strokeWidth={3} />
+              ) : node.state === 'failed' ? (
+                <X className="stage-stepper__indicator-icon" strokeWidth={3} />
+              ) : node.state === 'active' ? (
+                <span className="stage-stepper__pulse-dot" />
+              ) : (
+                <span className="stage-stepper__num">{step_num}</span>
+              )}
             </span>
-            {variant === 'full' ? (
-              <span className="stage-stepper__label">{node.label}</span>
-            ) : (
-              <span className="stage-stepper__sr-only">{node.label}</span>
-            )}
+            <span className="stage-stepper__label">{node.label}</span>
           </li>
         )
       })}
