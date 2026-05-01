@@ -608,8 +608,14 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	engine.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore))
 	engine.SetCriticReportStore(criticReportStore)
 	engine.SetNarrationSeeder(segStore)
+	// Rewind wiring: cancel registry tracks in-flight stage execution so a
+	// rewind can interrupt and wait for clean unwinding before destructive
+	// cleanup. RunStore exposes the rewind-only DB primitives.
+	engine.SetCancelRegistry(pipeline.NewCancelRegistry())
+	engine.SetRewindStore(store)
 	svc := service.NewRunService(store, engine)
 	svc.SetAdvancer(engine)
+	svc.SetRewinder(engine)
 	svc.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore), clock.RealClock{})
 
 	limiterFactory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{

@@ -1346,6 +1346,61 @@
     color: rgb(var(--warning));
   }
 
+  /* Rewind affordance: completed nodes become buttons. The button reuses
+   * the existing indicator/label visuals; we only style the wrapper to
+   * make it look interactive. The trailing icon hints at the action without
+   * crowding the node. */
+  .stage-stepper__rewind-btn {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    padding: 0.15rem 0.25rem 0.2rem;
+    border-radius: 0.45rem;
+    transition: background 160ms ease, transform 160ms ease;
+    position: relative;
+  }
+  .stage-stepper__rewind-btn:hover,
+  .stage-stepper__rewind-btn:focus-visible {
+    background: rgba(var(--accent), 0.08);
+  }
+  .stage-stepper__rewind-btn:focus-visible {
+    outline: 1.5px solid rgba(var(--accent), 0.55);
+    outline-offset: 1px;
+  }
+  .stage-stepper__rewind-btn:active {
+    transform: translateY(1px);
+  }
+  .stage-stepper__rewind-btn[disabled] {
+    cursor: progress;
+    opacity: 0.55;
+  }
+  .stage-stepper__rewind-icon {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    color: rgb(var(--muted));
+    background: rgb(var(--bg-input));
+    border-radius: 50%;
+    padding: 1px;
+    opacity: 0;
+    transition: opacity 160ms ease;
+  }
+  .stage-stepper__rewind-btn:hover .stage-stepper__rewind-icon,
+  .stage-stepper__rewind-btn:focus-visible .stage-stepper__rewind-icon {
+    opacity: 1;
+  }
+
+  .production-app-header__rewind-error {
+    grid-column: 1 / -1;
+    margin-top: 0.4rem;
+    color: rgb(var(--warning));
+    font-size: 0.8125rem;
+    line-height: 1.35;
+  }
+
   .stage-graph {
     position: relative;
     width: 100%;

@@ -59,11 +59,19 @@ type Advancer interface {
 	Advance(ctx context.Context, runID string) error
 }
 
+// Rewinder is the engine surface for stepper-driven rewind. *pipeline.Engine
+// satisfies it. Declared here so service stays one-way dependent on
+// pipeline (interface declared in consumer).
+type Rewinder interface {
+	Rewind(ctx context.Context, runID string, node pipeline.StageNodeKey) (*domain.Run, error)
+}
+
 // RunService implements pipeline run lifecycle management.
 type RunService struct {
 	store        RunStore
 	resumer      Resumer
 	advancer     Advancer
+	rewinder     Rewinder
 	prompt       PromptVersionProvider
 	dryRun       DryRunProvider
 	hitlSessions pipeline.HITLSessionStore // optional; needed by ApproveScenarioReview to maintain hitl_sessions invariant
@@ -83,6 +91,12 @@ func NewRunService(store RunStore, resumer Resumer) *RunService {
 // (Advance returns ErrValidation), matching the resumer pattern for tests.
 func (s *RunService) SetAdvancer(advancer Advancer) {
 	s.advancer = advancer
+}
+
+// SetRewinder wires the engine surface used by Rewind. Mirrors SetAdvancer:
+// nil disables the path with ErrValidation.
+func (s *RunService) SetRewinder(rewinder Rewinder) {
+	s.rewinder = rewinder
 }
 
 // SetHITLSessionStore wires the hitl_sessions writer used by
@@ -280,6 +294,25 @@ func (s *RunService) Advance(ctx context.Context, id string) (*domain.Run, error
 	run, err = s.store.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("advance run: reload: %w", err)
+	}
+	return run, nil
+}
+
+// Rewind drives the operator-initiated stepper rewind for runID to the
+// given work-phase node. Validates the node + delegates to the engine,
+// which performs the cancel-wait + DB cleanup + FS cleanup orchestration.
+//
+// Error classes propagated from the engine:
+//   - ErrNotFound:   run does not exist.
+//   - ErrConflict:   target is not strictly before current run stage.
+//   - ErrValidation: node is not rewindable, or rewinder is nil.
+func (s *RunService) Rewind(ctx context.Context, runID string, node pipeline.StageNodeKey) (*domain.Run, error) {
+	if s.rewinder == nil {
+		return nil, fmt.Errorf("rewind run: %w: engine not configured", domain.ErrValidation)
+	}
+	run, err := s.rewinder.Rewind(ctx, runID, node)
+	if err != nil {
+		return nil, fmt.Errorf("rewind run: %w", err)
 	}
 	return run, nil
 }

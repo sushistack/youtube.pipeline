@@ -100,6 +100,20 @@ type Engine struct {
 	clock          clock.Clock
 	outputDir      string
 	logger         *slog.Logger
+
+	// rewindStore wires the rewind-only persistence primitives (parking
+	// the run in cancelled, then applying the bucket-aware reset).
+	// Nil disables Engine.Rewind with ErrValidation. *db.RunStore
+	// satisfies it.
+	rewindStore RewindStore
+	// cancelRegistry tracks in-flight stage execution per run so
+	// Rewind can interrupt and wait for clean unwinding before
+	// destructive cleanup. Nil = no race protection (legacy/test paths
+	// that never reach the rewind entry point).
+	cancelRegistry *CancelRegistry
+	// rewindLocks serializes Rewind requests per-run so a double-click
+	// or retried POST cannot interleave two cleanup passes.
+	rewindLocks *rewindLocks
 }
 
 // NewEngine constructs an Engine. outputDir is the base output path
@@ -111,12 +125,13 @@ func NewEngine(runs RunStore, segments SegmentStore, sessions HITLSessionCleaner
 		logger = slog.Default()
 	}
 	return &Engine{
-		runs:      runs,
-		segments:  segments,
-		sessions:  sessions,
-		clock:     clk,
-		outputDir: outputDir,
-		logger:    logger,
+		runs:        runs,
+		segments:    segments,
+		sessions:    sessions,
+		clock:       clk,
+		outputDir:   outputDir,
+		logger:      logger,
+		rewindLocks: newRewindLocks(),
 	}
 }
 
@@ -205,6 +220,11 @@ func (e *Engine) upsertHITLSessionAtTransition(ctx context.Context, runID string
 // (scenario_review, character_pick, batch_review, metadata_ack) return
 // ErrConflict — Advance must never silently auto-approve an operator boundary.
 func (e *Engine) Advance(ctx context.Context, runID string) error {
+	if e.cancelRegistry != nil {
+		var release func()
+		ctx, _, release = e.cancelRegistry.Begin(ctx, runID)
+		defer release()
+	}
 	run, err := e.runs.Get(ctx, runID)
 	if err != nil {
 		return fmt.Errorf("advance %s: %w", runID, err)
@@ -626,6 +646,11 @@ func (e *Engine) PrepareResume(ctx context.Context, runID string, opts ResumeOpt
 // surfaces the error. Callers that dispatch this in a goroutine should
 // use a context detached from any HTTP request lifetime.
 func (e *Engine) ExecuteResume(ctx context.Context, runID string) error {
+	if e.cancelRegistry != nil {
+		var release func()
+		ctx, _, release = e.cancelRegistry.Begin(ctx, runID)
+		defer release()
+	}
 	run, err := e.runs.Get(ctx, runID)
 	if err != nil {
 		return fmt.Errorf("resume %s: %w", runID, err)
@@ -663,7 +688,13 @@ func (e *Engine) ExecuteResume(ctx context.Context, runID string) error {
 	if isPhaseAEntryStage(run.Stage) && e.phaseA != nil {
 		runCopy := *run
 		go func() {
-			if err := e.advancePhaseA(context.Background(), runID, &runCopy); err != nil {
+			bgCtx := context.Background()
+			if e.cancelRegistry != nil {
+				var release func()
+				bgCtx, _, release = e.cancelRegistry.Begin(bgCtx, runID)
+				defer release()
+			}
+			if err := e.advancePhaseA(bgCtx, runID, &runCopy); err != nil {
 				e.logger.Error("phase a after resume failed",
 					"run_id", runID, "stage", runCopy.Stage, "error", err.Error())
 				return

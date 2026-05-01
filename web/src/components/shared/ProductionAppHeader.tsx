@@ -1,11 +1,12 @@
+import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { RunStatusPayload, RunSummary } from '../../lib/formatters'
 import { getRunSequence } from '../../lib/formatters'
-import { cancelRun } from '../../lib/apiClient'
+import { cancelRun, rewindRun } from '../../lib/apiClient'
 import { queryKeys } from '../../lib/queryKeys'
 import { useUIStore } from '../../stores/useUIStore'
-import { StageStepper } from './StageStepper'
+import { StageStepper, type RewindNodeKey } from './StageStepper'
 
 interface ProductionAppHeaderProps {
   run: RunSummary | null
@@ -31,6 +32,13 @@ function formatRunIdentity(run: RunSummary | null) {
   return `SCP-${run.scp_id} Run #${seq}`
 }
 
+const REWIND_LABELS: Record<RewindNodeKey, string> = {
+  scenario: 'Story',
+  character: 'Cast',
+  assets: 'Media',
+  assemble: 'Cut',
+}
+
 export function ProductionAppHeader({
   run,
   status_payload,
@@ -43,12 +51,32 @@ export function ProductionAppHeader({
   const variant = expanded ? 'expanded' : 'full'
   const ToggleIcon = expanded ? ChevronUp : ChevronDown
   const query_client = useQueryClient()
+  const [rewind_pending_node, set_rewind_pending_node] =
+    useState<RewindNodeKey | null>(null)
   const cancel_mutation = useMutation({
     mutationFn: (run_id: string) => cancelRun(run_id),
     onSuccess: (_data, run_id) => {
       void query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
       void query_client.invalidateQueries({
         queryKey: queryKeys.runs.status(run_id),
+      })
+    },
+  })
+  const rewind_mutation = useMutation({
+    mutationFn: ({
+      run_id,
+      target,
+    }: {
+      run_id: string
+      target: RewindNodeKey
+    }) => rewindRun(run_id, target),
+    onSettled: () => {
+      set_rewind_pending_node(null)
+    },
+    onSuccess: (_data, vars) => {
+      void query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
+      void query_client.invalidateQueries({
+        queryKey: queryKeys.runs.status(vars.run_id),
       })
     },
   })
@@ -70,6 +98,26 @@ export function ProductionAppHeader({
       return
     }
     cancel_mutation.mutate(run.id)
+  }
+
+  function handleRewind(target: RewindNodeKey) {
+    if (!run) {
+      return
+    }
+    if (rewind_pending_node != null) {
+      return
+    }
+    const label = REWIND_LABELS[target]
+    const ok = window.confirm(
+      `Rewind ${identity ?? run.id} to ${label}?\n\n` +
+        `이 단계 이후의 모든 산출물(영상, 음성, 이미지, 시나리오, ` +
+        `결정 기록 등)이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`,
+    )
+    if (!ok) {
+      return
+    }
+    set_rewind_pending_node(target)
+    rewind_mutation.mutate({ run_id: run.id, target })
   }
 
   return (
@@ -106,6 +154,8 @@ export function ProductionAppHeader({
               status={run.status}
               variant={variant}
               decisions_summary={status_payload?.decisions_summary ?? null}
+              on_rewind_request={handleRewind}
+              rewind_pending_node={rewind_pending_node}
             />
           </div>
           <div className="production-app-header__actions">
@@ -123,6 +173,18 @@ export function ProductionAppHeader({
               <ToggleIcon aria-hidden="true" size={18} />
             </button>
           </div>
+          {rewind_mutation.isError ? (
+            <div
+              className="production-app-header__rewind-error"
+              role="status"
+              aria-live="polite"
+            >
+              Rewind failed:{' '}
+              {rewind_mutation.error instanceof Error
+                ? rewind_mutation.error.message
+                : 'Unknown error — refresh and retry.'}
+            </div>
+          ) : null}
         </>
       ) : null}
     </header>

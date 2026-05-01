@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
+	"github.com/sushistack/youtube.pipeline/internal/pipeline"
 	"github.com/sushistack/youtube.pipeline/internal/service"
 )
 
@@ -264,6 +265,53 @@ func (h *RunHandler) FinalizeBatchReview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	h.logger.Info("batch review finalized", "run_id", runID, "stage", run.Stage, "status", run.Status)
+	writeJSON(w, http.StatusOK, toRunResponse(run))
+}
+
+// rewindRequest is the request body for POST /api/runs/{id}/rewind.
+// target_stage_node is one of the four operator-clickable work-phase keys:
+// "scenario" / "character" / "assets" / "assemble". Rejected with 400 when
+// the value is missing or not in the allow-list. The server enforces the
+// stage-ordering check separately (target must be strictly before current
+// stage) — that surfaces as 409 ErrConflict.
+type rewindRequest struct {
+	TargetStageNode string `json:"target_stage_node"`
+}
+
+// Rewind handles POST /api/runs/{id}/rewind.
+// Body: {"target_stage_node": "scenario"|"character"|"assets"|"assemble"}.
+// Synchronous — the orchestration cancels in-flight workers, performs all
+// DB and on-disk cleanup, and returns the post-rewind run snapshot. Errors:
+//   - 400 VALIDATION_ERROR when the body is malformed or the node is
+//     unknown (the four-key allow-list is the contract surface).
+//   - 404 NOT_FOUND when the run does not exist.
+//   - 409 CONFLICT when the rewind target is not strictly before the
+//     run's current stage (e.g. clicking "Cast" while still at Cast).
+func (h *RunHandler) Rewind(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var body rewindRequest
+	if err := decodeJSONBody(r, &body, false); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error(), false)
+		return
+	}
+	node := pipeline.StageNodeKey(body.TargetStageNode)
+	if !node.IsRewindable() {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR",
+			fmt.Sprintf("target_stage_node must be one of scenario|character|assets|assemble, got %q", body.TargetStageNode),
+			false)
+		return
+	}
+
+	run, err := h.svc.Rewind(r.Context(), id, node)
+	if err != nil {
+		h.logger.Error("rewind run", "run_id", id, "node", body.TargetStageNode, "error", err)
+		writeDomainError(w, err)
+		return
+	}
+	h.logger.Info("run rewound",
+		"run_id", id, "node", body.TargetStageNode,
+		"stage", run.Stage, "status", run.Status)
 	writeJSON(w, http.StatusOK, toRunResponse(run))
 }
 

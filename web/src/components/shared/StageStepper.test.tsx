@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { StageStepper } from './StageStepper'
 
 describe('StageStepper', () => {
@@ -98,6 +98,75 @@ describe('StageStepper', () => {
       expect(screen.getByLabelText('Script writing: failed')).toBeInTheDocument()
       expect(screen.getByLabelText('Structure: completed')).toBeInTheDocument()
       expect(screen.getByLabelText('Shot planning: upcoming')).toBeInTheDocument()
+    })
+  })
+
+  describe('rewind affordance', () => {
+    it('renders completed nodes as buttons when on_rewind_request is provided', () => {
+      const handler = vi.fn()
+      render(
+        <StageStepper
+          stage="assemble"
+          status="running"
+          variant="full"
+          on_rewind_request={handler}
+        />,
+      )
+      // Story / Cast / Media are completed → buttons.
+      expect(screen.getByRole('button', { name: 'Rewind to Story' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Rewind to Cast' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Rewind to Media' })).toBeInTheDocument()
+      // Cut is active → not a button.
+      expect(screen.queryByRole('button', { name: 'Rewind to Cut' })).not.toBeInTheDocument()
+    })
+
+    it('does not render buttons when handler is omitted', () => {
+      render(<StageStepper stage="assemble" status="running" variant="full" />)
+      expect(screen.queryByRole('button', { name: /Rewind/i })).not.toBeInTheDocument()
+    })
+
+    it('fires the handler with the stepper key on click', () => {
+      const handler = vi.fn()
+      render(
+        <StageStepper
+          stage="assemble"
+          status="running"
+          variant="full"
+          on_rewind_request={handler}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Rewind to Cast' }))
+      expect(handler).toHaveBeenCalledWith('character')
+    })
+
+    it('disables the targeted button when rewind_pending_node matches', () => {
+      const handler = vi.fn()
+      render(
+        <StageStepper
+          stage="assemble"
+          status="running"
+          variant="full"
+          on_rewind_request={handler}
+          rewind_pending_node="assets"
+        />,
+      )
+      const media_btn = screen.getByRole('button', { name: 'Rewind to Media' })
+      expect(media_btn).toBeDisabled()
+      // Other nodes still active.
+      expect(screen.getByRole('button', { name: 'Rewind to Cast' })).not.toBeDisabled()
+    })
+
+    it('keeps compact variant non-clickable', () => {
+      const handler = vi.fn()
+      render(
+        <StageStepper
+          stage="assemble"
+          status="running"
+          variant="compact"
+          on_rewind_request={handler}
+        />,
+      )
+      expect(screen.queryByRole('button', { name: /Rewind/i })).not.toBeInTheDocument()
     })
   })
 })

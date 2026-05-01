@@ -38,6 +38,7 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("POST /api/runs/{id}/cancel", deps.Run.Cancel)
 	api.HandleFunc("POST /api/runs/{id}/resume", deps.Run.Resume)
 	api.HandleFunc("POST /api/runs/{id}/advance", deps.Run.Advance)
+	api.HandleFunc("POST /api/runs/{id}/rewind", deps.Run.Rewind)
 	api.HandleFunc("GET /api/decisions", deps.Scene.ListDecisions)
 	api.HandleFunc("GET /api/runs/{id}/characters", deps.Character.Search)
 	api.HandleFunc("GET /api/runs/{id}/characters/descriptor", deps.Character.Descriptor)

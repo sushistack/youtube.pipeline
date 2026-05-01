@@ -168,6 +168,34 @@ export function cancelRun(run_id: string) {
   );
 }
 
+/**
+ * rewindRun rolls a run back to the chosen stepper work-phase node, deleting
+ * every artifact produced after that point (DB rows, on-disk files, decisions,
+ * HITL session). The server validates that target_stage_node ∈ {scenario,
+ * character, assets, assemble} AND that the target is strictly before the
+ * run's current stage; mismatches surface as 400 / 409.
+ *
+ * Synchronous: the response is the post-rewind run snapshot, ready to render
+ * the new stepper position immediately.
+ */
+export type RewindStageNode =
+  | "scenario"
+  | "character"
+  | "assets"
+  | "assemble";
+
+export function rewindRun(run_id: string, target_stage_node: RewindStageNode) {
+  return apiRequest(
+    `/runs/${encodeURIComponent(run_id)}/rewind`,
+    runDetailResponseSchema,
+    {
+      method: "POST",
+      body: JSON.stringify({ target_stage_node }),
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
 // advanceRun kicks off a freshly-created pending run via Phase A entry.
 // resumeRun rejects pending status by design (it is the failed/waiting recovery
 // path), so the UI's Start-run button on the pending guidance card calls this
