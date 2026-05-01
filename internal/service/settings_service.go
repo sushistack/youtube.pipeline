@@ -367,26 +367,29 @@ func validateSettingsConfig(cfg domain.PipelineConfig, env map[string]string, fi
 
 func normalizeSettingsConfig(cfg domain.PipelineConfig) SettingsConfigInput {
 	return SettingsConfigInput{
-		WriterModel:     cfg.WriterModel,
-		CriticModel:     cfg.CriticModel,
-		ImageModel:      cfg.ImageModel,
-		ImageEditModel:  cfg.ImageEditModel,
-		TTSModel:        cfg.TTSModel,
-		TTSVoice:        cfg.TTSVoice,
-		TTSAudioFormat:  cfg.TTSAudioFormat,
-		WriterProvider:  cfg.WriterProvider,
-		CriticProvider:  cfg.CriticProvider,
-		ImageProvider:   cfg.ImageProvider,
-		TTSProvider:     cfg.TTSProvider,
-		DashScopeRegion: cfg.DashScopeRegion,
-		ComfyUIEndpoint: cfg.ComfyUIEndpoint,
-		CostCapResearch: cfg.CostCapResearch,
-		CostCapWrite:    cfg.CostCapWrite,
-		CostCapImage:    cfg.CostCapImage,
-		CostCapTTS:      cfg.CostCapTTS,
-		CostCapAssemble: cfg.CostCapAssemble,
-		CostCapPerRun:   cfg.CostCapPerRun,
-		DryRun:          cfg.DryRun,
+		WriterModel:              cfg.WriterModel,
+		CriticModel:              cfg.CriticModel,
+		ImageModel:               cfg.ImageModel,
+		ImageEditModel:           cfg.ImageEditModel,
+		TTSModel:                 cfg.TTSModel,
+		TTSVoice:                 cfg.TTSVoice,
+		TTSAudioFormat:           cfg.TTSAudioFormat,
+		WriterProvider:           cfg.WriterProvider,
+		CriticProvider:           cfg.CriticProvider,
+		ImageProvider:            cfg.ImageProvider,
+		TTSProvider:              cfg.TTSProvider,
+		DashScopeRegion:          cfg.DashScopeRegion,
+		ComfyUIEndpoint:          cfg.ComfyUIEndpoint,
+		ComfyUILoRAName:          cfg.ComfyUILoRAName,
+		ComfyUILoRAStrengthModel: cfg.ComfyUILoRAStrengthModel,
+		ComfyUILoRAStrengthClip:  cfg.ComfyUILoRAStrengthClip,
+		CostCapResearch:          cfg.CostCapResearch,
+		CostCapWrite:             cfg.CostCapWrite,
+		CostCapImage:             cfg.CostCapImage,
+		CostCapTTS:               cfg.CostCapTTS,
+		CostCapAssemble:          cfg.CostCapAssemble,
+		CostCapPerRun:            cfg.CostCapPerRun,
+		DryRun:                   cfg.DryRun,
 	}
 }
 
@@ -418,6 +421,9 @@ func applyEditableConfig(cfg *domain.PipelineConfig, input SettingsConfigInput) 
 	cfg.TTSProvider = input.TTSProvider
 	cfg.DashScopeRegion = input.DashScopeRegion
 	cfg.ComfyUIEndpoint = input.ComfyUIEndpoint
+	cfg.ComfyUILoRAName = input.ComfyUILoRAName
+	cfg.ComfyUILoRAStrengthModel = input.ComfyUILoRAStrengthModel
+	cfg.ComfyUILoRAStrengthClip = input.ComfyUILoRAStrengthClip
 	cfg.CostCapResearch = input.CostCapResearch
 	cfg.CostCapWrite = input.CostCapWrite
 	cfg.CostCapImage = input.CostCapImage

@@ -17,19 +17,22 @@ var supportedSettingsSecrets = []string{
 }
 
 type SettingsConfigInput struct {
-	WriterModel     string `json:"writer_model"`
-	CriticModel     string `json:"critic_model"`
-	ImageModel      string `json:"image_model"`
-	ImageEditModel  string `json:"image_edit_model"`
-	TTSModel        string `json:"tts_model"`
-	TTSVoice        string `json:"tts_voice"`
-	TTSAudioFormat  string `json:"tts_audio_format"`
-	WriterProvider  string `json:"writer_provider"`
-	CriticProvider  string `json:"critic_provider"`
-	ImageProvider   string `json:"image_provider"`
-	TTSProvider     string `json:"tts_provider"`
-	DashScopeRegion string `json:"dashscope_region"`
-	ComfyUIEndpoint string `json:"comfyui_endpoint"`
+	WriterModel              string  `json:"writer_model"`
+	CriticModel              string  `json:"critic_model"`
+	ImageModel               string  `json:"image_model"`
+	ImageEditModel           string  `json:"image_edit_model"`
+	TTSModel                 string  `json:"tts_model"`
+	TTSVoice                 string  `json:"tts_voice"`
+	TTSAudioFormat           string  `json:"tts_audio_format"`
+	WriterProvider           string  `json:"writer_provider"`
+	CriticProvider           string  `json:"critic_provider"`
+	ImageProvider            string  `json:"image_provider"`
+	TTSProvider              string  `json:"tts_provider"`
+	DashScopeRegion          string  `json:"dashscope_region"`
+	ComfyUIEndpoint          string  `json:"comfyui_endpoint"`
+	ComfyUILoRAName          string  `json:"comfyui_lora_name"`
+	ComfyUILoRAStrengthModel float64 `json:"comfyui_lora_strength_model"`
+	ComfyUILoRAStrengthClip  float64 `json:"comfyui_lora_strength_clip"`
 
 	CostCapResearch float64 `json:"cost_cap_research"`
 	CostCapWrite    float64 `json:"cost_cap_write"`

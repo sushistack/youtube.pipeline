@@ -148,6 +148,110 @@ func TestPrepareWorkflow_EditSubstitutesReferenceAndCLIPText(t *testing.T) {
 	}
 }
 
+func TestPrepareWorkflow_T2I_NoLoRAByDefault(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	encoded, _, err := prepareWorkflow(WorkflowT2I, substitution{
+		Prompt: "p", Width: 100, Height: 100, Seed: 1,
+	})
+	if err != nil {
+		t.Fatalf("prepareWorkflow: %v", err)
+	}
+	var graph map[string]map[string]any
+	if err := json.Unmarshal(encoded, &graph); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := graph["lora-inject"]; ok {
+		t.Fatal("lora-inject node must be absent when LoRAName is empty")
+	}
+}
+
+func TestPrepareWorkflow_T2I_LoRAInjectedAndRewired(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	encoded, _, err := prepareWorkflow(WorkflowT2I, substitution{
+		Prompt: "p", Width: 100, Height: 100, Seed: 1,
+		LoRAName: "anime.safetensors", LoRAStrengthModel: 0.8, LoRAStrengthClip: 0.6,
+	})
+	if err != nil {
+		t.Fatalf("prepareWorkflow: %v", err)
+	}
+	var graph map[string]map[string]any
+	if err := json.Unmarshal(encoded, &graph); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	lora, ok := graph["lora-inject"]
+	if !ok {
+		t.Fatal("lora-inject node must be present when LoRAName is set")
+	}
+	if class, _ := lora["class_type"].(string); class != "LoraLoader" {
+		t.Fatalf("lora class_type %q, want LoraLoader", class)
+	}
+	inputs := lora["inputs"].(map[string]any)
+	if name, _ := inputs["lora_name"].(string); name != "anime.safetensors" {
+		t.Fatalf("lora_name = %v, want anime.safetensors", inputs["lora_name"])
+	}
+	if sm := asFloat(inputs["strength_model"]); sm != 0.8 {
+		t.Fatalf("strength_model = %v, want 0.8", inputs["strength_model"])
+	}
+	if sc := asFloat(inputs["strength_clip"]); sc != 0.6 {
+		t.Fatalf("strength_clip = %v, want 0.6", inputs["strength_clip"])
+	}
+	// LoraLoader's own model/clip refs must point at the original loaders.
+	unetID := findNodeIDByLabel(t, graph, "UNET_LOADER")
+	clipID := findNodeIDByLabel(t, graph, "CLIP_LOADER")
+	if got := refID(inputs["model"]); got != unetID {
+		t.Fatalf("LoraLoader.model ref = %q, want %q", got, unetID)
+	}
+	if got := refID(inputs["clip"]); got != clipID {
+		t.Fatalf("LoraLoader.clip ref = %q, want %q", got, clipID)
+	}
+
+	// CFGGuider model input was rewired off UNET → lora-inject:0.
+	cfgGuider := findFirstNodeByClass(t, graph, "CFGGuider")
+	cgInputs := cfgGuider["inputs"].(map[string]any)
+	if got := refID(cgInputs["model"]); got != "lora-inject" {
+		t.Fatalf("CFGGuider.model ref = %q, want lora-inject", got)
+	}
+	if slot := refSlot(cgInputs["model"]); slot != 0 {
+		t.Fatalf("CFGGuider.model slot = %d, want 0", slot)
+	}
+
+	// Every CLIPTextEncode must have its clip rewired to lora-inject:1.
+	for _, node := range graph {
+		if class, _ := node["class_type"].(string); class != "CLIPTextEncode" {
+			continue
+		}
+		ni := node["inputs"].(map[string]any)
+		if refID(ni["clip"]) != "lora-inject" || refSlot(ni["clip"]) != 1 {
+			t.Fatalf("CLIPTextEncode.clip not rewired to lora-inject:1, got %v", ni["clip"])
+		}
+	}
+}
+
+func TestPrepareWorkflow_Edit_LoRAInjected(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	encoded, _, err := prepareWorkflow(WorkflowEdit, substitution{
+		Prompt: "p", Width: 100, Height: 100, Seed: 1,
+		ReferenceImageName: "ref.png", RequireReference: true,
+		LoRAName: "anime.safetensors", LoRAStrengthModel: 1, LoRAStrengthClip: 1,
+	})
+	if err != nil {
+		t.Fatalf("prepareWorkflow edit: %v", err)
+	}
+	var graph map[string]map[string]any
+	if err := json.Unmarshal(encoded, &graph); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := graph["lora-inject"]; !ok {
+		t.Fatal("lora-inject node must be present in edit workflow")
+	}
+	cfgGuider := findFirstNodeByClass(t, graph, "CFGGuider")
+	cgInputs := cfgGuider["inputs"].(map[string]any)
+	if refID(cgInputs["model"]) != "lora-inject" {
+		t.Fatalf("CFGGuider.model not rewired in edit workflow: %v", cgInputs["model"])
+	}
+}
+
 func TestPrepareWorkflow_RejectsMissingLabel(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	mutated := removeLabel(t, WorkflowT2I, "KSAMPLER")
@@ -268,6 +372,67 @@ func asInt(v any) int {
 		return int(t)
 	}
 	return 0
+}
+
+func asFloat(v any) float64 {
+	switch t := v.(type) {
+	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case float64:
+		return t
+	}
+	return 0
+}
+
+func findNodeIDByLabel(t *testing.T, graph map[string]map[string]any, label string) string {
+	t.Helper()
+	for id, node := range graph {
+		meta, _ := node["_meta"].(map[string]any)
+		if meta == nil {
+			continue
+		}
+		if title, _ := meta["title"].(string); title == label {
+			return id
+		}
+	}
+	t.Fatalf("label %q not found", label)
+	return ""
+}
+
+func findFirstNodeByClass(t *testing.T, graph map[string]map[string]any, class string) map[string]any {
+	t.Helper()
+	for _, node := range graph {
+		if c, _ := node["class_type"].(string); c == class {
+			return node
+		}
+	}
+	t.Fatalf("class %q not found", class)
+	return nil
+}
+
+func refID(v any) string {
+	arr, ok := v.([]any)
+	if !ok || len(arr) < 1 {
+		return ""
+	}
+	id, _ := arr[0].(string)
+	return id
+}
+
+func refSlot(v any) int {
+	arr, ok := v.([]any)
+	if !ok || len(arr) < 2 {
+		return -1
+	}
+	switch n := arr[1].(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	}
+	return -1
 }
 
 func asInt64(v any) int64 {

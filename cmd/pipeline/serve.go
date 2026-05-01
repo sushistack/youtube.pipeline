@@ -143,8 +143,11 @@ func buildPhaseBRunner(
 			return nil, fmt.Errorf("build tts client: %w", err)
 		}
 		comfyClient, err := comfyui.NewImageClient(httpClient, comfyui.ImageClientConfig{
-			Endpoint: cfg.ComfyUIEndpoint,
-			Clock:    clock.RealClock{},
+			Endpoint:          cfg.ComfyUIEndpoint,
+			Clock:             clock.RealClock{},
+			LoRAName:          cfg.ComfyUILoRAName,
+			LoRAStrengthModel: cfg.ComfyUILoRAStrengthModel,
+			LoRAStrengthClip:  cfg.ComfyUILoRAStrengthClip,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("build comfyui image client: %w", err)
@@ -153,6 +156,9 @@ func buildPhaseBRunner(
 			"endpoint", cfg.ComfyUIEndpoint,
 			"generate_model", cfg.ImageModel,
 			"edit_model", cfg.ImageEditModel,
+			"lora_name", cfg.ComfyUILoRAName,
+			"lora_strength_model", cfg.ComfyUILoRAStrengthModel,
+			"lora_strength_clip", cfg.ComfyUILoRAStrengthClip,
 		)
 		ttsClient = realTTS
 		imageClient = comfyClient

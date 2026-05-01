@@ -176,7 +176,7 @@
     },
     "class_type": "UNETLoader",
     "_meta": {
-      "title": "Load Diffusion Model"
+      "title": "UNET_LOADER"
     }
   },
   "75:71": {
@@ -187,7 +187,7 @@
     },
     "class_type": "CLIPLoader",
     "_meta": {
-      "title": "Load CLIP"
+      "title": "CLIP_LOADER"
     }
   },
   "75:72": {

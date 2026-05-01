@@ -56,6 +56,21 @@ type ImageClientConfig struct {
 	// Clock is the clock used for elapsed accounting and polling cadence.
 	// nil → RealClock.
 	Clock clock.Clock
+
+	// LoRAName is the LoRA filename injected into both the t2i and edit
+	// workflows. Empty disables injection — the base model runs unchanged.
+	// The file must already exist under ComfyUI's `models/loras/` directory;
+	// validation happens server-side via /prompt node_errors.
+	LoRAName string
+
+	// LoRAStrengthModel scales the LoRA's diffusion-model contribution.
+	// Ignored when LoRAName is empty.
+	LoRAStrengthModel float64
+
+	// LoRAStrengthClip scales the LoRA's text-encoder contribution.
+	// Decoupled from the model strength so prompt bleed can be attenuated
+	// independently. Ignored when LoRAName is empty.
+	LoRAStrengthClip float64
 }
 
 // ImageClient implements domain.ImageGenerator backed by a local ComfyUI
@@ -130,10 +145,13 @@ func (c *ImageClient) Generate(ctx context.Context, req domain.ImageRequest) (do
 		return domain.ImageResponse{}, fmt.Errorf("comfyui image generate: seed: %w", err)
 	}
 	workflow, outputID, err := prepareWorkflow(WorkflowT2I, substitution{
-		Prompt: req.Prompt,
-		Width:  req.Width,
-		Height: req.Height,
-		Seed:   seed,
+		Prompt:            req.Prompt,
+		Width:             req.Width,
+		Height:            req.Height,
+		Seed:              seed,
+		LoRAName:          c.cfg.LoRAName,
+		LoRAStrengthModel: c.cfg.LoRAStrengthModel,
+		LoRAStrengthClip:  c.cfg.LoRAStrengthClip,
 	})
 	if err != nil {
 		return domain.ImageResponse{}, err
@@ -186,6 +204,9 @@ func (c *ImageClient) Edit(ctx context.Context, req domain.ImageEditRequest) (do
 		Seed:               seed,
 		ReferenceImageName: uploadName,
 		RequireReference:   true,
+		LoRAName:           c.cfg.LoRAName,
+		LoRAStrengthModel:  c.cfg.LoRAStrengthModel,
+		LoRAStrengthClip:   c.cfg.LoRAStrengthClip,
 	})
 	if err != nil {
 		return domain.ImageResponse{}, err

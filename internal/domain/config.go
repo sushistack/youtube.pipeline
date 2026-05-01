@@ -51,6 +51,24 @@ type PipelineConfig struct {
 	// Settings. Trailing slashes are stripped at construction time.
 	ComfyUIEndpoint string `yaml:"comfyui_endpoint" mapstructure:"comfyui_endpoint"`
 
+	// ComfyUILoRAName is the LoRA filename loaded into the ComfyUI workflow.
+	// Empty means no LoRA — the workflow runs with the base model only.
+	// When set, both t2i and edit graphs inject a LoraLoader between
+	// UNETLoader/CLIPLoader and their downstream consumers.
+	ComfyUILoRAName string `yaml:"comfyui_lora_name" mapstructure:"comfyui_lora_name"`
+
+	// ComfyUILoRAStrengthModel is the LoRA strength applied to the diffusion
+	// model. Standard ComfyUI range is roughly [-2.0, 2.0] but no bound is
+	// enforced here — ComfyUI surfaces out-of-range values via node_errors.
+	// Ignored when ComfyUILoRAName is empty.
+	ComfyUILoRAStrengthModel float64 `yaml:"comfyui_lora_strength_model" mapstructure:"comfyui_lora_strength_model"`
+
+	// ComfyUILoRAStrengthClip is the LoRA strength applied to the CLIP
+	// (text encoder) branch. Decoupled from the model strength so the
+	// operator can attenuate text-conditioning bleed independently.
+	// Ignored when ComfyUILoRAName is empty.
+	ComfyUILoRAStrengthClip float64 `yaml:"comfyui_lora_strength_clip" mapstructure:"comfyui_lora_strength_clip"`
+
 	// Paths
 	DataDir   string `yaml:"data_dir"   mapstructure:"data_dir"`
 	OutputDir string `yaml:"output_dir" mapstructure:"output_dir"`
@@ -119,32 +137,35 @@ func DefaultConfig() PipelineConfig {
 	base := filepath.Join(home, ".youtube-pipeline")
 
 	return PipelineConfig{
-		WriterModel:           "deepseek-chat",
-		CriticModel:           "gemini-3.1-flash-lite-preview",
-		TTSModel:              "qwen3-tts-flash-2025-09-18",
-		TTSVoice:              "Ethan",
-		TTSAudioFormat:        "wav",
-		ImageModel:            "qwen-image",
-		ImageEditModel:        "qwen-image-edit",
-		WriterProvider:        "deepseek",
-		CriticProvider:        "gemini",
-		ImageProvider:         "dashscope",
-		TTSProvider:           "dashscope",
-		DashScopeRegion:       "cn-beijing",
-		ComfyUIEndpoint:       "http://127.0.0.1:8188",
-		DataDir:               "/mnt/data/raw",
-		OutputDir:             filepath.Join(base, "output"),
-		DBPath:                filepath.Join(base, "pipeline.db"),
-		CostCapResearch:       0.50,
-		CostCapWrite:          0.50,
-		CostCapImage:          2.00,
-		CostCapTTS:            1.00,
-		CostCapAssemble:       0.10,
-		CostCapPerRun:         5.00,
-		AntiProgressThreshold: 0.92,
-		GoldenStalenessDays:   30,
-		ShadowEvalWindow:      10,
-		AutoApprovalThreshold: 0.85,
-		ArtifactRetentionDays: 30,
+		WriterModel:              "deepseek-chat",
+		CriticModel:              "gemini-3.1-flash-lite-preview",
+		TTSModel:                 "qwen3-tts-flash-2025-09-18",
+		TTSVoice:                 "Ethan",
+		TTSAudioFormat:           "wav",
+		ImageModel:               "qwen-image",
+		ImageEditModel:           "qwen-image-edit",
+		WriterProvider:           "deepseek",
+		CriticProvider:           "gemini",
+		ImageProvider:            "dashscope",
+		TTSProvider:              "dashscope",
+		DashScopeRegion:          "cn-beijing",
+		ComfyUIEndpoint:          "http://127.0.0.1:8188",
+		ComfyUILoRAName:          "",
+		ComfyUILoRAStrengthModel: 1.0,
+		ComfyUILoRAStrengthClip:  1.0,
+		DataDir:                  "/mnt/data/raw",
+		OutputDir:                filepath.Join(base, "output"),
+		DBPath:                   filepath.Join(base, "pipeline.db"),
+		CostCapResearch:          0.50,
+		CostCapWrite:             0.50,
+		CostCapImage:             2.00,
+		CostCapTTS:               1.00,
+		CostCapAssemble:          0.10,
+		CostCapPerRun:            5.00,
+		AntiProgressThreshold:    0.92,
+		GoldenStalenessDays:      30,
+		ShadowEvalWindow:         10,
+		AutoApprovalThreshold:    0.85,
+		ArtifactRetentionDays:    30,
 	}
 }

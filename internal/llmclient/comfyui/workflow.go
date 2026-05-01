@@ -19,19 +19,29 @@ const (
 	labelKSampler       = "KSAMPLER"
 	labelReferenceImage = "REFERENCE_IMAGE"
 	labelOutputImage    = "OUTPUT_IMAGE"
+	labelUNETLoader     = "UNET_LOADER"
+	labelCLIPLoader     = "CLIP_LOADER"
 )
+
+// loraInjectedNodeID is the synthetic node ID used when a LoRA is injected at
+// runtime. Chosen to avoid collision with any node IDs in the embedded JSONs
+// (the colon prefix is a ComfyUI convention; "lora-inject" is unique).
+const loraInjectedNodeID = "lora-inject"
 
 // Required class_types. The KSAMPLER label is wired to the RandomNoise node
 // (the FLUX.2 sampler graph derives the seed from RandomNoise). Other labels
 // have a single fixed class_type except POSITIVE_PROMPT, which has two valid
 // shapes — see prepareWorkflow.
 const (
-	classRandomNoise            = "RandomNoise"
-	classPrimitiveInt           = "PrimitiveInt"
-	classPrimitiveStringML      = "PrimitiveStringMultiline"
-	classCLIPTextEncode         = "CLIPTextEncode"
-	classLoadImage              = "LoadImage"
-	classSaveImage              = "SaveImage"
+	classRandomNoise       = "RandomNoise"
+	classPrimitiveInt      = "PrimitiveInt"
+	classPrimitiveStringML = "PrimitiveStringMultiline"
+	classCLIPTextEncode    = "CLIPTextEncode"
+	classLoadImage         = "LoadImage"
+	classSaveImage         = "SaveImage"
+	classUNETLoader        = "UNETLoader"
+	classCLIPLoader        = "CLIPLoader"
+	classLoraLoader        = "LoraLoader"
 )
 
 // validateWorkflow parses the embedded JSON to confirm every required label is
@@ -53,6 +63,8 @@ func validateWorkflow(raw []byte, requireReference bool) error {
 		labelLatentHeight:   {classPrimitiveInt},
 		labelKSampler:       {classRandomNoise},
 		labelOutputImage:    {classSaveImage},
+		labelUNETLoader:     {classUNETLoader},
+		labelCLIPLoader:     {classCLIPLoader},
 	}
 	if requireReference {
 		required[labelReferenceImage] = []string{classLoadImage}
@@ -117,12 +129,20 @@ type nodeShape struct {
 // substitution carries the values to inject into a deep-copy of the workflow
 // before submission. ReferenceImageName is empty for t2i.
 type substitution struct {
-	Prompt              string
-	Width               int
-	Height              int
-	Seed                int64
-	ReferenceImageName  string
-	RequireReference    bool
+	Prompt             string
+	Width              int
+	Height             int
+	Seed               int64
+	ReferenceImageName string
+	RequireReference   bool
+
+	// LoRAName, when non-empty, triggers LoraLoader injection between the
+	// UNET_LOADER/CLIP_LOADER nodes and their downstream consumers. The two
+	// strength fields are decoupled so the operator can scale text- and
+	// model-conditioning independently.
+	LoRAName          string
+	LoRAStrengthModel float64
+	LoRAStrengthClip  float64
 }
 
 // prepareWorkflow deep-copies the embedded workflow bytes, applies the
@@ -149,6 +169,8 @@ func prepareWorkflow(raw []byte, sub substitution) ([]byte, string, error) {
 		labelLatentHeight:   {},
 		labelKSampler:       {},
 		labelOutputImage:    {},
+		labelUNETLoader:     {},
+		labelCLIPLoader:     {},
 	}
 	if sub.RequireReference {
 		requiredLabels[labelReferenceImage] = struct{}{}
@@ -239,6 +261,14 @@ func prepareWorkflow(raw []byte, sub substitution) ([]byte, string, error) {
 			domain.ErrValidation, labelOutputImage, class, classSaveImage)
 	}
 
+	if sub.LoRAName != "" {
+		unetID := labelToID[labelUNETLoader]
+		clipID := labelToID[labelCLIPLoader]
+		if err := injectLoRA(graph, unetID, clipID, sub.LoRAName, sub.LoRAStrengthModel, sub.LoRAStrengthClip); err != nil {
+			return nil, "", err
+		}
+	}
+
 	encoded, err := json.Marshal(graph)
 	if err != nil {
 		return nil, "", fmt.Errorf("comfyui workflow: encode: %w", err)
@@ -278,4 +308,82 @@ func ensureInputs(node map[string]any) map[string]any {
 		node["inputs"] = inputs
 	}
 	return inputs
+}
+
+// injectLoRA inserts a LoraLoader node between UNETLoader/CLIPLoader and their
+// downstream consumers. Every existing input edge of the form `[unetID, 0]` is
+// rewritten to `[loraInjectedNodeID, 0]` (the LoraLoader's MODEL output) and
+// `[clipID, 0]` is rewritten to `[loraInjectedNodeID, 1]` (CLIP output). The
+// LoraLoader itself wires back to the original UNET/CLIP nodes so the loaders
+// remain reachable. Returns ErrValidation when the synthetic node ID would
+// collide with an existing one.
+func injectLoRA(graph map[string]map[string]any, unetID, clipID, name string, strengthModel, strengthClip float64) error {
+	if unetID == "" || clipID == "" {
+		return fmt.Errorf("comfyui workflow: %w: lora injection requires UNET_LOADER and CLIP_LOADER labels", domain.ErrValidation)
+	}
+	if _, exists := graph[loraInjectedNodeID]; exists {
+		return fmt.Errorf("comfyui workflow: %w: node id %q already present, cannot inject LoraLoader",
+			domain.ErrValidation, loraInjectedNodeID)
+	}
+
+	// Rewrite every input edge that references unetID:0 or clipID:0 to point
+	// at the LoraLoader instead. Inputs we are about to add to the LoraLoader
+	// itself are inserted AFTER this loop so they keep the originals.
+	for nodeID, node := range graph {
+		if nodeID == loraInjectedNodeID {
+			continue
+		}
+		inputs, _ := node["inputs"].(map[string]any)
+		if inputs == nil {
+			continue
+		}
+		for key, val := range inputs {
+			arr, ok := val.([]any)
+			if !ok || len(arr) < 2 {
+				continue
+			}
+			ref, ok := arr[0].(string)
+			if !ok {
+				continue
+			}
+			slot, ok := toInt(arr[1])
+			if !ok || slot != 0 {
+				continue
+			}
+			switch ref {
+			case unetID:
+				inputs[key] = []any{loraInjectedNodeID, 0}
+			case clipID:
+				inputs[key] = []any{loraInjectedNodeID, 1}
+			}
+		}
+	}
+
+	graph[loraInjectedNodeID] = map[string]any{
+		"class_type": classLoraLoader,
+		"_meta":      map[string]any{"title": "LORA_LOADER"},
+		"inputs": map[string]any{
+			"lora_name":      name,
+			"strength_model": strengthModel,
+			"strength_clip":  strengthClip,
+			"model":          []any{unetID, 0},
+			"clip":           []any{clipID, 0},
+		},
+	}
+	return nil
+}
+
+// toInt extracts an integer from the loosely-typed JSON values ComfyUI uses
+// for slot indexes. Encountered values are typically float64 (json default)
+// or int after a deep round-trip; both must work.
+func toInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	}
+	return 0, false
 }
