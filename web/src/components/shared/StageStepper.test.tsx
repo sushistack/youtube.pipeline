@@ -31,6 +31,20 @@ describe('StageStepper', () => {
       expect(screen.getByRole('img', { name: /pipeline dag/i })).toBeInTheDocument()
     })
 
+    it('hides the pending and complete lifecycle lanes from the DAG', () => {
+      render(<StageStepper stage="image" status="running" variant="expanded" />)
+
+      // Pending/Complete are run lifecycle states, not work phases.
+      expect(screen.queryByText('Pending')).not.toBeInTheDocument()
+      expect(screen.queryByText('Queued')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText(/^Complete: /)).not.toBeInTheDocument()
+      // Story/Cast/Media/Cut lane labels remain.
+      expect(screen.getByText('Story')).toBeInTheDocument()
+      expect(screen.getByText('Cast')).toBeInTheDocument()
+      expect(screen.getByText('Media')).toBeInTheDocument()
+      expect(screen.getByText('Cut')).toBeInTheDocument()
+    })
+
     it('exposes scenario sub-stage states via per-node aria-labels', () => {
       render(<StageStepper stage="critic" status="running" variant="expanded" />)
 
