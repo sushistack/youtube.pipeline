@@ -794,7 +794,7 @@ func (s *RunStore) ReconcileOrphanedRuns(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE runs SET status = ?, retry_reason = ? WHERE status = ?`,
 		string(domain.StatusFailed),
-		"server restarted while run was in progress",
+		domain.RetryReasonServerRestarted,
 		string(domain.StatusRunning),
 	)
 	if err != nil {

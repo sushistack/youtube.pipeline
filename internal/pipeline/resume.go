@@ -572,8 +572,20 @@ func (e *Engine) PrepareResume(ctx context.Context, runID string, opts ResumeOpt
 				"run_id", runID, "stage", run.Stage,
 				"kind", m.Kind, "path", m.Path, "detail", m.Detail)
 		}
-		if !opts.Force {
+		// Auto-bypass when the run was marked failed by the orphan reconciler
+		// at server startup. The mismatches in this case are mid-flight Phase
+		// B/C writes that never finished — the resume cleanup path below
+		// handles them. Blocking with ErrValidation is a UI dead-end since
+		// the FailureBanner has no way to retry with confirm_inconsistent=true.
+		// An explicit operator Cancel + Resume would still go through the
+		// strict gate; only the system-reconciled marker triggers auto-force.
+		systemReconciled := run.RetryReason != nil && *run.RetryReason == domain.RetryReasonServerRestarted
+		if !opts.Force && !systemReconciled {
 			return nil, report, fmt.Errorf("resume %s: %w: %s", runID, domain.ErrValidation, report.Error())
+		}
+		if systemReconciled && !opts.Force {
+			e.logger.Info("resume: auto-bypassing consistency gate for reconciler-marked run",
+				"run_id", runID, "stage", run.Stage, "mismatches", len(report.Mismatches))
 		}
 	}
 

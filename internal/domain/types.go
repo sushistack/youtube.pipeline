@@ -98,6 +98,14 @@ func AllStatuses() []Status {
 	return s[:]
 }
 
+// RetryReasonServerRestarted is the retry_reason marker the orphan
+// reconciler stamps on runs whose status='running' did not survive a
+// process restart. The marker is a system-event signal, not an operator
+// action — Resume treats it as authorization to bypass the FS/DB
+// consistency gate so mid-flight crashes can be recovered without UI
+// gymnastics.
+const RetryReasonServerRestarted = "server restarted while run was in progress"
+
 // IsValid returns true if s is one of the defined status constants.
 func (s Status) IsValid() bool {
 	for _, v := range allStatuses {
