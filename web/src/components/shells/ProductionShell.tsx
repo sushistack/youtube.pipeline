@@ -12,6 +12,7 @@ import {
 } from '../../lib/formatters'
 import { queryKeys } from '../../lib/queryKeys'
 import { useUIStore, type ProductionLastSeenSnapshot } from '../../stores/useUIStore'
+import { useRunCache } from '../../hooks/useRunCache'
 import { useRunScenes } from '../../hooks/useRunScenes'
 import { useRunStatus } from '../../hooks/useRunStatus'
 import { BatchReview } from '../production/BatchReview'
@@ -67,6 +68,31 @@ function snapshotsMatch(
   )
 }
 
+// formatRelativeMtime renders an RFC3339 modified_at timestamp as a short
+// relative string ("3m ago", "2h ago", "5d ago") for the cache panel
+// metadata line. Falls back to the raw input on parse failure so the operator
+// always sees something rather than a silent empty cell.
+function formatRelativeMtime(iso: string): string {
+  const parsed_ms = Date.parse(iso)
+  if (Number.isNaN(parsed_ms)) {
+    return iso
+  }
+  const delta_seconds = Math.max(0, Math.floor((Date.now() - parsed_ms) / 1000))
+  if (delta_seconds < 60) {
+    return `${delta_seconds}s ago`
+  }
+  const delta_minutes = Math.floor(delta_seconds / 60)
+  if (delta_minutes < 60) {
+    return `${delta_minutes}m ago`
+  }
+  const delta_hours = Math.floor(delta_minutes / 60)
+  if (delta_hours < 24) {
+    return `${delta_hours}h ago`
+  }
+  const delta_days = Math.floor(delta_hours / 24)
+  return `${delta_days}d ago`
+}
+
 export function ProductionShell() {
   const [search_params, set_search_params] = useSearchParams()
   const { open_new_run_panel } = useNewRunCoordinator()
@@ -87,12 +113,17 @@ export function ProductionShell() {
   // pending → Phase A entry. Server's POST /api/runs/{id}/resume rejects
   // pending status with 409 by design — only failed/waiting are resumable.
   // The Start-run button calls /advance instead, which dispatches Engine.Advance.
+  // drop_caches (optional): keys of unchecked rows in the pending cache panel.
   const advance_mutation = useMutation({
-    mutationFn: (run_id: string) => advanceRun(run_id),
-    onSuccess: (_data, run_id) => {
+    mutationFn: ({ run_id, drop_caches }: { run_id: string; drop_caches?: string[] }) =>
+      advanceRun(run_id, drop_caches != null ? { drop_caches } : undefined),
+    onSuccess: (_data, { run_id }) => {
       void query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
       void query_client.invalidateQueries({
         queryKey: queryKeys.runs.status(run_id),
+      })
+      void query_client.invalidateQueries({
+        queryKey: queryKeys.runs.cache(run_id),
       })
     },
   })
@@ -221,6 +252,8 @@ export function ProductionShell() {
     const seq = getRunSequence(current_run.id)
     const display_title =
       seq != null ? `SCP-${current_run.scp_id} Run #${seq}` : current_run.id
+    const is_active_advance =
+      advance_mutation.variables?.run_id === current_run.id
     return (
       <section className="production__pending-state" aria-label="Pending run guidance">
         <div className="production__pending-state-copy">
@@ -243,25 +276,65 @@ export function ProductionShell() {
           {' '}to begin Phase A.
         </p>
 
+        {cache_entries.length > 0 ? (
+          <div
+            className="pending-cache-panel"
+            aria-label="Cached artifacts"
+          >
+            <p className="production-dashboard__eyebrow">Cached artifacts</p>
+            <ul className="pending-cache-panel__list">
+              {cache_entries.map((entry) => {
+                const is_kept = !dropped_cache_stages.has(entry.stage)
+                const checkbox_id = `cache-keep-${entry.stage}`
+                return (
+                  <li
+                    key={entry.stage}
+                    className="pending-cache-panel__row"
+                  >
+                    <input
+                      id={checkbox_id}
+                      type="checkbox"
+                      checked={is_kept}
+                      onChange={() => toggle_drop_cache(entry.stage)}
+                    />
+                    <label
+                      htmlFor={checkbox_id}
+                      className="pending-cache-panel__label"
+                    >
+                      <span className="pending-cache-panel__stage">
+                        {entry.stage}
+                      </span>
+                      <span className="pending-cache-panel__meta">
+                        {entry.source_version || 'unknown version'}
+                        {' · '}
+                        {formatRelativeMtime(entry.modified_at)}
+                      </span>
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="production__pending-state-actions">
           <button
             type="button"
             className="production__pending-resume-btn"
-            disabled={
-              advance_mutation.isPending &&
-              advance_mutation.variables === current_run.id
-            }
+            disabled={advance_mutation.isPending && is_active_advance}
             onClick={() => {
-              advance_mutation.mutate(current_run.id)
+              const drop_caches = Array.from(dropped_cache_stages)
+              advance_mutation.mutate({
+                run_id: current_run.id,
+                drop_caches: drop_caches.length > 0 ? drop_caches : undefined,
+              })
             }}
           >
-            {advance_mutation.isPending &&
-            advance_mutation.variables === current_run.id
+            {advance_mutation.isPending && is_active_advance
               ? 'Starting…'
               : 'Start run'}
           </button>
-          {advance_mutation.isError &&
-          advance_mutation.variables === current_run.id ? (
+          {advance_mutation.isError && is_active_advance ? (
             <span className="production__pending-resume-error" role="status">
               Start failed: {advance_mutation.error instanceof Error
                 ? advance_mutation.error.message
@@ -281,7 +354,8 @@ export function ProductionShell() {
       return renderPendingDetail()
     }
     if ((current_run.stage === 'image' || current_run.stage === 'tts') && current_run.status === 'waiting') {
-      const is_pending = advance_mutation.isPending && advance_mutation.variables === current_run.id
+      const is_active_advance = advance_mutation.variables?.run_id === current_run.id
+      const is_pending = advance_mutation.isPending && is_active_advance
       return (
         <section className="production__pending-state" aria-label="Asset generation gate">
           <div className="production__pending-state-copy">
@@ -297,11 +371,11 @@ export function ProductionShell() {
               type="button"
               className="production__pending-resume-btn"
               disabled={is_pending}
-              onClick={() => advance_mutation.mutate(current_run.id)}
+              onClick={() => advance_mutation.mutate({ run_id: current_run.id })}
             >
               {is_pending ? 'Starting…' : 'Generate Assets'}
             </button>
-            {advance_mutation.isError && advance_mutation.variables === current_run.id ? (
+            {advance_mutation.isError && is_active_advance ? (
               <span className="production__pending-resume-error" role="status">
                 Failed: {advance_mutation.error instanceof Error
                   ? advance_mutation.error.message
@@ -313,7 +387,8 @@ export function ProductionShell() {
       )
     }
     if (current_run.stage === 'assemble' && current_run.status === 'waiting') {
-      const is_pending = advance_mutation.isPending && advance_mutation.variables === current_run.id
+      const is_active_advance = advance_mutation.variables?.run_id === current_run.id
+      const is_pending = advance_mutation.isPending && is_active_advance
       return (
         <section className="production__pending-state" aria-label="Video assembly gate">
           <div className="production__pending-state-copy">
@@ -329,11 +404,11 @@ export function ProductionShell() {
               type="button"
               className="production__pending-resume-btn"
               disabled={is_pending}
-              onClick={() => advance_mutation.mutate(current_run.id)}
+              onClick={() => advance_mutation.mutate({ run_id: current_run.id })}
             >
               {is_pending ? 'Starting…' : 'Generate Video'}
             </button>
-            {advance_mutation.isError && advance_mutation.variables === current_run.id ? (
+            {advance_mutation.isError && is_active_advance ? (
               <span className="production__pending-resume-error" role="status">
                 Failed: {advance_mutation.error instanceof Error
                   ? advance_mutation.error.message
@@ -420,6 +495,44 @@ export function ProductionShell() {
   const has_scenes = scenes.length > 0
   const clamped_active_index = scenes.length > 0 ? Math.min(active_scene_index, scenes.length - 1) : 0
   const active_scene = has_scenes ? scenes[clamped_active_index] : null
+
+  // Pending-state cache panel: fetched only at pending status (the engine
+  // rewrites these caches during Phase A, so polling them mid-run is wasted).
+  // The panel mirrors keep/drop intent; on Start the unchecked rows become
+  // the drop_caches body. Tracked as a Set of stage keys to drop.
+  const cache_query = useRunCache(
+    current_run?.id ?? null,
+    current_run?.status ?? null,
+  )
+  const cache_entries = cache_query.data ?? []
+  // Bind the keep/drop selection to a specific run_id so switching to a new
+  // pending run resets selections without needing a useEffect (avoids the
+  // setState-in-effect lint and the extra render). When the active run
+  // changes, the stale `for_run_id` is no longer matched and the dropped set
+  // reads as empty.
+  const [dropped_cache_state, set_dropped_cache_state] = useState<{
+    for_run_id: string | null
+    stages: Set<string>
+  }>({ for_run_id: null, stages: new Set() })
+  const dropped_cache_stages =
+    dropped_cache_state.for_run_id === (current_run?.id ?? null)
+      ? dropped_cache_state.stages
+      : new Set<string>()
+
+  function toggle_drop_cache(stage: string) {
+    const run_id = current_run?.id ?? null
+    set_dropped_cache_state((previous) => {
+      const base =
+        previous.for_run_id === run_id ? previous.stages : new Set<string>()
+      const next = new Set(base)
+      if (next.has(stage)) {
+        next.delete(stage)
+      } else {
+        next.add(stage)
+      }
+      return { for_run_id: run_id, stages: next }
+    })
+  }
 
   function getMasterEmptyMessage() {
     if (!current_run) {

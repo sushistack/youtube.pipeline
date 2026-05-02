@@ -200,14 +200,61 @@ export function rewindRun(run_id: string, target_stage_node: RewindStageNode) {
 // resumeRun rejects pending status by design (it is the failed/waiting recovery
 // path), so the UI's Start-run button on the pending guidance card calls this
 // instead. Backend route: POST /api/runs/{id}/advance.
-export function advanceRun(run_id: string) {
+//
+// Optional drop_caches: list of deterministic-agent stages whose cached
+// artifacts the operator unchecked in the pending-state cache panel. Sent as
+// `{"drop_caches": [...]}` body ONLY when the array is non-empty — keeping
+// the legacy advance path byte-identical for callers that don't pass options.
+export function advanceRun(
+  run_id: string,
+  options?: { drop_caches?: string[] },
+) {
+  const drop_caches = options?.drop_caches ?? [];
+  const init: RequestInit = { method: "POST" };
+  if (drop_caches.length > 0) {
+    init.body = JSON.stringify({ drop_caches });
+    init.headers = { "Content-Type": "application/json" };
+  }
   return apiRequest(
     `/runs/${encodeURIComponent(run_id)}/advance`,
     runDetailResponseSchema,
-    {
-      method: "POST",
-    },
+    init,
   );
+}
+
+// --- Cache panel (pending runs) ---
+
+// runCacheEntrySchema mirrors the Go cacheEntryResponse on the wire. stage is
+// open-ended (snake_case key) rather than enum so the backend can introduce
+// new stages without bumping a schema; the UI just renders whatever is
+// present. source_version may be empty when the cache file is unparseable.
+const runCacheEntrySchema = z.object({
+  stage: z.string().min(1),
+  filename: z.string().min(1),
+  size_bytes: z.number().int().nonnegative(),
+  modified_at: z.string().min(1),
+  source_version: z.string(),
+});
+
+const runCacheResponseSchema = z.object({
+  data: z.object({
+    caches: z.array(runCacheEntrySchema),
+  }),
+});
+
+export type RunCacheEntry = z.infer<typeof runCacheEntrySchema>;
+
+/**
+ * GET /api/runs/{id}/cache — lists deterministic-agent caches present on
+ * disk for the run. Returns an empty caches array when the run dir is
+ * missing or empty. Status-gating is the caller's responsibility (the hook
+ * gates on pending status to avoid polling during Phase A execution).
+ */
+export function fetchRunCache(run_id: string) {
+  return apiRequest(
+    `/runs/${encodeURIComponent(run_id)}/cache`,
+    runCacheResponseSchema,
+  ).then((data) => data.caches);
 }
 
 export function fetchRunScenes(run_id: string) {

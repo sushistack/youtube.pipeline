@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/sushistack/youtube.pipeline/internal/api"
@@ -680,4 +683,278 @@ func TestRunHandler_ApproveScenarioReview_NotFound(t *testing.T) {
 	testutil.AssertEqual(t, rec.Code, http.StatusNotFound)
 	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
 	testutil.AssertEqual(t, env.Error.Code, "NOT_FOUND")
+}
+
+// --- Cache panel + drop_caches advance tests (spec: cache-panel-pending) ---
+
+// cacheEnvelope mirrors the GET /api/runs/{id}/cache wire shape. We use a
+// dedicated struct (rather than runEnvelope) because the data shape is
+// completely different — caches array vs. run fields.
+type cacheEnvelope struct {
+	Version int `json:"version"`
+	Data    *struct {
+		Caches []struct {
+			Stage         string `json:"stage"`
+			Filename      string `json:"filename"`
+			SizeBytes     int64  `json:"size_bytes"`
+			ModifiedAt    string `json:"modified_at"`
+			SourceVersion string `json:"source_version"`
+		} `json:"caches"`
+	} `json:"data"`
+	Error *struct {
+		Code string `json:"code"`
+	} `json:"error"`
+}
+
+// writeCacheFile drops a JSON file into {outDir}/{runID}/{filename}, creating
+// the run directory on first call. Centralized here so each table case stays
+// readable.
+func writeCacheFile(t *testing.T, outDir, runID, filename, contents string) {
+	t.Helper()
+	runDir := filepath.Join(outDir, runID)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", runDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, filename), []byte(contents), 0o644); err != nil {
+		t.Fatalf("write %s: %v", filename, err)
+	}
+}
+
+func TestRunHandler_Cache_TableDriven(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	type cacheCase struct {
+		name             string
+		seed             func(t *testing.T, outDir, runID string)
+		runID            string
+		expectedStatus   int
+		expectedErrCode  string
+		expectedStages   []string // sorted
+		expectedSourceVs map[string]string
+	}
+
+	cases := []cacheCase{
+		{
+			name: "both_caches_present",
+			seed: func(t *testing.T, outDir, runID string) {
+				writeCacheFile(t, outDir, runID, "research_cache.json",
+					`{"scp_id":"049","source_version":"v1-deterministic"}`)
+				writeCacheFile(t, outDir, runID, "structure_cache.json",
+					`{"scp_id":"049","source_version":"v1-deterministic"}`)
+			},
+			runID:            "scp-049-run-1",
+			expectedStatus:   http.StatusOK,
+			expectedStages:   []string{"research", "structure"},
+			expectedSourceVs: map[string]string{"research": "v1-deterministic", "structure": "v1-deterministic"},
+		},
+		{
+			name: "one_cache_present",
+			seed: func(t *testing.T, outDir, runID string) {
+				writeCacheFile(t, outDir, runID, "research_cache.json",
+					`{"scp_id":"049","source_version":"v1-deterministic"}`)
+			},
+			runID:            "scp-049-run-1",
+			expectedStatus:   http.StatusOK,
+			expectedStages:   []string{"research"},
+			expectedSourceVs: map[string]string{"research": "v1-deterministic"},
+		},
+		{
+			name: "scenario_cache_present",
+			seed: func(t *testing.T, outDir, runID string) {
+				writeCacheFile(t, outDir, runID, "scenario.json",
+					`{"scp_id":"049","source_version":"v1-deterministic"}`)
+			},
+			runID:            "scp-049-run-1",
+			expectedStatus:   http.StatusOK,
+			expectedStages:   []string{"scenario"},
+			expectedSourceVs: map[string]string{"scenario": "v1-deterministic"},
+		},
+		{
+			name:             "no_caches_run_dir_missing",
+			seed:             func(t *testing.T, outDir, runID string) {},
+			runID:            "scp-049-run-1",
+			expectedStatus:   http.StatusOK,
+			expectedStages:   []string{},
+			expectedSourceVs: map[string]string{},
+		},
+		{
+			name:             "run_not_found",
+			seed:             func(t *testing.T, outDir, runID string) {},
+			runID:            "scp-999-run-1",
+			expectedStatus:   http.StatusNotFound,
+			expectedErrCode:  "NOT_FOUND",
+			expectedStages:   nil,
+			expectedSourceVs: nil,
+		},
+		{
+			name: "malformed_source_version",
+			seed: func(t *testing.T, outDir, runID string) {
+				// Unparseable JSON — entry must still surface, source_version=""
+				writeCacheFile(t, outDir, runID, "research_cache.json", `{not-json{`)
+			},
+			runID:            "scp-049-run-1",
+			expectedStatus:   http.StatusOK,
+			expectedStages:   []string{"research"},
+			expectedSourceVs: map[string]string{"research": ""},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, outDir := newTestRunHandler(t)
+			// Seed a run for cases that aren't testing the not-found path.
+			// Use Create so the run exists in DB; Cache validates existence
+			// via h.svc.Get before scanning disk.
+			if tc.expectedStatus != http.StatusNotFound {
+				createBody, _ := json.Marshal(map[string]string{"scp_id": "049"})
+				createReq := httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewReader(createBody))
+				createReq.Header.Set("Content-Type", "application/json")
+				h.Create(httptest.NewRecorder(), createReq)
+			}
+
+			tc.seed(t, outDir, tc.runID)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/runs/"+tc.runID+"/cache", nil)
+			req.SetPathValue("id", tc.runID)
+			rec := httptest.NewRecorder()
+			h.Cache(rec, req)
+
+			testutil.AssertEqual(t, rec.Code, tc.expectedStatus)
+			env := testutil.ReadJSON[cacheEnvelope](t, rec.Body)
+			if tc.expectedErrCode != "" {
+				if env.Error == nil {
+					t.Fatalf("expected error envelope with code %q, got data=%+v", tc.expectedErrCode, env.Data)
+				}
+				testutil.AssertEqual(t, env.Error.Code, tc.expectedErrCode)
+				return
+			}
+			if env.Data == nil {
+				t.Fatalf("data is nil; raw body: %s", rec.Body.String())
+			}
+
+			gotStages := make([]string, 0, len(env.Data.Caches))
+			gotSourceV := make(map[string]string, len(env.Data.Caches))
+			for _, c := range env.Data.Caches {
+				gotStages = append(gotStages, c.Stage)
+				gotSourceV[c.Stage] = c.SourceVersion
+			}
+			sort.Strings(gotStages)
+			sort.Strings(tc.expectedStages)
+			if len(gotStages) != len(tc.expectedStages) {
+				t.Fatalf("stages = %v, want %v", gotStages, tc.expectedStages)
+			}
+			for i, s := range gotStages {
+				if s != tc.expectedStages[i] {
+					t.Errorf("stages[%d] = %q, want %q", i, s, tc.expectedStages[i])
+				}
+			}
+			for stage, want := range tc.expectedSourceVs {
+				if got := gotSourceV[stage]; got != want {
+					t.Errorf("source_version[%s] = %q, want %q", stage, got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestRunHandler_Advance_DropCaches covers the drop_caches matrix:
+// (a) drop existing file deletes it before the goroutine launches, (b) drop
+// missing file is a no-op (no error), (c) unknown stage rejected with 400,
+// (d) empty body is backward-compatible with no body. The advancer is
+// stubbed via PrepareAdvance returning ErrValidation in (c) so we can assert
+// 400 ahead of any FS work; for (a)/(b)/(d) we wire the engine so
+// PrepareAdvance succeeds.
+func TestRunHandler_Advance_DropCaches_Existing_DeletedBeforeGoroutine(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, outDir := newTestRunHandlerWithEngine(t, "049", "pending", "pending")
+
+	runID := "scp-049-run-1"
+	writeCacheFile(t, outDir, runID, "research_cache.json",
+		`{"scp_id":"049","source_version":"v1-deterministic"}`)
+	cachePath := filepath.Join(outDir, runID, "research_cache.json")
+
+	// Sanity precondition.
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("seed cache not present: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"drop_caches": []string{"research"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/advance", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", runID)
+	rec := httptest.NewRecorder()
+	h.Advance(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusAccepted)
+
+	// Synchronous deletion contract: by the time Advance has returned, the
+	// file must already be gone — independent of when the goroutine runs.
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Fatalf("research_cache.json should be gone after Advance returns; stat err = %v", err)
+	}
+}
+
+func TestRunHandler_Advance_DropCaches_Missing_NoError(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, outDir := newTestRunHandlerWithEngine(t, "049", "pending", "pending")
+	runID := "scp-049-run-1"
+
+	// No cache file seeded — but the request asks to drop it. Idempotent.
+	cachePath := filepath.Join(outDir, runID, "research_cache.json")
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Fatalf("precondition: cache file should not exist; stat err = %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"drop_caches": []string{"research"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/advance", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", runID)
+	rec := httptest.NewRecorder()
+	h.Advance(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusAccepted)
+}
+
+func TestRunHandler_Advance_DropCaches_UnknownStage_Rejected(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, outDir := newTestRunHandlerWithEngine(t, "049", "pending", "pending")
+	runID := "scp-049-run-1"
+
+	// Seed both real caches; the request includes one valid + one typo. The
+	// validator rejects the entire request — neither file should be deleted.
+	writeCacheFile(t, outDir, runID, "research_cache.json",
+		`{"scp_id":"049","source_version":"v1-deterministic"}`)
+	writeCacheFile(t, outDir, runID, "structure_cache.json",
+		`{"scp_id":"049","source_version":"v1-deterministic"}`)
+
+	body, _ := json.Marshal(map[string]any{"drop_caches": []string{"research", "typo"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/advance", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", runID)
+	rec := httptest.NewRecorder()
+	h.Advance(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusBadRequest)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	testutil.AssertEqual(t, env.Error.Code, "VALIDATION_ERROR")
+
+	// Neither file should have been deleted on the failed-validation path.
+	if _, err := os.Stat(filepath.Join(outDir, runID, "research_cache.json")); err != nil {
+		t.Errorf("research_cache.json was deleted despite validation failure: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, runID, "structure_cache.json")); err != nil {
+		t.Errorf("structure_cache.json was deleted despite validation failure: %v", err)
+	}
+}
+
+func TestRunHandler_Advance_EmptyBody_BackwardCompatible(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, _ := newTestRunHandlerWithEngine(t, "049", "pending", "pending")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/scp-049-run-1/advance", nil)
+	req.SetPathValue("id", "scp-049-run-1")
+	rec := httptest.NewRecorder()
+	h.Advance(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusAccepted)
 }

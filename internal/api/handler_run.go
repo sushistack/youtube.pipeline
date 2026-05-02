@@ -8,12 +8,31 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/pipeline"
 	"github.com/sushistack/youtube.pipeline/internal/service"
 )
+
+// cacheFiles is the single source of truth for the deterministic-agent cache
+// stage → on-disk filename mapping. Used by the pending-state cache panel
+// (GET /api/runs/{id}/cache) and by the optional drop_caches body of
+// POST /api/runs/{id}/advance. Keys must match the strings used by the UI.
+var cacheFiles = map[string]string{
+	"research":  "research_cache.json",
+	"structure": "structure_cache.json",
+	"scenario":  "scenario.json",
+}
+
+// cacheStageOrder is the canonical iteration / display order for cache
+// stages. Map iteration is random in Go, so any caller that needs stable
+// ordering (response rows, error messages) ranges this slice and looks up
+// filenames in cacheFiles.
+var cacheStageOrder = []string{"research", "structure", "scenario"}
 
 // maxRequestBodyBytes caps any JSON request body we accept. 64KB is far more
 // than any current endpoint needs; resume is a tiny flag, create is a short
@@ -365,11 +384,102 @@ func (h *RunHandler) Resume(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// cacheEntryResponse is one row of GET /api/runs/{id}/cache.
+// source_version is "" when the file is unparseable as JSON or has no
+// source_version key — the entry still surfaces so the operator can decide.
+type cacheEntryResponse struct {
+	Stage         string `json:"stage"`
+	Filename      string `json:"filename"`
+	SizeBytes     int64  `json:"size_bytes"`
+	ModifiedAt    string `json:"modified_at"`
+	SourceVersion string `json:"source_version"`
+}
+
+// cacheListResponse is the envelope payload for GET /api/runs/{id}/cache.
+// caches is always a non-nil slice; an empty caches array (run dir missing
+// or no cached files) is the well-defined "no caches" state and renders as
+// `{"caches":[]}` rather than `{"caches":null}`.
+type cacheListResponse struct {
+	Caches []cacheEntryResponse `json:"caches"`
+}
+
+// advanceRequest is the optional request body for POST /api/runs/{id}/advance.
+// drop_caches lists the deterministic-agent caches to delete BEFORE Phase A
+// dispatches; each entry must be a key of the cacheFiles map. Empty / missing
+// → no deletions, preserving the legacy advance behavior verbatim.
+type advanceRequest struct {
+	DropCaches []string `json:"drop_caches"`
+}
+
+// Cache handles GET /api/runs/{id}/cache. Returns the list of deterministic-
+// agent caches present on disk for the run, with size, mtime, and the
+// embedded source_version. Caches are only meaningful for pending runs (the
+// caller gates the fetch on status), but the handler does not gate by status
+// — the listing is harmless at any stage.
+//
+// Returns 404 NOT_FOUND when the run does not exist in the DB. Run-dir
+// missing or empty → 200 with an empty caches array.
+func (h *RunHandler) Cache(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	// Verify the run exists; surfaces a typed 404 instead of just returning
+	// an empty list for a non-existent run.
+	if _, err := h.svc.Get(r.Context(), id); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	runDir := filepath.Join(h.outputDir, id)
+	entries := make([]cacheEntryResponse, 0, len(cacheFiles))
+	// Iterate in the canonical order researcher → structurer → scenario so
+	// the UI sees a stable row order across calls. Map iteration is random,
+	// so range cacheStageOrder and look up filenames in cacheFiles.
+	for _, stage := range cacheStageOrder {
+		filename, ok := cacheFiles[stage]
+		if !ok {
+			continue
+		}
+		full := filepath.Join(runDir, filename)
+		info, err := os.Stat(full)
+		if err != nil {
+			// Missing or unreadable → not surfaced; the panel only lists
+			// caches that actually exist.
+			continue
+		}
+		entry := cacheEntryResponse{
+			Stage:      stage,
+			Filename:   filename,
+			SizeBytes:  info.Size(),
+			ModifiedAt: info.ModTime().UTC().Format(time.RFC3339Nano),
+		}
+		// Partial unmarshal: tolerant of any shape so long as source_version
+		// is a string. JSON errors → empty source_version, entry still
+		// surfaces (operator decides whether to drop).
+		if data, readErr := os.ReadFile(full); readErr == nil {
+			var probe struct {
+				SourceVersion string `json:"source_version"`
+			}
+			if err := json.Unmarshal(data, &probe); err == nil {
+				entry.SourceVersion = probe.SourceVersion
+			}
+		}
+		entries = append(entries, entry)
+	}
+
+	writeJSON(w, http.StatusOK, cacheListResponse{Caches: entries})
+}
+
 // Advance handles POST /api/runs/{id}/advance. Used by the UI Start-run button
 // to kick off a freshly-created pending run (Phase A entry). Resume rejects
 // pending status by design (it is the failed/waiting recovery path), so the
 // pending → critic transition needs a separate endpoint that maps to the
 // engine's automated dispatch. HITL stages are still rejected at the engine.
+//
+// Optional body {"drop_caches": ["research", ...]}: each entry must be a key
+// of cacheFiles; the listed cache files are deleted SYNCHRONOUSLY between
+// PrepareAdvance and the goroutine launch so the engine sees a clean slate
+// (no race where it writes a fresh cache before deletion lands). Missing
+// files are not errors. Empty / no body → existing behavior preserved.
 //
 // Phase A involves multiple LLM calls that can take several minutes, so the
 // handler dispatches the engine in a goroutine and returns 202 Accepted
@@ -377,12 +487,44 @@ func (h *RunHandler) Resume(w http.ResponseWriter, r *http.Request) {
 func (h *RunHandler) Advance(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
+	// Optional body: empty body / no Content-Length → DropCaches stays nil.
+	var body advanceRequest
+	if err := decodeJSONBody(r, &body, true); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error(), false)
+		return
+	}
+
+	// Validate every requested stage BEFORE we touch the run or the
+	// filesystem. An unknown stage is a typo, not a partial-success scenario;
+	// reject the entire request so no files are deleted on bad input.
+	for _, stage := range body.DropCaches {
+		if _, ok := cacheFiles[stage]; !ok {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR",
+				fmt.Sprintf("drop_caches contains unknown stage %q (valid: %s)", stage, strings.Join(cacheStageOrder, ", ")),
+				false)
+			return
+		}
+	}
+
 	// Validate synchronously: returns typed errors for missing run or
 	// unconfigured advancer before we commit to async execution.
 	run, err := h.svc.PrepareAdvance(r.Context(), id)
 	if err != nil {
 		writeDomainError(w, err)
 		return
+	}
+
+	// Synchronous deletion BEFORE the goroutine: guarantees the engine sees
+	// the post-delete state and lets tests observe deletions immediately
+	// after the handler returns. Missing file → not an error (idempotent).
+	for _, stage := range body.DropCaches {
+		filename := cacheFiles[stage]
+		full := filepath.Join(h.outputDir, id, filename)
+		if err := os.Remove(full); err != nil && !errors.Is(err, os.ErrNotExist) {
+			h.logger.Warn("drop cache failed", "run_id", id, "stage", stage, "error", err.Error())
+			continue
+		}
+		h.logger.Info("cache dropped", "run_id", id, "stage", stage, "filename", filename)
 	}
 
 	// Phase A runs multiple LLM calls that can take several minutes.

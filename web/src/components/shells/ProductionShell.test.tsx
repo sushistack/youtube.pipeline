@@ -508,6 +508,13 @@ describe('ProductionShell integration', () => {
         })
       }
 
+      if (url.endsWith('/api/runs/scp-173-run-1/cache')) {
+        return new Response(
+          JSON.stringify({ data: { caches: [] }, version: 1 }),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 },
+        )
+      }
+
       if (
         url.endsWith('/api/runs/scp-173-run-1/advance') &&
         init?.method === 'POST'
@@ -563,6 +570,184 @@ describe('ProductionShell integration', () => {
     await waitFor(() => {
       expect(advance_calls).toHaveLength(1)
     })
+  })
+
+  // --- Spec: cache-panel-pending — three pending-state cases ---
+
+  // Helper to mock the inventory + status + cache endpoints for the pending
+  // SCP-173 run with a configurable cache list. Returns a getter for any
+  // captured /advance request bodies so tests can assert on drop_caches.
+  function mockFetchForPendingCache(
+    caches: Array<{
+      stage: string
+      filename: string
+      size_bytes: number
+      modified_at: string
+      source_version: string
+    }>,
+  ) {
+    const advance_bodies: Array<unknown> = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = requestUrl(input)
+
+      if (url.endsWith('/api/runs')) {
+        return new Response(JSON.stringify(run_list_response), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        })
+      }
+      if (url.endsWith('/api/runs/scp-173-run-1/status')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              run: run_list_response.data.items[0],
+              summary: 'Queued and waiting to start',
+            },
+            version: 1,
+          }),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 },
+        )
+      }
+      if (url.endsWith('/api/runs/scp-173-run-1/cache')) {
+        return new Response(
+          JSON.stringify({ data: { caches }, version: 1 }),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 },
+        )
+      }
+      if (
+        url.endsWith('/api/runs/scp-173-run-1/advance') &&
+        init?.method === 'POST'
+      ) {
+        const body_text =
+          typeof init.body === 'string' ? init.body : null
+        advance_bodies.push(
+          body_text != null && body_text.length > 0
+            ? JSON.parse(body_text)
+            : null,
+        )
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...run_list_response.data.items[0],
+              stage: 'scenario_review',
+              status: 'waiting',
+            },
+            version: 1,
+          }),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 },
+        )
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`)
+    })
+    return { advance_bodies }
+  }
+
+  it('omits the cache panel when no cached artifacts exist for the pending run', async () => {
+    mockFetchForPendingCache([])
+
+    renderWithProviders(
+      <KeyboardShortcutsProvider>
+        <Routes>
+          <Route path="/" element={<AppShell />}>
+            <Route path="production" element={<ProductionShell />} />
+          </Route>
+        </Routes>
+      </KeyboardShortcutsProvider>,
+      { initialEntries: ['/production?run=scp-173-run-1'] },
+    )
+
+    await screen.findByLabelText('Pending run guidance')
+    // Wait for the cache fetch to settle then assert absence.
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Cached artifacts')).not.toBeInTheDocument()
+    })
+  })
+
+  it('renders one row per cached artifact when the cache list is non-empty', async () => {
+    mockFetchForPendingCache([
+      {
+        stage: 'research',
+        filename: 'research_cache.json',
+        size_bytes: 4096,
+        modified_at: '2026-04-19T00:00:00Z',
+        source_version: 'v1-deterministic',
+      },
+      {
+        stage: 'structure',
+        filename: 'structure_cache.json',
+        size_bytes: 2048,
+        modified_at: '2026-04-19T00:01:00Z',
+        source_version: 'v1-deterministic',
+      },
+    ])
+
+    renderWithProviders(
+      <KeyboardShortcutsProvider>
+        <Routes>
+          <Route path="/" element={<AppShell />}>
+            <Route path="production" element={<ProductionShell />} />
+          </Route>
+        </Routes>
+      </KeyboardShortcutsProvider>,
+      { initialEntries: ['/production?run=scp-173-run-1'] },
+    )
+
+    const panel = await screen.findByLabelText('Cached artifacts')
+    expect(within(panel).getByText('research')).toBeInTheDocument()
+    expect(within(panel).getByText('structure')).toBeInTheDocument()
+    // Default-checked = keep; both rows should be checked initially.
+    const checkboxes = within(panel).getAllByRole('checkbox')
+    expect(checkboxes).toHaveLength(2)
+    checkboxes.forEach((cb) => expect(cb).toBeChecked())
+  })
+
+  it('sends drop_caches body with unchecked rows when Start run is clicked', async () => {
+    const { advance_bodies } = mockFetchForPendingCache([
+      {
+        stage: 'research',
+        filename: 'research_cache.json',
+        size_bytes: 4096,
+        modified_at: '2026-04-19T00:00:00Z',
+        source_version: 'v1-deterministic',
+      },
+      {
+        stage: 'structure',
+        filename: 'structure_cache.json',
+        size_bytes: 2048,
+        modified_at: '2026-04-19T00:01:00Z',
+        source_version: 'v1-deterministic',
+      },
+    ])
+
+    const user = userEvent.setup()
+
+    renderWithProviders(
+      <KeyboardShortcutsProvider>
+        <Routes>
+          <Route path="/" element={<AppShell />}>
+            <Route path="production" element={<ProductionShell />} />
+          </Route>
+        </Routes>
+      </KeyboardShortcutsProvider>,
+      { initialEntries: ['/production?run=scp-173-run-1'] },
+    )
+
+    const panel = await screen.findByLabelText('Cached artifacts')
+    // Uncheck the research row (label is 'research', mono stage span).
+    const research_checkbox = within(panel)
+      .getByText('research')
+      .closest('li')!
+      .querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(research_checkbox).toBeChecked()
+    await user.click(research_checkbox)
+    expect(research_checkbox).not.toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Start run' }))
+
+    await waitFor(() => {
+      expect(advance_bodies).toHaveLength(1)
+    })
+    expect(advance_bodies[0]).toEqual({ drop_caches: ['research'] })
   })
 
   it('renders the empty-state New Run CTA when no runs exist', async () => {
