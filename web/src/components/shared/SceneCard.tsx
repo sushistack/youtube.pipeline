@@ -1,6 +1,7 @@
 import type { ReviewItem } from '../../contracts/runContracts'
 
 interface SceneCardProps {
+  is_locally_approved?: boolean
   is_regenerating?: boolean
   item: ReviewItem
   on_select: () => void
@@ -27,9 +28,16 @@ function formatScore(score: number | null | undefined) {
   return `${Math.round(score)}`
 }
 
-function reviewStateLabel(review_status: ReviewItem['review_status'], is_regenerating: boolean) {
+function reviewStateLabel(
+  review_status: ReviewItem['review_status'],
+  is_regenerating: boolean,
+  is_locally_approved: boolean,
+) {
   if (is_regenerating) {
     return 'Regenerating'
+  }
+  if (is_locally_approved) {
+    return 'Approved'
   }
   switch (review_status) {
     case 'waiting_for_review':
@@ -45,8 +53,18 @@ function reviewStateLabel(review_status: ReviewItem['review_status'], is_regener
   }
 }
 
-export function SceneCard({ is_regenerating = false, item, on_select, selected }: SceneCardProps) {
-  const status_key = is_regenerating ? 'regenerating' : item.review_status
+export function SceneCard({
+  is_locally_approved = false,
+  is_regenerating = false,
+  item,
+  on_select,
+  selected,
+}: SceneCardProps) {
+  const status_key = is_regenerating
+    ? 'regenerating'
+    : is_locally_approved
+    ? 'approved'
+    : item.review_status
 
   return (
     <button
@@ -94,7 +112,7 @@ export function SceneCard({ is_regenerating = false, item, on_select, selected }
           {formatScore(item.critic_score)}
         </span>
         <span className="scene-card__status" data-status={status_key}>
-          {reviewStateLabel(item.review_status, is_regenerating)}
+          {reviewStateLabel(item.review_status, is_regenerating, is_locally_approved)}
         </span>
       </div>
     </button>

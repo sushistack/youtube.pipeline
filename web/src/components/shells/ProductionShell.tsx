@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
 import { advanceRun, fetchRunList } from '../../lib/apiClient'
@@ -428,6 +428,9 @@ export function ProductionShell() {
           key={current_run.id}
           run_id={current_run.id}
           selected_scene_index={active_scene?.scene_index ?? 0}
+          approved_scenes={approved_scenes}
+          on_toggle_scene_approval={toggle_scene_approval}
+          on_revoke_scene_approval={revoke_scene_approval}
         />
       )
     }
@@ -469,6 +472,10 @@ export function ProductionShell() {
               item={scene}
               on_select={() => set_active_scene_index(index)}
               selected={index === selected_index}
+              is_locally_approved={
+                (is_scenario_review && approved_scenes.has(scene.scene_index)) ||
+                is_post_scenario_pre_batch_stage
+              }
             />
           </li>
         ))}
@@ -495,6 +502,47 @@ export function ProductionShell() {
   const has_scenes = scenes.length > 0
   const clamped_active_index = scenes.length > 0 ? Math.min(active_scene_index, scenes.length - 1) : 0
   const active_scene = has_scenes ? scenes[clamped_active_index] : null
+
+  // Per-scene approval is a UI-side gate during scenario_review. Lifting it
+  // here lets both ScenarioInspector and the master SceneCard list read the
+  // same set, so toggling "Approve scene" updates the list badge in lockstep.
+  // Reset on run/stage change: leaving scenario_review (advance, regen) and
+  // coming back must start fresh — stale approvals would mislead the operator.
+  const [approved_scenes, set_approved_scenes] = useState<Set<number>>(new Set())
+  useEffect(() => {
+    set_approved_scenes(new Set())
+  }, [current_run?.id, current_run?.stage])
+  const toggle_scene_approval = useCallback((scene_index: number) => {
+    set_approved_scenes((prev) => {
+      const next = new Set(prev)
+      if (next.has(scene_index)) {
+        next.delete(scene_index)
+      } else {
+        next.add(scene_index)
+      }
+      return next
+    })
+  }, [])
+  const revoke_scene_approval = useCallback((scene_index: number) => {
+    set_approved_scenes((prev) => {
+      if (!prev.has(scene_index)) return prev
+      const next = new Set(prev)
+      next.delete(scene_index)
+      return next
+    })
+  }, [])
+  const is_scenario_review =
+    current_run?.stage === 'scenario_review' && current_run.status === 'waiting'
+  // Stages between scenario approval and batch_review entry: the operator has
+  // narration-approved every scene (scenario_review gate passed) but the
+  // server's segments.review_status field — which belongs to the batch_review
+  // shot-level gate — has not been touched yet (PrepareBatchReview rewrites
+  // it on batch_review entry). Display all scenes as Approved here; falling
+  // through to review_status would surface stale "Pending" badges.
+  const is_post_scenario_pre_batch_stage =
+    current_run?.stage === 'character_pick' ||
+    current_run?.stage === 'image' ||
+    current_run?.stage === 'tts'
 
   // Pending-state cache panel: fetched only at pending status (the engine
   // rewrites these caches during Phase A, so polling them mid-run is wasted).

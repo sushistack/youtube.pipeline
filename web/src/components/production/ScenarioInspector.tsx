@@ -1,21 +1,38 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEditNarration, useRunScenes } from '../../hooks/useRunScenes'
 import { InlineNarrationEditor } from './InlineNarrationEditor'
-import { approveScenarioReview, ApiClientError } from '../../lib/apiClient'
+import {
+  approveScenarioReview,
+  ApiClientError,
+  rewindRun,
+} from '../../lib/apiClient'
 import type { RunSummary } from '../../contracts/runContracts'
 import { queryKeys } from '../../lib/queryKeys'
 
 interface ScenarioInspectorProps {
   run_id: string
   selected_scene_index: number
+  // Approved-scene state is owned by ProductionShell so the master scene list
+  // and this inspector stay in lockstep. When standalone (e.g. tests), the
+  // component manages its own ephemeral set via the fallbacks below.
+  approved_scenes?: Set<number>
+  on_toggle_scene_approval?: (scene_index: number) => void
+  on_revoke_scene_approval?: (scene_index: number) => void
 }
 
-export function ScenarioInspector({ run_id, selected_scene_index }: ScenarioInspectorProps) {
+export function ScenarioInspector({
+  run_id,
+  selected_scene_index,
+  approved_scenes: approved_scenes_prop,
+  on_toggle_scene_approval,
+  on_revoke_scene_approval,
+}: ScenarioInspectorProps) {
   const scenes_query = useRunScenes(run_id)
   const mutation = useEditNarration(run_id)
   const [active_index, set_active_index] = useState<number | null>(null)
-  const [approved_scenes, set_approved_scenes] = useState<Set<number>>(new Set())
+  const [local_approved_scenes, set_local_approved_scenes] = useState<Set<number>>(new Set())
+  const approved_scenes = approved_scenes_prop ?? local_approved_scenes
 
   // Reset edit state when the user navigates to a different scene.
   useEffect(() => {
@@ -32,8 +49,26 @@ export function ScenarioInspector({ run_id, selected_scene_index }: ScenarioInsp
     },
   })
 
-  const toggle_scene_approval = useCallback((scene_index: number) => {
-    set_approved_scenes((prev) => {
+  // Regen rolls the run back to pending so the operator can re-run Phase A.
+  // Server clears segments + scenario.json; research/structure caches survive
+  // and are toggleable in the pending-state cache panel before Start run.
+  const regen_mutation = useMutation<RunSummary, ApiClientError>({
+    mutationFn: () => rewindRun(run_id, 'scenario'),
+    onSuccess: () => {
+      query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
+      query_client.invalidateQueries({ queryKey: queryKeys.runs.status(run_id) })
+      query_client.invalidateQueries({ queryKey: queryKeys.runs.detail(run_id) })
+      query_client.invalidateQueries({ queryKey: queryKeys.runs.scenes(run_id) })
+      query_client.invalidateQueries({ queryKey: queryKeys.runs.cache(run_id) })
+    },
+  })
+
+  function toggle_scene_approval(scene_index: number) {
+    if (on_toggle_scene_approval) {
+      on_toggle_scene_approval(scene_index)
+      return
+    }
+    set_local_approved_scenes((prev) => {
       const next = new Set(prev)
       if (next.has(scene_index)) {
         next.delete(scene_index)
@@ -42,16 +77,20 @@ export function ScenarioInspector({ run_id, selected_scene_index }: ScenarioInsp
       }
       return next
     })
-  }, [])
+  }
 
-  const revoke_scene_approval = useCallback((scene_index: number) => {
-    set_approved_scenes((prev) => {
+  function revoke_scene_approval(scene_index: number) {
+    if (on_revoke_scene_approval) {
+      on_revoke_scene_approval(scene_index)
+      return
+    }
+    set_local_approved_scenes((prev) => {
       if (!prev.has(scene_index)) return prev
       const next = new Set(prev)
       next.delete(scene_index)
       return next
     })
-  }, [])
+  }
 
   if (scenes_query.isPending) {
     return (
@@ -83,6 +122,23 @@ export function ScenarioInspector({ run_id, selected_scene_index }: ScenarioInsp
 
   const all_approved = approved_scenes.size === scenes.length
   const is_scene_approved = selected_scene != null && approved_scenes.has(selected_scene.scene_index)
+  const is_busy = approve_mutation.isPending || regen_mutation.isPending
+
+  function handle_regen() {
+    if (is_busy) {
+      return
+    }
+    const ok = window.confirm(
+      'Regenerate scenario?\n\n' +
+        '시나리오와 모든 장면 narration이 삭제되고 run이 pending으로 ' +
+        '되돌아갑니다. research/structure 캐시는 보존되며, 다음 화면에서 ' +
+        '버릴 캐시를 선택할 수 있습니다.\n\n이 작업은 되돌릴 수 없습니다.',
+    )
+    if (!ok) {
+      return
+    }
+    regen_mutation.mutate()
+  }
 
   return (
     <section className="scenario-inspector" aria-label="Scenario narration review">
@@ -129,19 +185,36 @@ export function ScenarioInspector({ run_id, selected_scene_index }: ScenarioInsp
         <span className="scenario-inspector__progress">
           {approved_scenes.size} / {scenes.length} approved
         </span>
-        <button
-          type="button"
-          className="scenario-inspector__approve"
-          onClick={() => approve_mutation.mutate()}
-          disabled={approve_mutation.isPending || !all_approved}
-          aria-label="Approve scenario and advance to character pick"
-          title={!all_approved ? `Approve all ${scenes.length} scenes first` : undefined}
-        >
-          {approve_mutation.isPending ? 'Approving…' : 'Approve Story'}
-        </button>
+        <div className="scenario-inspector__footer-actions">
+          <button
+            type="button"
+            className="scenario-inspector__regen"
+            onClick={handle_regen}
+            disabled={is_busy}
+            aria-label="Regenerate scenario from research"
+            title="Discard scenario + scenes and rewind to pending"
+          >
+            {regen_mutation.isPending ? 'Regenerating…' : 'Regen'}
+          </button>
+          <button
+            type="button"
+            className="scenario-inspector__approve"
+            onClick={() => approve_mutation.mutate()}
+            disabled={is_busy || !all_approved}
+            aria-label="Approve scenario and advance to character pick"
+            title={!all_approved ? `Approve all ${scenes.length} scenes first` : undefined}
+          >
+            {approve_mutation.isPending ? 'Approving…' : 'Approve Story'}
+          </button>
+        </div>
         {approve_mutation.isError ? (
           <p className="scenario-inspector__approve-error" role="alert">
             {approve_mutation.error?.message ?? 'Failed to approve story.'}
+          </p>
+        ) : null}
+        {regen_mutation.isError ? (
+          <p className="scenario-inspector__approve-error" role="alert">
+            {regen_mutation.error?.message ?? 'Failed to regenerate scenario.'}
           </p>
         ) : null}
       </footer>

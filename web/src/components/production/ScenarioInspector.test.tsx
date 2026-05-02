@@ -135,6 +135,74 @@ describe('ScenarioInspector', () => {
     })
   })
 
+  it('regenerates the scenario when Regen is confirmed', async () => {
+    const fetch_spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : (input as Request).url
+      if (url.includes('/rewind')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 'scp-049-run-1',
+              scp_id: '049',
+              stage: 'pending',
+              status: 'pending',
+              retry_count: 0,
+              created_at: '2026-04-26T00:00:00Z',
+              updated_at: '2026-04-26T00:00:00Z',
+            },
+            version: 1,
+          }),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 },
+        )
+      }
+      return buildScenesResponse([{ scene_index: 0, narration: '첫 장면' }])
+    })
+    const confirm_spy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    renderWithProviders(<ScenarioInspector run_id="scp-049-run-1" selected_scene_index={0} />)
+
+    const regen_btn = await screen.findByRole('button', { name: /regenerate scenario from research/i })
+    fireEvent.click(regen_btn)
+    expect(confirm_spy).toHaveBeenCalledTimes(1)
+
+    await waitFor(() => {
+      const rewind_calls = fetch_spy.mock.calls.filter((call) => {
+        const u = typeof call[0] === 'string' ? call[0] : (call[0] as Request).url
+        return u.includes('/rewind')
+      })
+      expect(rewind_calls).toHaveLength(1)
+      const init = rewind_calls[0][1] as RequestInit
+      expect(init.method).toBe('POST')
+      expect(JSON.parse(init.body as string)).toEqual({ target_stage_node: 'scenario' })
+    })
+
+    confirm_spy.mockRestore()
+  })
+
+  it('does not call rewind when Regen is cancelled', async () => {
+    const fetch_spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      buildScenesResponse([{ scene_index: 0, narration: '첫 장면' }]),
+    )
+    const confirm_spy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    renderWithProviders(<ScenarioInspector run_id="scp-049-run-1" selected_scene_index={0} />)
+
+    const regen_btn = await screen.findByRole('button', { name: /regenerate scenario from research/i })
+    // Clear scene-fetch calls (and any leftover spy state from prior tests) so
+    // the /rewind assertion only sees post-click traffic.
+    fetch_spy.mockClear()
+    fireEvent.click(regen_btn)
+    expect(confirm_spy).toHaveBeenCalledTimes(1)
+
+    const rewind_calls = fetch_spy.mock.calls.filter((call) => {
+      const u = typeof call[0] === 'string' ? call[0] : (call[0] as Request).url
+      return u.includes('/rewind')
+    })
+    expect(rewind_calls).toHaveLength(0)
+
+    confirm_spy.mockRestore()
+  })
+
   it('keeps approve button enabled and shows error on failure', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = typeof input === 'string' ? input : (input as Request).url

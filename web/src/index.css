@@ -2541,6 +2541,48 @@
     margin-right: auto;
   }
 
+  .scenario-inspector__footer-actions {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  .scenario-inspector__regen {
+    min-height: 2.75rem;
+    border: 1.5px solid rgb(var(--border-active));
+    border-radius: 0.63rem;
+    background: transparent;
+    color: rgb(var(--foreground));
+    padding: 0.6rem 1.1rem;
+    font: inherit;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition:
+      border-color 160ms ease,
+      background-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .scenario-inspector__regen:hover:not(:disabled) {
+    border-color: rgb(var(--destructive));
+    background: rgba(var(--destructive), 0.08);
+    color: rgb(var(--destructive));
+    transform: translateY(-1px);
+  }
+
+  .scenario-inspector__regen:focus-visible {
+    outline: 2px solid rgb(var(--destructive));
+    outline-offset: 3px;
+  }
+
+  .scenario-inspector__regen:disabled {
+    cursor: default;
+    opacity: 0.55;
+    transform: none;
+  }
+
   /* ── Inline Narration Editor ─────────────────────────────────────────────── */
 
   .inline-narration-editor {
