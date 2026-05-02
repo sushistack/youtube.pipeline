@@ -2442,6 +2442,57 @@
     font-size: var(--type-body-sm-size);
   }
 
+  .scenario-inspector__single {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .scenario-inspector__scene-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .scenario-inspector__scene-approve {
+    min-height: 2.25rem;
+    border: 1.5px solid rgb(var(--border-active));
+    border-radius: 0.5rem;
+    background: transparent;
+    color: rgb(var(--foreground));
+    padding: 0.4rem 1rem;
+    font: inherit;
+    font-size: var(--type-body-sm-size);
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      border-color 140ms ease,
+      background-color 140ms ease,
+      color 140ms ease;
+  }
+
+  .scenario-inspector__scene-approve:hover {
+    border-color: rgb(var(--success));
+    color: rgb(var(--success));
+  }
+
+  .scenario-inspector__scene-approve[data-approved] {
+    border-color: rgb(var(--success));
+    background: rgba(var(--success), 0.12);
+    color: rgb(var(--success));
+  }
+
+  .scenario-inspector__scene-approve[data-approved]:hover {
+    border-color: rgb(var(--destructive));
+    background: rgba(var(--destructive), 0.08);
+    color: rgb(var(--destructive));
+  }
+
+  .scenario-inspector__progress {
+    font-size: var(--type-body-sm-size);
+    color: rgb(var(--muted));
+    align-self: center;
+    margin-right: auto;
+  }
+
   /* ── Inline Narration Editor ─────────────────────────────────────────────── */
 
   .inline-narration-editor {
@@ -2485,7 +2536,8 @@
     line-height: var(--type-body-line-height);
     color: rgb(var(--foreground));
     border-radius: 0.35rem;
-    padding: 0.25rem;
+    border: 1px solid transparent;
+    padding: 0.5rem 0.75rem;
     transition: background-color 120ms ease;
     width: 100%;
     text-align: left;
@@ -2507,7 +2559,8 @@
 
   .inline-narration-editor__textarea {
     width: 100%;
-    resize: vertical;
+    resize: none;
+    overflow: hidden;
     border: 1px solid rgba(var(--accent), 0.4);
     border-radius: 0.35rem;
     background: rgba(var(--background), 0.8);

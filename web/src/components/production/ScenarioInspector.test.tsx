@@ -30,7 +30,7 @@ function buildScenesResponse(items: { scene_index: number; narration: string }[]
 }
 
 describe('ScenarioInspector', () => {
-  it('renders scene list with scene labels and narration text', async () => {
+  it('renders only the selected scene with its label and narration', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       buildScenesResponse([
         { scene_index: 0, narration: 'SCP-049는 흑사병 의사입니다.' },
@@ -38,15 +38,15 @@ describe('ScenarioInspector', () => {
       ]),
     )
 
-    renderWithProviders(<ScenarioInspector run_id="scp-049-run-1" />)
+    renderWithProviders(<ScenarioInspector run_id="scp-049-run-1" selected_scene_index={0} />)
 
     expect(await screen.findByText('Scene 1')).toBeInTheDocument()
-    expect(await screen.findByText('SCP-049는 흑사병 의사입니다.')).toBeInTheDocument()
-    expect(screen.getByText('Scene 2')).toBeInTheDocument()
-    expect(screen.getByText('그의 손길이 닿으면 모든 것이 멈춥니다.')).toBeInTheDocument()
+    expect(screen.getByText('SCP-049는 흑사병 의사입니다.')).toBeInTheDocument()
+    expect(screen.queryByText('Scene 2')).not.toBeInTheDocument()
+    expect(screen.queryByText('그의 손길이 닿으면 모든 것이 멈춥니다.')).not.toBeInTheDocument()
   })
 
-  it('shows narration in scene_index order from API payload', async () => {
+  it('shows only the scene matching selected_scene_index', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       buildScenesResponse([
         { scene_index: 0, narration: '첫 장면' },
@@ -55,23 +55,25 @@ describe('ScenarioInspector', () => {
       ]),
     )
 
-    renderWithProviders(<ScenarioInspector run_id="run-test" />)
+    renderWithProviders(<ScenarioInspector run_id="run-test" selected_scene_index={1} />)
 
     const labels = await screen.findAllByText(/^Scene \d+$/)
-    expect(labels).toHaveLength(3)
-    expect(labels[0]).toHaveTextContent('Scene 1')
-    expect(labels[2]).toHaveTextContent('Scene 3')
+    expect(labels).toHaveLength(1)
+    expect(labels[0]).toHaveTextContent('Scene 2')
+    expect(screen.queryByText('첫 장면')).not.toBeInTheDocument()
+    expect(screen.getByText('두 번째 장면')).toBeInTheDocument()
+    expect(screen.queryByText('세 번째 장면')).not.toBeInTheDocument()
   })
 
   it('shows loading state before data arrives', () => {
     vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise(() => {}))
-    renderWithProviders(<ScenarioInspector run_id="run-loading" />)
+    renderWithProviders(<ScenarioInspector run_id="run-loading" selected_scene_index={0} />)
     expect(screen.getByText(/loading scenes/i)).toBeInTheDocument()
   })
 
   it('shows error state when fetch fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'))
-    renderWithProviders(<ScenarioInspector run_id="run-err" />)
+    renderWithProviders(<ScenarioInspector run_id="run-err" selected_scene_index={0} />)
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument()
@@ -83,12 +85,12 @@ describe('ScenarioInspector', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       buildScenesResponse([]),
     )
-    renderWithProviders(<ScenarioInspector run_id="run-empty" />)
+    renderWithProviders(<ScenarioInspector run_id="run-empty" selected_scene_index={0} />)
 
     expect(await screen.findByText(/no narration scenes found/i)).toBeInTheDocument()
   })
 
-  it('renders approve button when scenes load and POSTs on click', async () => {
+  it('requires all scenes approved before overall approve button is enabled', async () => {
     const fetch_spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = typeof input === 'string' ? input : (input as Request).url
       if (url.includes('/scenario/approve')) {
@@ -111,12 +113,18 @@ describe('ScenarioInspector', () => {
       return buildScenesResponse([{ scene_index: 0, narration: '첫 장면' }])
     })
 
-    renderWithProviders(<ScenarioInspector run_id="scp-049-run-1" />)
+    renderWithProviders(<ScenarioInspector run_id="scp-049-run-1" selected_scene_index={0} />)
 
-    const button = await screen.findByRole('button', { name: /approve scenario/i })
-    expect(button).toBeEnabled()
+    // Overall approve button is disabled until all scenes are individually approved.
+    const overall_btn = await screen.findByRole('button', { name: /approve scenario/i })
+    expect(overall_btn).toBeDisabled()
 
-    fireEvent.click(button)
+    // Per-scene approve unlocks the overall button.
+    const scene_btn = screen.getByRole('button', { name: /approve scene 1/i })
+    fireEvent.click(scene_btn)
+    expect(overall_btn).toBeEnabled()
+
+    fireEvent.click(overall_btn)
 
     await waitFor(() => {
       const approve_calls = fetch_spy.mock.calls.filter((call) => {
@@ -139,9 +147,14 @@ describe('ScenarioInspector', () => {
       return buildScenesResponse([{ scene_index: 0, narration: '첫 장면' }])
     })
 
-    renderWithProviders(<ScenarioInspector run_id="scp-049-run-1" />)
+    renderWithProviders(<ScenarioInspector run_id="scp-049-run-1" selected_scene_index={0} />)
 
-    const button = await screen.findByRole('button', { name: /approve scenario/i })
+    // Approve the scene first so the overall button becomes active.
+    const scene_btn = await screen.findByRole('button', { name: /approve scene 1/i })
+    fireEvent.click(scene_btn)
+
+    const button = screen.getByRole('button', { name: /approve scenario/i })
+    expect(button).toBeEnabled()
     fireEvent.click(button)
 
     await waitFor(() => {

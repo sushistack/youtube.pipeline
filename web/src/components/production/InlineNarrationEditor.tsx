@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { UseMutationResult } from '@tanstack/react-query'
 import type { Scene } from '../../contracts/runContracts'
 import type { ApiClientError } from '../../lib/apiClient'
@@ -9,6 +9,7 @@ interface InlineNarrationEditorProps {
   is_active: boolean
   on_activate: () => void
   on_deactivate: () => void
+  on_save_success?: () => void
 }
 
 type EditState = 'edit' | 'saving' | 'error'
@@ -19,6 +20,7 @@ export function InlineNarrationEditor({
   is_active,
   on_activate,
   on_deactivate,
+  on_save_success,
 }: InlineNarrationEditorProps) {
   // save_state is only relevant while is_active=true.
   const [save_state, set_save_state] = useState<EditState>('edit')
@@ -31,10 +33,13 @@ export function InlineNarrationEditor({
   // Ref guard prevents duplicate saves when Enter + blur fire before the 'saving' state settles.
   const is_saving_ref = useRef(false)
 
-  // Autofocus textarea on edit mode entry.
-  useEffect(() => {
-    if (is_active) {
-      textarea_ref.current?.focus()
+  // Autofocus and auto-size textarea on edit mode entry.
+  useLayoutEffect(() => {
+    if (is_active && textarea_ref.current) {
+      const el = textarea_ref.current
+      el.focus()
+      el.style.height = 'auto'
+      el.style.height = `${el.scrollHeight}px`
     }
   }, [is_active])
 
@@ -65,6 +70,7 @@ export function InlineNarrationEditor({
           set_revert_to(saved.narration)
           set_save_state('edit')
           set_error_msg(null)
+          on_save_success?.()
           on_deactivate()
         },
         onError: (err) => {
@@ -131,9 +137,13 @@ export function InlineNarrationEditor({
           className="inline-narration-editor__textarea"
           disabled={save_state === 'saving'}
           onBlur={handle_blur}
-          onChange={(e) => set_draft(e.target.value)}
+          onChange={(e) => {
+            set_draft(e.target.value)
+            const el = e.target
+            el.style.height = 'auto'
+            el.style.height = `${el.scrollHeight}px`
+          }}
           onKeyDown={handle_key_down}
-          rows={4}
           value={draft}
         />
       ) : (

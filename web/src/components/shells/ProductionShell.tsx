@@ -348,7 +348,13 @@ export function ProductionShell() {
       // key on run.id matches sibling stage branches: switching runs while in
       // scenario_review must remount the inspector to flush its
       // active_index/draft state instead of leaking it across runs.
-      return <ScenarioInspector key={current_run.id} run_id={current_run.id} />
+      return (
+        <ScenarioInspector
+          key={current_run.id}
+          run_id={current_run.id}
+          selected_scene_index={active_scene?.scene_index ?? 0}
+        />
+      )
     }
     if (current_run.stage === 'character_pick' && current_run.status === 'waiting') {
       return <CharacterPick key={current_run.id} run={current_run} />
