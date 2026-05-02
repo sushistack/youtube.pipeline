@@ -170,7 +170,6 @@ func renderVisualBreakdownPrompt(
 		"{frozen_descriptor}", frozen,
 		"{estimated_tts_duration_s}", strconv.FormatFloat(sceneDuration, 'f', 1, 64),
 		"{shot_count}", strconv.Itoa(shotCount),
-		"{format_guide}", prompts.FormatGuide,
 	)
 	return replacer.Replace(prompts.VisualBreakdownTemplate), nil
 }
