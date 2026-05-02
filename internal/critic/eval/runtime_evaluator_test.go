@@ -34,7 +34,7 @@ func TestRuntimeEvaluator_Evaluate_UsesDeepSeekRuntime(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"model":"deepseek-chat",
+			"model":"deepseek-v4-flash",
 			"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":` + string(encodedContent) + `}}],
 			"usage":{"prompt_tokens":100,"completion_tokens":50}
 		}`))
@@ -55,7 +55,7 @@ func TestRuntimeEvaluator_Evaluate_UsesDeepSeekRuntime(t *testing.T) {
 		Runtime: fakeRuntimeLoader{files: domain.SettingsFileSnapshot{
 			Config: domain.PipelineConfig{
 				CriticProvider: "deepseek",
-				CriticModel:    "deepseek-chat",
+				CriticModel:    "deepseek-v4-flash",
 			},
 			Env: map[string]string{
 				domain.SettingsSecretDeepSeek: "test-key",
@@ -80,7 +80,7 @@ func TestRuntimeEvaluator_Evaluate_UsesDeepSeekRuntime(t *testing.T) {
 	if verdict.Provider != "deepseek" {
 		t.Fatalf("provider = %q", verdict.Provider)
 	}
-	if verdict.Model != "deepseek-chat" {
+	if verdict.Model != "deepseek-v4-flash" {
 		t.Fatalf("model = %q", verdict.Model)
 	}
 	if verdict.Verdict != domain.CriticVerdictAcceptWithNotes {

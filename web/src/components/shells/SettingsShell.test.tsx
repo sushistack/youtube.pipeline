@@ -24,7 +24,7 @@ function installFetchMock(overrides?: {
           version: 1,
           data: {
             config: {
-              writer_model: 'deepseek-chat',
+              writer_model: 'deepseek-v4-flash',
               critic_model: 'gemini-3.1-flash-lite-preview',
               image_model: 'qwen-max-vl',
               tts_model: 'qwen3-tts',
@@ -102,7 +102,7 @@ function installFetchMock(overrides?: {
           version: 1,
           data: {
             config: {
-              writer_model: 'deepseek-chat-v2',
+              writer_model: 'deepseek-v4-flash',
               critic_model: 'gemini-3.1-flash-lite-preview',
               image_model: 'qwen-max-vl',
               tts_model: 'qwen3-tts',

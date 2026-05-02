@@ -108,7 +108,7 @@ function installTuningFetchMock(
             summary_line:
               "shadow eval: window=20 evaluated=0 false_rejections=0",
             critic_provider: "deepseek",
-            critic_model: "deepseek-chat",
+            critic_model: "deepseek-v4-flash",
             results: [],
             version_tag: shadowVersionTag,
           },

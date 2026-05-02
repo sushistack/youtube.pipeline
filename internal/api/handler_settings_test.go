@@ -52,7 +52,7 @@ func TestSettingsHandler_GetAndPutCycle(t *testing.T) {
 
 	putReq := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{
 	  "config": {
-	    "writer_model": "deepseek-chat-v2",
+	    "writer_model": "deepseek-v4-flash",
 	    "critic_model": "gemini-3.1-flash-lite-preview",
 	    "image_model": "qwen-image",
 	    "image_edit_model": "qwen-image-edit",
@@ -86,8 +86,8 @@ func TestSettingsHandler_GetAndPutCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload settings files: %v", err)
 	}
-	if files.Config.WriterModel != "deepseek-chat-v2" {
-		t.Fatalf("writer_model = %q, want deepseek-chat-v2", files.Config.WriterModel)
+	if files.Config.WriterModel != "deepseek-v4-flash" {
+		t.Fatalf("writer_model = %q, want deepseek-v4-flash", files.Config.WriterModel)
 	}
 	if files.Env[domain.SettingsSecretDeepSeek] != "deepseek-new" {
 		t.Fatalf("deepseek env value = %q, want deepseek-new", files.Env[domain.SettingsSecretDeepSeek])
@@ -172,7 +172,7 @@ func TestSettingsHandler_PutReturns409WhenIfMatchStale(t *testing.T) {
 
 	body := `{
 	  "config": {
-	    "writer_model": "deepseek-chat-v2",
+	    "writer_model": "deepseek-v4-flash",
 	    "critic_model": "gemini-3.1-flash-lite-preview",
 	    "image_model": "qwen-image",
 	    "image_edit_model": "qwen-image-edit",

@@ -14,7 +14,7 @@ func TestMetadataBundle_JSONRoundTrip(t *testing.T) {
 		Title:       "SCP-049 - The Plague Doctor",
 		AIGenerated: AIGeneratedFlags{Narration: true, Imagery: true, TTS: true},
 		ModelsUsed: map[string]ModelRecord{
-			"writer":           {Provider: "deepseek", Model: "deepseek-chat"},
+			"writer":           {Provider: "deepseek", Model: "deepseek-v4-flash"},
 			"critic":           {Provider: "gemini", Model: "gemini-3.1-flash-lite-preview"},
 			"image":            {Provider: "dashscope", Model: "qwen-max-vl"},
 			"tts":              {Provider: "dashscope", Model: "qwen3-tts-flash-2025-09-18", Voice: "longhua"},

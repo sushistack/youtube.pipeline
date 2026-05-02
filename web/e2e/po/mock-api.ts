@@ -226,7 +226,7 @@ function defaultSettings(): SettingsFixture {
       writer_provider: 'dashscope',
       writer_model: 'qwen-max',
       critic_provider: 'deepseek',
-      critic_model: 'deepseek-chat',
+      critic_model: 'deepseek-v4-flash',
       image_provider: 'dashscope',
       image_model: 'wanx-v1',
       tts_provider: 'dashscope',

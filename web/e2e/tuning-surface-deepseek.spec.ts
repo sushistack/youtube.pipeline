@@ -98,7 +98,7 @@ test("UI-E2E-07 tuning flow surfaces DeepSeek critic and unlocks Shadow after Go
           empty: false,
           summary_line: "shadow eval: window=20 evaluated=1 false_rejections=0",
           critic_provider: "deepseek",
-          critic_model: "deepseek-chat",
+          critic_model: "deepseek-v4-flash",
           version_tag: "20260425T000100Z-abc1234",
           results: [
             {
@@ -110,7 +110,7 @@ test("UI-E2E-07 tuning flow surfaces DeepSeek critic and unlocks Shadow after Go
               new_retry_reason: "",
               new_overall_score: 92,
               new_critic_provider: "deepseek",
-              new_critic_model: "deepseek-chat",
+              new_critic_model: "deepseek-v4-flash",
               overall_diff: 0.01,
               false_rejection: false,
             },
@@ -133,7 +133,7 @@ test("UI-E2E-07 tuning flow surfaces DeepSeek critic and unlocks Shadow after Go
           accept_with_notes_count: 0,
           duration_ms: 125,
           critic_provider: "deepseek",
-          critic_model: "deepseek-chat",
+          critic_model: "deepseek-v4-flash",
           version_tag: "20260425T000100Z-abc1234",
           samples: [],
         },
@@ -192,7 +192,7 @@ test("UI-E2E-07 tuning flow surfaces DeepSeek critic and unlocks Shadow after Go
   const shadowRegion = page.getByRole("region", { name: /Shadow/i }).first();
   await expect(shadowRegion.getByText("Critic runtime")).toBeVisible();
   await expect(shadowRegion.getByText("deepseek", { exact: true }).first()).toBeVisible();
-  await expect(shadowRegion.getByText("deepseek-chat", { exact: true }).first()).toBeVisible();
+  await expect(shadowRegion.getByText("deepseek-v4-flash", { exact: true }).first()).toBeVisible();
   await expect(shadowRegion.getByText(/No regressions detected/i)).toBeVisible();
 
   // Step 4 + 5: per-run drilldown. The diff list serializes the verdict and

@@ -68,7 +68,7 @@ func TestFileAuditLogger_Log_FileNotTruncated(t *testing.T) {
 		EventType: domain.AuditEventTextGeneration,
 		Stage:     "writer",
 		Provider:  "deepseek",
-		Model:     "deepseek-chat",
+		Model:     "deepseek-v4-flash",
 		Prompt:    "write a story",
 		CostUSD:   0.005,
 	}
@@ -138,7 +138,7 @@ func TestFileAuditLogger_Log_PromptTruncated(t *testing.T) {
 		EventType: domain.AuditEventTextGeneration,
 		Stage:     "writer",
 		Provider:  "deepseek",
-		Model:     "deepseek-chat",
+		Model:     "deepseek-v4-flash",
 		Prompt:    longPrompt,
 		CostUSD:   0.01,
 	}

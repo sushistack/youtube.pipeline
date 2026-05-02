@@ -32,7 +32,7 @@ func TestSettingsService_SaveWritesEffectiveAndDisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	if !strings.Contains(string(data), "deepseek-chat-v2") {
+	if !strings.Contains(string(data), "deepseek-v4-flash") {
 		t.Fatalf("config.yaml does not contain saved value; contents=%s", string(data))
 	}
 
@@ -40,8 +40,8 @@ func TestSettingsService_SaveWritesEffectiveAndDisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadEffectiveRuntimeConfig() error = %v", err)
 	}
-	if cfg.WriterModel != "deepseek-chat-v2" {
-		t.Fatalf("effective writer_model = %q, want deepseek-chat-v2", cfg.WriterModel)
+	if cfg.WriterModel != "deepseek-v4-flash" {
+		t.Fatalf("effective writer_model = %q, want deepseek-v4-flash", cfg.WriterModel)
 	}
 }
 
@@ -61,14 +61,14 @@ func TestSettingsService_SaveAppliesImmediatelyEvenWithActiveRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadEffectiveRuntimeConfig() error = %v", err)
 	}
-	if cfg.WriterModel != "deepseek-chat-v2" {
-		t.Fatalf("effective writer_model = %q, want deepseek-chat-v2", cfg.WriterModel)
+	if cfg.WriterModel != "deepseek-v4-flash" {
+		t.Fatalf("effective writer_model = %q, want deepseek-v4-flash", cfg.WriterModel)
 	}
 	disk, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	if !strings.Contains(string(disk), "deepseek-chat-v2") {
+	if !strings.Contains(string(disk), "deepseek-v4-flash") {
 		t.Fatalf("config.yaml not updated despite active run; contents=%s", string(disk))
 	}
 }
@@ -205,7 +205,7 @@ func TestSettingsService_DBDoesNotStoreRawSecrets(t *testing.T) {
 func validSettingsInput() SettingsUpdateInput {
 	return SettingsUpdateInput{
 		Config: SettingsConfigInput{
-			WriterModel:     "deepseek-chat-v2",
+			WriterModel:     "deepseek-v4-flash",
 			CriticModel:     "gemini-3.1-flash-lite-preview",
 			ImageModel:      "qwen-image",
 			ImageEditModel:  "qwen-image-edit",

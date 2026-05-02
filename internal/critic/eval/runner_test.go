@@ -219,7 +219,7 @@ func minimalNarrationInput() json.RawMessage {
 		"metadata": map[string]interface{}{
 			"language":               "ko",
 			"scene_count":            8,
-			"writer_model":           "deepseek-chat",
+			"writer_model":           "deepseek-v4-flash",
 			"writer_provider":        "deepseek",
 			"prompt_template":        "v1-scenario-writer",
 			"format_guide_template":  "v1-format-guide",

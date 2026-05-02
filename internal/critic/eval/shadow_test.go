@@ -136,7 +136,7 @@ func shadowScenarioJSON() []byte {
 			"metadata": map[string]any{
 				"language":                "ko",
 				"scene_count":             8,
-				"writer_model":            "deepseek-chat",
+				"writer_model":            "deepseek-v4-flash",
 				"writer_provider":         "deepseek",
 				"prompt_template":         "v1",
 				"format_guide_template":   "v1",

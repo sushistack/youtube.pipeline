@@ -78,7 +78,7 @@ func TestTextClient_Generate_SuccessNormalizesResponse(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if body.Model != "deepseek-chat" {
+		if body.Model != "deepseek-v4-flash" {
 			t.Fatalf("model = %q", body.Model)
 		}
 		if body.MaxTokens != 800 {
@@ -93,7 +93,7 @@ func TestTextClient_Generate_SuccessNormalizesResponse(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"model": "deepseek-chat",
+			"model": "deepseek-v4-flash",
 			"choices": [{
 				"finish_reason": "stop",
 				"message": {"role":"assistant","content":"{\"verdict\":\"pass\"}"}
@@ -114,7 +114,7 @@ func TestTextClient_Generate_SuccessNormalizesResponse(t *testing.T) {
 
 	resp, err := client.Generate(context.Background(), domain.TextRequest{
 		Prompt:      "return json",
-		Model:       "deepseek-chat",
+		Model:       "deepseek-v4-flash",
 		MaxTokens:   800,
 		Temperature: 0.2,
 	})
@@ -125,7 +125,7 @@ func TestTextClient_Generate_SuccessNormalizesResponse(t *testing.T) {
 	if resp.Provider != "deepseek" {
 		t.Fatalf("provider = %q", resp.Provider)
 	}
-	if resp.Model != "deepseek-chat" {
+	if resp.Model != "deepseek-v4-flash" {
 		t.Fatalf("model = %q", resp.Model)
 	}
 	if resp.Content != "{\"verdict\":\"pass\"}" {
@@ -175,7 +175,7 @@ func TestTextClient_Generate_MapsProviderErrors(t *testing.T) {
 
 			_, err = client.Generate(context.Background(), domain.TextRequest{
 				Prompt: "return json",
-				Model:  "deepseek-chat",
+				Model:  "deepseek-v4-flash",
 			})
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("expected %v, got %v", tc.want, err)
@@ -204,7 +204,7 @@ func TestTextClient_Generate_RejectsMalformedResponse(t *testing.T) {
 
 	_, err = client.Generate(context.Background(), domain.TextRequest{
 		Prompt: "return json",
-		Model:  "deepseek-chat",
+		Model:  "deepseek-v4-flash",
 	})
 	if !errors.Is(err, domain.ErrStageFailed) {
 		t.Fatalf("expected ErrStageFailed, got %v", err)

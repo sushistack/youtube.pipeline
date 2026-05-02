@@ -65,7 +65,7 @@ func validPipelineState(scpID string) *agents.PipelineState {
 		},
 		Narration: &domain.NarrationScript{
 			Metadata: domain.NarrationMetadata{
-				WriterModel:    "deepseek-chat",
+				WriterModel:    "deepseek-v4-flash",
 				WriterProvider: "deepseek",
 			},
 		},
@@ -92,7 +92,7 @@ func validMetadataBuilderConfig(t *testing.T, outputDir string) pipeline.Metadat
 	t.Helper()
 	return pipeline.MetadataBuilderConfig{
 		OutputDir:      outputDir,
-		WriterModel:    "deepseek-chat",
+		WriterModel:    "deepseek-v4-flash",
 		WriterProvider: "deepseek",
 		CriticModel:    "gemini-3.1-flash-lite-preview",
 		CriticProvider: "gemini",

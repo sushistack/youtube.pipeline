@@ -105,7 +105,7 @@ func (smoke06Evaluator) Evaluate(_ context.Context, fixture eval.Fixture) (eval.
 		Verdict:      domain.CriticVerdictPass,
 		OverallScore: 92,
 		Provider:     "deepseek",
-		Model:        "deepseek-chat",
+		Model:        "deepseek-v4-flash",
 	}, nil
 }
 

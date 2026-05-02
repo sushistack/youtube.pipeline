@@ -129,7 +129,7 @@ type LicenseEntry struct {
   "title": "SCP-049 - The Plague Doctor",
   "ai_generated": {"narration": true, "imagery": true, "tts": true},
   "models_used": {
-    "writer":            {"provider": "deepseek", "model": "deepseek-chat"},
+    "writer":            {"provider": "deepseek", "model": "deepseek-v4-flash"},
     "critic":            {"provider": "gemini",   "model": "gemini-3.1-flash-lite-preview"},
     "image":             {"provider": "dashscope","model": "qwen-max-vl"},
     "tts":               {"provider": "dashscope","model": "qwen3-tts-flash-2025-09-18", "voice": "longhua"},

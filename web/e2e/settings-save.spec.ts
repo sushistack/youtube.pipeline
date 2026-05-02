@@ -66,11 +66,11 @@ test('writer/critic provider edits flow through with the same save', async ({
   // Writer DashScope → keep DashScope; Critic DeepSeek → switch model name.
   // Just touching the critic_model field is enough to assert propagation.
   const criticModel = page.getByLabel('Critic model', { exact: true })
-  await criticModel.fill('deepseek-chat-v2')
+  await criticModel.fill('deepseek-v4-flash')
 
   await settings.save()
   await expect.poll(() => spies.settingsPuts.length).toBe(1)
   expect(spies.settingsPuts[0].config).toMatchObject({
-    critic_model: 'deepseek-chat-v2',
+    critic_model: 'deepseek-v4-flash',
   })
 })

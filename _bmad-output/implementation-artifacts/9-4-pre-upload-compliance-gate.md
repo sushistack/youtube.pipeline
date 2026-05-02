@@ -511,7 +511,7 @@ to prevent state leakage when switching between runs.
   "title": "SCP-049: The Plague Doctor",
   "ai_generated": { "narration": true, "imagery": true, "tts": true },
   "models_used": {
-    "writer": { "provider": "deepseek", "model": "deepseek-chat" },
+    "writer": { "provider": "deepseek", "model": "deepseek-v4-flash" },
     "critic": { "provider": "gemini", "model": "gemini-pro" },
     "image": { "provider": "dashscope", "model": "wanx-v1" },
     "tts": { "provider": "dashscope", "model": "sambert-zhichu-v1", "voice": "...", },
