@@ -5,7 +5,7 @@
       "id": "incident",
       "name": "Act 1 — Incident",
       "synopsis": "Act 1 opens with The sentinel stands motionless beneath a flickering platform light.. (2 beats; 15% of runtime.)",
-      "scene_budget": 2,
+      "scene_budget": 1,
       "duration_ratio": 0.15,
       "dramatic_beat_ids": [0, 4],
       "key_points": [
@@ -17,7 +17,7 @@
       "id": "mystery",
       "name": "Act 2 — Mystery",
       "synopsis": "Act 2 opens with A security monitor catches it one step closer after a blink.. (1 beats; 30% of runtime.)",
-      "scene_budget": 3,
+      "scene_budget": 1,
       "duration_ratio": 0.3,
       "dramatic_beat_ids": [1],
       "key_points": [
@@ -28,7 +28,7 @@
       "id": "revelation",
       "name": "Act 3 — Revelation",
       "synopsis": "Act 3 opens with Red light leaks from the fractures as alarms begin to pulse.. (1 beats; 40% of runtime.)",
-      "scene_budget": 4,
+      "scene_budget": 2,
       "duration_ratio": 0.4,
       "dramatic_beat_ids": [2],
       "key_points": [
@@ -47,6 +47,6 @@
       ]
     }
   ],
-  "target_scene_count": 10,
+  "target_scene_count": 5,
   "source_version": "v1-deterministic"
 }

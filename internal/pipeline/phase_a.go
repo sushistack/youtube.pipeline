@@ -402,6 +402,12 @@ func (r *PhaseARunner) tryLoadCache(ps agents.PipelineStage, runDir string, stat
 		if out.SCPID != state.SCPID {
 			return false
 		}
+		if out.SourceVersion != domain.SourceVersionV1 {
+			r.logger.Info("agent cache stale: source_version mismatch",
+				"pipeline_stage", ps.String(), "run_id", state.RunID,
+				"cached_version", out.SourceVersion, "current_version", domain.SourceVersionV1)
+			return false
+		}
 		state.Research = out
 	case agents.StageStructurer:
 		var out *domain.StructurerOutput
@@ -409,6 +415,12 @@ func (r *PhaseARunner) tryLoadCache(ps agents.PipelineStage, runDir string, stat
 			return false
 		}
 		if out.SCPID != state.SCPID {
+			return false
+		}
+		if out.SourceVersion != domain.SourceVersionV1 {
+			r.logger.Info("agent cache stale: source_version mismatch",
+				"pipeline_stage", ps.String(), "run_id", state.RunID,
+				"cached_version", out.SourceVersion, "current_version", domain.SourceVersionV1)
 			return false
 		}
 		state.Structure = out

@@ -28,7 +28,7 @@ func NewStructurer(validator *Validator) AgentFunc {
 			return fmt.Errorf("structurer: insufficient beats: %d < 4: %w", len(state.Research.DramaticBeats), domain.ErrValidation)
 		}
 
-		target := 10
+		target := len(state.Research.DramaticBeats)
 		budgets := distributeSceneBudget(target)
 		acts := make([]domain.Act, 0, len(domain.ActOrder))
 		for idx, actID := range domain.ActOrder {

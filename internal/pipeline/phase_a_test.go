@@ -877,7 +877,7 @@ func TestPhaseARunner_ResearcherCacheHit(t *testing.T) {
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	cached := &domain.ResearcherOutput{SCPID: "scp-1", Title: "from-cache"}
+	cached := &domain.ResearcherOutput{SCPID: "scp-1", Title: "from-cache", SourceVersion: domain.SourceVersionV1}
 	writeTestCacheJSON(t, filepath.Join(runDir, "research_cache.json"), cached)
 
 	var researcherCalls int
@@ -908,7 +908,7 @@ func TestPhaseARunner_StructurerCacheHit(t *testing.T) {
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	cached := &domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 42}
+	cached := &domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 42, SourceVersion: domain.SourceVersionV1}
 	writeTestCacheJSON(t, filepath.Join(runDir, "structure_cache.json"), cached)
 
 	var structurerCalls int
@@ -970,7 +970,7 @@ func TestPhaseARunner_ResearcherCacheHit_StructurerRunsNormally(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Only pre-seed research cache — no structure_cache.json.
-	cachedResearch := &domain.ResearcherOutput{SCPID: "scp-1", Title: "cached"}
+	cachedResearch := &domain.ResearcherOutput{SCPID: "scp-1", Title: "cached", SourceVersion: domain.SourceVersionV1}
 	writeTestCacheJSON(t, filepath.Join(runDir, "research_cache.json"), cachedResearch)
 
 	var researcherCalls, structurerCalls int
@@ -997,6 +997,52 @@ func TestPhaseARunner_ResearcherCacheHit_StructurerRunsNormally(t *testing.T) {
 	}
 	if state.Structure == nil || state.Structure.TargetSceneCount != 7 {
 		t.Errorf("state.Structure not populated by structurer agent: %+v", state.Structure)
+	}
+}
+
+// TestPhaseARunner_CacheStaleSourceVersion verifies that a cache file whose
+// source_version differs from the current domain.SourceVersionV1 constant is
+// treated as a miss, forcing the deterministic agent to re-run. This is the
+// auto-invalidation hook: bumping SourceVersionV1 in the same commit as a
+// logic change makes existing on-disk caches stale without operator action.
+func TestPhaseARunner_CacheStaleSourceVersion(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	b := defaultRunnerBuilder(t)
+
+	runDir := filepath.Join(b.outputDir, "run-1")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	staleResearch := &domain.ResearcherOutput{SCPID: "scp-1", Title: "stale", SourceVersion: "v0-pre-deterministic"}
+	writeTestCacheJSON(t, filepath.Join(runDir, "research_cache.json"), staleResearch)
+	staleStructure := &domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 99, SourceVersion: "v0-pre-deterministic"}
+	writeTestCacheJSON(t, filepath.Join(runDir, "structure_cache.json"), staleStructure)
+
+	var researcherCalls, structurerCalls int
+	b.researcher = func(_ context.Context, state *agents.PipelineState) error {
+		researcherCalls++
+		state.Research = &domain.ResearcherOutput{SCPID: "scp-1", Title: "fresh", SourceVersion: domain.SourceVersionV1}
+		return nil
+	}
+	b.structurer = func(_ context.Context, state *agents.PipelineState) error {
+		structurerCalls++
+		state.Structure = &domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 5, SourceVersion: domain.SourceVersionV1}
+		return nil
+	}
+
+	r := b.build(t)
+	state := newState()
+	if err := r.Run(context.Background(), state); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	testutil.AssertEqual(t, researcherCalls, 1)
+	testutil.AssertEqual(t, structurerCalls, 1)
+	if state.Research == nil || state.Research.Title != "fresh" {
+		t.Errorf("state.Research must come from agent, not stale cache: %+v", state.Research)
+	}
+	if state.Structure == nil || state.Structure.TargetSceneCount != 5 {
+		t.Errorf("state.Structure must come from agent, not stale cache: %+v", state.Structure)
 	}
 }
 

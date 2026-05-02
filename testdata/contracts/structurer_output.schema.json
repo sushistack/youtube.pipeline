@@ -29,7 +29,7 @@
           },
           "name": { "type": "string" },
           "synopsis": { "type": "string" },
-          "scene_budget": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "scene_budget": { "type": "integer", "minimum": 1, "maximum": 8 },
           "duration_ratio": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
           "dramatic_beat_ids": {
             "type": "array",
@@ -42,7 +42,7 @@
         }
       }
     },
-    "target_scene_count": { "type": "integer", "minimum": 8, "maximum": 12 },
+    "target_scene_count": { "type": "integer", "minimum": 4, "maximum": 16 },
     "source_version": { "type": "string", "const": "v1-deterministic" }
   }
 }

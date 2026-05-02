@@ -72,9 +72,9 @@ func NewResearcher(corpus CorpusReader, validator *Validator) AgentFunc {
 }
 
 func buildDramaticBeats(facts SCPFacts) []domain.DramaticBeat {
-	beats := make([]domain.DramaticBeat, 0, 10)
+	beats := make([]domain.DramaticBeat, 0, 16)
 	appendBeat := func(source, description string) {
-		if len(beats) >= 10 {
+		if len(beats) >= 16 {
 			return
 		}
 		index := len(beats)
