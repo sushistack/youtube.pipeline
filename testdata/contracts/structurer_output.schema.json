@@ -43,6 +43,6 @@
       }
     },
     "target_scene_count": { "type": "integer", "minimum": 4, "maximum": 32 },
-    "source_version": { "type": "string", "const": "v1-deterministic" }
+    "source_version": { "type": "string", "const": "v1.1-deterministic" }
   }
 }

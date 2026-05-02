@@ -61,7 +61,19 @@ const (
 	ActRevelation = "revelation"
 	ActUnresolved = "unresolved"
 
-	SourceVersionV1 = "v1-deterministic"
+	// SourceVersionV1 identifies the deterministic-V1 contract for the
+	// researcher and structurer. Bump this when EITHER agent's output
+	// shape or values change in a way that makes prior cached output
+	// no longer compatible. The cache loader at phase_a.go invalidates
+	// entries whose source_version differs from this constant, so a
+	// bump is the mechanism for force-rerunning deterministic stages
+	// after a logic change.
+	//
+	// History:
+	//   v1-deterministic   — initial deterministic researcher + structurer
+	//   v1.1-deterministic — structurer fans each beat out to scenesPerBeat
+	//                        scenes; old caches had 1 scene per beat
+	SourceVersionV1 = "v1.1-deterministic"
 )
 
 var ActOrder = [4]string{

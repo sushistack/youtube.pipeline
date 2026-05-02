@@ -76,6 +76,6 @@
       "type": "array",
       "items": { "type": "string" }
     },
-    "source_version": { "type": "string", "const": "v1-deterministic" }
+    "source_version": { "type": "string", "const": "v1.1-deterministic" }
   }
 }
