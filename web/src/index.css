@@ -1777,6 +1777,10 @@
   .production-app-header__stepper {
     min-width: 0;
     overflow-x: auto;
+    /* Vertical breathing room for the active-node ripple (scale 1.9x of 1.5rem
+       → ~11px above/below the indicator). Without this, overflow-x: auto
+       implicitly clips the ripple's top/bottom edges. */
+    padding: 0.5rem 0;
   }
 
   .production-master-detail {
