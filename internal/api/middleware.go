@@ -104,11 +104,17 @@ func WithRequestLog(logger *slog.Logger) Middleware {
 			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rw, r)
 			rid, _ := r.Context().Value(requestIDKey).(string)
-			logger.Info("request",
+			uri := r.URL.Path
+			if r.URL.RawQuery != "" {
+				uri = uri + "?" + r.URL.RawQuery
+			}
+			logger.Info(r.Method+" "+uri,
 				"method", r.Method,
 				"path", r.URL.Path,
+				"query", r.URL.RawQuery,
 				"status", rw.status,
 				"duration_ms", time.Since(start).Milliseconds(),
+				"remote_addr", r.RemoteAddr,
 				"request_id", rid,
 			)
 		})
