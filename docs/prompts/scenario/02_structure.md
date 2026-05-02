@@ -34,7 +34,7 @@ Design the scene structure following the **INCIDENT-FIRST format**. This is NOT 
 
 ## Task
 
-For each scene (8-12 total), provide:
+For each scene, provide the following. Scene count should match the research stage's dramatic-beat granularity (see `format_guide.md` Section E for total-count guidance — roughly 18-24 scenes for ~10-min videos, with one visual beat per scene):
 
 ```json
 {
@@ -43,7 +43,7 @@ For each scene (8-12 total), provide:
   "synopsis": "Brief description of what happens in this scene",
   "key_points": ["fact or detail to convey", "visual element to show"],
   "emotional_beat": "tension/mystery/horror/revelation/etc",
-  "estimated_duration_sec": 45,
+  "estimated_duration_sec": 30,
   "fact_references": ["fact_key_1", "fact_key_2"]
 }
 ```
@@ -52,7 +52,7 @@ For each scene (8-12 total), provide:
 1. Each scene's `key_points` must reference the Visual Identity Profile verbatim when the entity appears
 2. Scenes must cover all Key Dramatic Beats from the research
 3. Each fact from the source data should appear in at least one scene's `fact_references`
-4. **Pacing variation is MANDATORY**: alternate between slower atmospheric scenes (60-90s) and faster incident scenes (30-45s). Never use the same duration for 3+ consecutive scenes.
+4. **Pacing variation is MANDATORY**: alternate between slightly longer atmospheric scenes (35-50s) and tighter incident scenes (15-25s). **Each scene = one visual beat (one image).** Never use the same duration for 3+ consecutive scenes. If a scene description contains multiple stage transitions or two decisive actions, split it into multiple scenes.
 5. **The first scene must hook within 5 seconds** — use one of the candidate hooks from the research packet
 6. The last scene must leave an unresolved mystery
 7. **Adjacent scenes MUST have different emotional beats** — never repeat the same mood consecutively (e.g., "tension, tension" is forbidden; "tension, mystery" is correct)

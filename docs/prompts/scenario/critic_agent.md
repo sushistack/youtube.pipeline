@@ -17,6 +17,12 @@ Answer these questions honestly:
 3. **Emotional Curve**: Do moods vary between scenes? Or is it monotone throughout?
 4. **Immersion**: Does the narration pull the viewer IN (2nd person, sensory details, hypotheticals)?
 5. **Ending**: Would a viewer like/subscribe after watching? Does it leave lingering impact?
+6. **Scene Granularity (★ visual-beat singularity)**: Each scene maps to ONE image in the final video. Does each scene's narration describe a single visual moment that can be captured in one frame? Or does a scene cram multiple stage transitions, multiple decisive actions, or multiple character entrances into one narration block?
+   - Red flags: connectives like "그 순간", "그러더니", "그러고는", "그리고 놀라운 일이 일어납니다" appearing inside a single scene's narration to chain distinct events.
+   - Red flag example: a single scene that contains both "049가 격렬하게 반응합니다" AND "연구원이 라벤더를 내밉니다" AND "049가 멈춥니다" — that's three visual beats cramped into one frame.
+   - The writer's schema validator already rejects narration > 220 runes, so length alone is not the signal — the signal is **multiple visual beats inside the same scene regardless of length**.
+   - For each violating scene, add a `scene_notes` entry naming the cramming and proposing which single beat to keep (the most visually striking moment) — the rest must be dropped, since `scene_budget` is fixed and cannot be expanded at writing time.
+   - This dimension contributes to `immersion`: if 30%+ of scenes violate scene granularity, the narration cannot sync with the visual track and immersion collapses → drop `immersion` rubric below 65 and verdict = `retry` with `retry_reason: immersion`. If <30% violate, mark them in `scene_notes` and lean toward `accept_with_notes`.
 
 ## Output Format (JSON only, no markdown fences)
 
@@ -55,4 +61,5 @@ Rules:
 - **System-reserved (NEVER emit these):** `schema_validation_failed` and `forbidden_terms_detected` are set by the pipeline's precheck when the Critic LLM is skipped entirely (schema revalidation failure or forbidden-term pattern match on the narration). You must never produce them.
 - **Downstream consumers:** parsers of `retry_reason` should handle 6 possible values in total (4 LLM-authored + 2 system-reserved).
 - feedback MUST be in Korean and MUST be specific ("Scene 1을 Shock Hook으로 교체: 'SCP-173은 14명의 재단 인원을 살해했습니다'")
+- For scene-granularity violations, feedback MUST list each offending scene_num and name which single beat to keep (e.g., "Scene 5: 라벤더 제시 / 049 정지 / 049 발화 3개 비트 압축. 가장 시각적인 '049가 라벤더를 만지는 순간' 하나만 남기고 나머지는 잘라낼 것").
 - If the narration sounds like a Wikipedia article or government report throughout ALL scenes, say "retry". A few wiki-style sentences in otherwise engaging content → "accept_with_notes".

@@ -76,19 +76,26 @@ Transform passive viewers into participants. Use at minimum 3 of these per scena
 
 ### E. Scene Count & Pacing Guide
 
+**Core principle: ONE SCENE = ONE VISUAL BEAT.** Each scene maps to a single image in the final video, so every scene must depict a single moment that can be captured in one frame. Cramming multiple stage transitions or distinct actions into one scene is forbidden — it produces narration the visual track cannot support.
+
 Match scene count to target video duration:
 
 | Target Duration | Scene Count | Avg Scene Length | Pacing Notes |
-|----------------|-------------|-----------------|--------------|
-| ~5 minutes | 5-6 scenes | 50-60 sec | Tight, every scene advances plot |
-| ~10 minutes | 8-10 scenes | 60-75 sec | Room for atmosphere and detail |
-| ~15 minutes | 12-15 scenes | 60-75 sec | Can include sub-incidents and deeper lore |
+|----------------|-------------|------------------|--------------|
+| ~5 minutes  | 10-14 scenes | 25-35 sec | One visual beat per scene; tight cutting |
+| ~10 minutes | 18-24 scenes | 25-35 sec | More breathing room, atmosphere scenes can run slightly longer |
+| ~15 minutes | 28-36 scenes | 25-35 sec | Sub-incidents and deeper lore, still one-beat-per-scene |
+
+**Per-scene narration length (Korean):** 100-180 chars target, 220 chars hard cap.
 
 **Pacing principles:**
-- Vary scene durations — not every scene should be the same length
-- Action/incident scenes: shorter (30-45 sec), rapid information delivery
-- Atmosphere/buildup scenes: longer (60-90 sec), sensory detail, slower pacing
-- The hook scene should be under 45 seconds — get to the point fast
+- **Scene = single visual unit.** If a scene contains a stage change, a new character entering, or two decisive actions, split it.
+- Vary scene durations within the band — not every scene the same length.
+- Action/incident scenes: shorter (15-25 sec), rapid delivery, single decisive moment.
+- Atmosphere/buildup scenes: slightly longer (35-50 sec), sensory detail, but still one beat.
+- The hook scene (Scene 1) should be 15-20 seconds — get to the point fast.
+
+**Note on upstream scene count:** total scene count is driven by the structurer's `scene_budget` (derived from research dramatic beats). To hit the longer durations above, the research stage must surface enough fine-grained beats — do not compensate at writing time by cramming multiple beats into one scene.
 
 ---
 

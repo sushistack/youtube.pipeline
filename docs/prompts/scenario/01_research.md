@@ -41,10 +41,16 @@ Create a single dense physical description following this exact format:
 This profile will be reused verbatim across all image prompts for visual consistency.
 
 ### 3. Key Dramatic Beats
-Identify 6-10 dramatic moments from the document suitable for video scenes:
-- Each beat should have visual potential
-- Order from introduction to climax
-- Note the emotional tone of each beat
+Identify dramatic moments from the document suitable for video scenes. Target count depends on intended video length (each beat → ~1 scene → ~1 image of 25-35 sec narration; see `format_guide.md` Section E):
+- ~5 min video: 10-14 beats
+- ~10 min video: 18-24 beats
+- ~15 min video: 28-36 beats
+
+Rules for beat granularity:
+- **One beat = one visual moment** (a single stage, a single decisive action, a single emotional shift). If you find yourself writing "X happens, then Y happens, then Z happens" in one beat, split it into multiple beats.
+- Each beat must be visually depictable in a single image.
+- Order from introduction to climax.
+- Note the emotional tone of each beat.
 
 ### 4. Environment & Atmosphere Notes
 - Primary settings/locations described
