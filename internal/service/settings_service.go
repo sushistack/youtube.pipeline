@@ -48,20 +48,10 @@ func NewSettingsService(store SettingsStore, files SettingsFileAccess, clk clock
 	return &SettingsService{store: store, files: files, clk: clk}
 }
 
-// Bootstrap seeds settings_state.effective_version from the current disk
-// snapshot if no version has ever been recorded. Intended to be called once
-// at server startup so LoadEffectiveRuntimeFiles never has to fall back to
-// raw disk reads.
-func (s *SettingsService) Bootstrap(ctx context.Context) error {
-	files, err := s.files.Load()
-	if err != nil {
-		// Corrupted config.yaml on a cold start: seed from defaults so the
-		// server still comes up. The operator can fix or reset from the UI.
-		files = domain.SettingsFileSnapshot{Config: domain.DefaultConfig(), Env: map[string]string{}}
-	}
-	if _, _, err := s.store.EnsureEffectiveVersion(ctx, files); err != nil {
-		return fmt.Errorf("settings bootstrap: %w", err)
-	}
+// Bootstrap is a no-op: config.yaml is the authoritative source of truth and
+// is read directly on every Phase B dispatch. DB version seeding is no longer
+// used.
+func (s *SettingsService) Bootstrap(_ context.Context) error {
 	return nil
 }
 
@@ -93,15 +83,11 @@ func (s *SettingsService) ResetToDefaults(ctx context.Context) (*SettingsSnapsho
 }
 
 func (s *SettingsService) Snapshot(ctx context.Context) (*SettingsSnapshot, error) {
-	state, err := s.store.LoadState(ctx)
+	files, err := s.files.Load()
 	if err != nil {
 		return nil, fmt.Errorf("snapshot settings: %w", err)
 	}
-	files, err := s.effectiveSnapshotFromState(ctx, state)
-	if err != nil {
-		return nil, err
-	}
-	return s.buildSnapshot(ctx, files, state)
+	return s.buildSnapshot(ctx, files, db.SettingsStateRow{})
 }
 
 // Save persists a settings edit by writing a new effective version to the DB
@@ -113,25 +99,14 @@ func (s *SettingsService) Snapshot(ctx context.Context) (*SettingsSnapshot, erro
 func (s *SettingsService) Save(
 	ctx context.Context,
 	input SettingsUpdateInput,
-	ifMatchVersion *int64,
+	_ *int64,
 ) (*SettingsSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, err := s.store.LoadState(ctx)
+	currentFiles, err := s.files.Load()
 	if err != nil {
-		return nil, fmt.Errorf("save settings: load state: %w", err)
-	}
-
-	if ifMatchVersion != nil {
-		if !versionsMatch(state.EffectiveVersion, ifMatchVersion) {
-			return nil, ErrSettingsConflict
-		}
-	}
-
-	currentFiles, err := s.effectiveSnapshotFromState(ctx, state)
-	if err != nil {
-		return nil, fmt.Errorf("save settings: load effective snapshot: %w", err)
+		return nil, fmt.Errorf("save settings: load current: %w", err)
 	}
 
 	nextFiles, validationErr := s.mergeAndValidate(currentFiles, input)
@@ -139,14 +114,10 @@ func (s *SettingsService) Save(
 		return nil, fmt.Errorf("save settings: %w", validationErr)
 	}
 
-	newState, _, err := s.store.SaveSnapshot(ctx, nextFiles)
-	if err != nil {
-		return nil, fmt.Errorf("save settings: persist version state: %w", err)
-	}
 	if err := s.files.Write(nextFiles); err != nil {
-		return nil, fmt.Errorf("save settings: persist files: %w", err)
+		return nil, fmt.Errorf("save settings: write: %w", err)
 	}
-	return s.buildSnapshot(ctx, nextFiles, newState)
+	return s.buildSnapshot(ctx, nextFiles, db.SettingsStateRow{})
 }
 
 func (s *SettingsService) LoadEffectiveRuntimeConfig(ctx context.Context) (domain.PipelineConfig, error) {
@@ -157,19 +128,11 @@ func (s *SettingsService) LoadEffectiveRuntimeConfig(ctx context.Context) (domai
 	return files.Config, nil
 }
 
-// LoadEffectiveRuntimeFiles returns the snapshot the pipeline should execute
-// against right now. It reads from the DB effective_version — not from disk —
-// so the in-memory snapshot taken by each phase executor is sourced from the
-// authoritative DB state. If effective_version is unset (freshly migrated
-// database before Bootstrap runs), it falls back to the on-disk snapshot for
-// resilience; Bootstrap should run at startup to make this branch unreachable
-// in normal operation.
-func (s *SettingsService) LoadEffectiveRuntimeFiles(ctx context.Context) (domain.SettingsFileSnapshot, error) {
-	state, err := s.store.LoadState(ctx)
-	if err != nil {
-		return domain.SettingsFileSnapshot{}, fmt.Errorf("load effective runtime config: %w", err)
-	}
-	return s.effectiveSnapshotFromState(ctx, state)
+// LoadEffectiveRuntimeFiles returns the current config.yaml + .env snapshot.
+// config.yaml is the single source of truth; the DB version layer is no
+// longer consulted.
+func (s *SettingsService) LoadEffectiveRuntimeFiles(_ context.Context) (domain.SettingsFileSnapshot, error) {
+	return s.files.Load()
 }
 
 // EffectiveDryRun returns the effective Phase B dry-run flag from the
@@ -187,15 +150,8 @@ func (s *SettingsService) EffectiveDryRun(ctx context.Context) (bool, error) {
 
 // EffectiveVersion returns the current effective version number, or 0 if
 // none is set. Used by handlers building ETag headers for If-Match checks.
-func (s *SettingsService) EffectiveVersion(ctx context.Context) (int64, error) {
-	state, err := s.store.LoadState(ctx)
-	if err != nil {
-		return 0, err
-	}
-	if state.EffectiveVersion == nil {
-		return 0, nil
-	}
-	return *state.EffectiveVersion, nil
+func (s *SettingsService) EffectiveVersion(_ context.Context) (int64, error) {
+	return 1, nil
 }
 
 // effectiveSnapshotFromState resolves the config+env tuple for a given state
