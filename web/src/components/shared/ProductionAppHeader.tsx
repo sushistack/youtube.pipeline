@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { RunStatusPayload, RunSummary } from '../../lib/formatters'
 import { getRunSequence } from '../../lib/formatters'
-import { cancelRun, rewindRun } from '../../lib/apiClient'
+import { rewindRun } from '../../lib/apiClient'
 import { queryKeys } from '../../lib/queryKeys'
 import { useUIStore } from '../../stores/useUIStore'
 import { StageStepper, type RewindNodeKey } from './StageStepper'
@@ -11,14 +11,6 @@ import { StageStepper, type RewindNodeKey } from './StageStepper'
 interface ProductionAppHeaderProps {
   run: RunSummary | null
   status_payload?: RunStatusPayload
-}
-
-// A run is cancellable while the pipeline workers still hold it (running) or
-// while it is paused waiting on operator input. Pending and terminal states
-// (completed/failed/cancelled) reach Cancel via different surfaces — pending
-// uses the Start button, failed uses the FailureBanner Resume.
-function isCancellable(status: RunSummary['status']) {
-  return status === 'running' || status === 'waiting'
 }
 
 function formatRunIdentity(run: RunSummary | null) {
@@ -53,15 +45,6 @@ export function ProductionAppHeader({
   const query_client = useQueryClient()
   const [rewind_pending_node, set_rewind_pending_node] =
     useState<RewindNodeKey | null>(null)
-  const cancel_mutation = useMutation({
-    mutationFn: (run_id: string) => cancelRun(run_id),
-    onSuccess: (_data, run_id) => {
-      void query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
-      void query_client.invalidateQueries({
-        queryKey: queryKeys.runs.status(run_id),
-      })
-    },
-  })
   const rewind_mutation = useMutation({
     mutationFn: ({
       run_id,
@@ -80,25 +63,6 @@ export function ProductionAppHeader({
       })
     },
   })
-  const cancellable = run != null && isCancellable(run.status)
-  const cancel_pending =
-    cancel_mutation.isPending && cancel_mutation.variables === run?.id
-
-  function handleCancel() {
-    if (!run) {
-      return
-    }
-    if (cancel_pending) {
-      return
-    }
-    const ok = window.confirm(
-      `Cancel ${identity ?? run.id}? The pipeline will stop and the run will be marked cancelled.`,
-    )
-    if (!ok) {
-      return
-    }
-    cancel_mutation.mutate(run.id)
-  }
 
   function handleRewind(target: RewindNodeKey) {
     if (!run) {
@@ -135,16 +99,6 @@ export function ProductionAppHeader({
             No run selected
           </h2>
         )}
-        {cancellable ? (
-          <button
-            type="button"
-            className="production-app-header__cancel"
-            disabled={cancel_pending}
-            onClick={handleCancel}
-          >
-            {cancel_pending ? 'Cancelling…' : 'Cancel run'}
-          </button>
-        ) : null}
       </div>
       {run ? (
         <>
