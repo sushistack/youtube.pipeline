@@ -8,8 +8,8 @@
     "title": { "type": "string", "minLength": 1 },
     "scenes": {
       "type": "array",
-      "minItems": 8,
-      "maxItems": 12,
+      "minItems": 4,
+      "maxItems": 32,
       "items": {
         "type": "object",
         "required": ["scene_num", "act_id", "narration", "fact_tags", "mood", "entity_visible", "location", "characters_present", "color_palette", "atmosphere"],

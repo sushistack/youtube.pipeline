@@ -16,6 +16,20 @@ import (
 // will wire through a domain.TextGenerator. The deterministic derivation
 // here is the scaffolding and schema contract that the LLM path must honor.
 
+// scenesPerBeat fans each dramatic beat out to roughly N writer scenes.
+// Background: scenes were originally one-beat-per-scene with rich
+// 60-75s narration that crammed multiple visual moments. Tightening
+// per-scene narration to a single visual beat (~25-40s) cut content
+// per scene by ~half, so total scene count must roughly double to keep
+// runtime constant. The writer prompt expands each beat into multiple
+// scenes, each capturing a distinct visual moment of that beat.
+//
+// 2 is the conservative pick: it tracks the narration shrink ratio and
+// keeps Act 2/3 fan-out (typically 1-2 beats per act) within a range the
+// writer can cover without inventing content. Higher values risk
+// repetitive scenes; lower values produce videos that are too short.
+const scenesPerBeat = 2
+
 func NewStructurer(validator *Validator) AgentFunc {
 	return func(ctx context.Context, state *PipelineState) error {
 		if err := ctx.Err(); err != nil {
@@ -28,7 +42,7 @@ func NewStructurer(validator *Validator) AgentFunc {
 			return fmt.Errorf("structurer: insufficient beats: %d < 4: %w", len(state.Research.DramaticBeats), domain.ErrValidation)
 		}
 
-		target := len(state.Research.DramaticBeats)
+		target := len(state.Research.DramaticBeats) * scenesPerBeat
 		budgets := distributeSceneBudget(target)
 		acts := make([]domain.Act, 0, len(domain.ActOrder))
 		for idx, actID := range domain.ActOrder {

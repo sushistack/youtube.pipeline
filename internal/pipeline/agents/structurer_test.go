@@ -36,13 +36,14 @@ func TestStructurer_Run_Happy(t *testing.T) {
 	for i, act := range state.Structure.Acts {
 		testutil.AssertEqual(t, act.ID, domain.ActOrder[i])
 	}
-	wantBudgets := [4]int{1, 1, 1, 1}
+	// 4 beats × scenesPerBeat=2 = target 8 → distributeSceneBudget(8) = [1,3,3,1]
+	wantBudgets := [4]int{1, 3, 3, 1}
 	var sum int
 	for i, act := range state.Structure.Acts {
 		testutil.AssertEqual(t, act.SceneBudget, wantBudgets[i])
 		sum += act.SceneBudget
 	}
-	testutil.AssertEqual(t, sum, 4)
+	testutil.AssertEqual(t, sum, 8)
 }
 
 func TestStructurer_Run_Validates_SampleFixture(t *testing.T) {

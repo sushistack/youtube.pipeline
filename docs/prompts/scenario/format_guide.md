@@ -95,7 +95,7 @@ Match scene count to target video duration:
 - Atmosphere/buildup scenes: slightly longer (35-50 sec), sensory detail, but still one beat.
 - The hook scene (Scene 1) should be 15-20 seconds — get to the point fast.
 
-**Note on upstream scene count:** total scene count is driven by the structurer's `scene_budget` (derived from research dramatic beats). To hit the longer durations above, the research stage must surface enough fine-grained beats — do not compensate at writing time by cramming multiple beats into one scene.
+**Note on upstream scene count:** total scene count = `len(dramatic_beats) × scenesPerBeat` (currently `scenesPerBeat = 2`). The structurer fans each beat out to ~2 scenes, and the writer expands a single beat across multiple scenes by separating its visual moments — do NOT compensate at writing time by cramming multiple visual moments into one scene. Typical SCP corpus produces 6-10 raw beats → 12-20 scenes → 6-10 min videos. To go longer, the corpus needs more `key_visual_moments` / `anomalous_properties`, or scenesPerBeat must be tuned upward (currently fixed in `structurer.go`).
 
 ---
 
