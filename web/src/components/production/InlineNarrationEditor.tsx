@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { UseMutationResult } from '@tanstack/react-query'
 import type { Scene } from '../../contracts/runContracts'
 import type { ApiClientError } from '../../lib/apiClient'
