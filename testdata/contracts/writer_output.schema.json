@@ -49,7 +49,7 @@
       "additionalProperties": false,
       "properties": {
         "language": { "const": "ko" },
-        "scene_count": { "type": "integer", "minimum": 8, "maximum": 12 },
+        "scene_count": { "type": "integer", "minimum": 4, "maximum": 32 },
         "writer_model": { "type": "string", "minLength": 1 },
         "writer_provider": { "type": "string", "minLength": 1 },
         "prompt_template": { "type": "string", "minLength": 1 },
