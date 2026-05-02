@@ -276,6 +276,14 @@ func runImageTrack(
 			)
 			absPath := filepath.Join(runDir, relPath)
 
+			logger.Info("image track: generating shot",
+				"provider", cfg.Provider,
+				"run_id", req.RunID,
+				"scene", scene.SceneNum,
+				"shot", shot.ShotIndex,
+				"character_shot", containsCharacter,
+				"output", absPath,
+			)
 			resp, err := invokeImageProvider(ctx, cfg, prompt, absPath, containsCharacter, selected)
 			if err != nil {
 				return result, fmt.Errorf("image track: scene %d shot %d: %w", scene.SceneNum, shot.ShotIndex, err)

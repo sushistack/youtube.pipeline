@@ -180,6 +180,11 @@ func buildPhaseBRunner(
 		if err != nil {
 			return nil, fmt.Errorf("build image client: %w", err)
 		}
+		logger.Info("phase b image provider: dashscope",
+			"endpoint", imageEndpointForRegion(cfg.DashScopeRegion),
+			"generate_model", cfg.ImageModel,
+			"edit_model", cfg.ImageEditModel,
+		)
 		ttsClient = realTTS
 		imageClient = realImage
 	}
