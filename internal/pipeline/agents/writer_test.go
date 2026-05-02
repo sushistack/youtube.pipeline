@@ -364,6 +364,54 @@ func TestWriter_Run_SchemaViolation(t *testing.T) {
 	}
 }
 
+// TestWriter_Run_NarrationRuneCapExceeded asserts that a scene whose
+// narration exceeds narrationRuneCap (the 220자 hard cap from
+// docs/prompts/scenario/03_writing.md "Scene Granularity") is rejected
+// by validateWriterActResponse and surfaces ErrValidation. This guards
+// against the failure mode where the LLM crams multiple visual beats
+// into one scene's narration, which the downstream image stage cannot
+// represent with a single frame.
+func TestWriter_Run_NarrationRuneCapExceeded(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	perAct := perActFixturesFromMergedSample(t)
+	overCap := strings.Repeat("가", narrationRuneCap+1) // 221 runes
+	bad := mustEncodeActResponse(t, domain.ActIncident, []domain.NarrationScene{
+		fillRequiredSceneFields(domain.NarrationScene{SceneNum: 1, ActID: domain.ActIncident, Narration: overCap}),
+		fillRequiredSceneFields(domain.NarrationScene{SceneNum: 2, ActID: domain.ActIncident, Narration: "ok"}),
+	})
+	// Both attempts return the over-cap response so the retry budget is exhausted.
+	perAct[domain.ActIncident] = []string{bad, bad}
+	gen := newActIndexedTextGenerator(perAct)
+	state := sampleWriterState()
+	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "exceeds cap") {
+		t.Fatalf("expected narration cap error, got %v", err)
+	}
+	if state.Narration != nil {
+		t.Fatalf("state mutated on cap violation: %+v", state.Narration)
+	}
+}
+
+// TestWriter_Run_NarrationAtCapAccepted asserts that narration of exactly
+// narrationRuneCap runes passes validation — the cap is inclusive.
+func TestWriter_Run_NarrationAtCapAccepted(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	merged := loadMergedSample(t)
+	merged.Scenes[0].Narration = strings.Repeat("가", narrationRuneCap)
+	perAct := splitMergedByAct(t, merged)
+	gen := newActIndexedTextGenerator(perAct)
+	state := sampleWriterState()
+	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err != nil {
+		t.Fatalf("writer rejected narration at exact cap: %v", err)
+	}
+}
+
 func TestWriter_Run_ForbiddenTermsRejected(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 

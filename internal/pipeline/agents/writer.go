@@ -62,6 +62,15 @@ const (
 	writerMaxConcurrency     = 3
 	writerPerActRetryBudget  = 1   // one retry per act on schema violation
 	priorActBeatRuneCap      = 240 // bound on the Act-1-tail snippet repeated into Acts 2/3/4 prompts
+	// narrationRuneCap enforces the writer prompt's "씬당 narration 220자
+	// 초과 절대 금지" contract (docs/prompts/scenario/03_writing.md, Scene
+	// Granularity rule). The cap encodes the one-visual-beat-per-scene
+	// principle from format_guide.md Section E: a scene maps to a single
+	// image, so narration that needs >220 runes is almost always cramming
+	// multiple visual beats into one frame. Schema-violation retries
+	// re-render the same prompt; persistent overruns fail fast rather
+	// than dragging cap drift downstream into TTS/image stages.
+	narrationRuneCap = 220
 )
 
 // defaultAgentConcurrency is the fan-out cap when TextAgentConfig.Concurrency
@@ -347,6 +356,10 @@ func validateWriterActResponse(spec writerActSpec, decoded writerActResponse) er
 		if scene.ActID != spec.Act.ID {
 			return fmt.Errorf("writer: act %s: scene[%d] act_id=%q: %w",
 				spec.Act.ID, i, scene.ActID, domain.ErrValidation)
+		}
+		if n := utf8.RuneCountInString(scene.Narration); n > narrationRuneCap {
+			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d narration length=%d runes exceeds cap=%d (one-visual-beat rule, see docs/prompts/scenario/03_writing.md): %w",
+				spec.Act.ID, i, scene.SceneNum, n, narrationRuneCap, domain.ErrValidation)
 		}
 		prev = scene.SceneNum
 	}
