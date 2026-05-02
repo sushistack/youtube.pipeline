@@ -37,7 +37,9 @@ type PipelineConfig struct {
 	WriterProvider string `yaml:"writer_provider" mapstructure:"writer_provider"`
 	CriticProvider string `yaml:"critic_provider" mapstructure:"critic_provider"`
 
-	// ImageProvider is the provider for image generation ("dashscope" default).
+	// ImageProvider is the provider for image generation ("comfyui" default —
+	// local FLUX.2 Klein 4B via ComfyUIEndpoint; "dashscope" remains supported
+	// for cloud generation when the operator opts in via Settings).
 	ImageProvider string `yaml:"image_provider" mapstructure:"image_provider"`
 	// TTSProvider is the provider for TTS synthesis ("dashscope" default).
 	TTSProvider string `yaml:"tts_provider" mapstructure:"tts_provider"`
@@ -137,7 +139,7 @@ func DefaultConfig() PipelineConfig {
 	base := filepath.Join(home, ".youtube-pipeline")
 
 	return PipelineConfig{
-		WriterModel:              "deepseek-chat",
+		WriterModel:              "deepseek-v4-flash",
 		CriticModel:              "gemini-3.1-flash-lite-preview",
 		TTSModel:                 "qwen3-tts-flash-2025-09-18",
 		TTSVoice:                 "Ethan",
@@ -146,7 +148,7 @@ func DefaultConfig() PipelineConfig {
 		ImageEditModel:           "qwen-image-edit",
 		WriterProvider:           "deepseek",
 		CriticProvider:           "gemini",
-		ImageProvider:            "dashscope",
+		ImageProvider:            "comfyui",
 		TTSProvider:              "dashscope",
 		DashScopeRegion:          "cn-beijing",
 		ComfyUIEndpoint:          "http://127.0.0.1:8188",
