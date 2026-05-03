@@ -221,6 +221,104 @@ func TestVisualBreakdowner_Run_RejectsInvalidTransition(t *testing.T) {
 	}
 }
 
+// retryQueueWithScene1Failures builds a per-scene response queue for a 4-scene
+// state where scene 1 receives the supplied failing-then-successful sequence
+// and scenes 2-4 each receive one valid response. The schema requires
+// minItems=4 so the helper keeps the contract test happy when scene 1 recovers.
+func retryQueueWithScene1Failures(scene1 ...string) map[int][]string {
+	queue := map[int][]string{1: scene1}
+	for i := 2; i <= 4; i++ {
+		queue[i] = []string{shotResponse(i, visualBreakdownResponseShot{
+			VisualDescriptor: fmt.Sprintf("scene %d descriptor", i),
+			Transition:       domain.TransitionKenBurns,
+		})}
+	}
+	return queue
+}
+
+func TestVisualBreakdowner_Run_RetriesOnEmptyTransition(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	invalid := `{"scene_num":1,"shots":[{"visual_descriptor":"shot","transition":""}]}`
+	valid := shotResponse(1, visualBreakdownResponseShot{VisualDescriptor: "shot", Transition: domain.TransitionKenBurns})
+	gen := &queueTextGenerator{responsesByScene: retryQueueWithScene1Failures(invalid, valid)}
+	state := sampleVisualBreakdownState(4)
+	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
+	if err != nil {
+		t.Fatalf("VisualBreakdowner: %v", err)
+	}
+	testutil.AssertEqual(t, gen.callsByScene[1], 2)
+	for sceneNum := 2; sceneNum <= 4; sceneNum++ {
+		testutil.AssertEqual(t, gen.callsByScene[sceneNum], 1)
+	}
+	if state.VisualBreakdown == nil || len(state.VisualBreakdown.Scenes) != 4 {
+		t.Fatalf("expected 4 scenes built from retry, got %#v", state.VisualBreakdown)
+	}
+	testutil.AssertEqual(t, state.VisualBreakdown.Scenes[0].Shots[0].Transition, domain.TransitionKenBurns)
+}
+
+func TestVisualBreakdowner_Run_RetriesOnInvalidTransition(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	invalid := `{"scene_num":1,"shots":[{"visual_descriptor":"shot","transition":"zoom"}]}`
+	valid := shotResponse(1, visualBreakdownResponseShot{VisualDescriptor: "shot", Transition: domain.TransitionCrossDissolve})
+	gen := &queueTextGenerator{responsesByScene: retryQueueWithScene1Failures(invalid, valid)}
+	state := sampleVisualBreakdownState(4)
+	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
+	if err != nil {
+		t.Fatalf("VisualBreakdowner: %v", err)
+	}
+	testutil.AssertEqual(t, gen.callsByScene[1], 2)
+	for sceneNum := 2; sceneNum <= 4; sceneNum++ {
+		testutil.AssertEqual(t, gen.callsByScene[sceneNum], 1)
+	}
+	testutil.AssertEqual(t, state.VisualBreakdown.Scenes[0].Shots[0].Transition, domain.TransitionCrossDissolve)
+}
+
+func TestVisualBreakdowner_Run_PropagatesTransportErrorWithoutRetry(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	transportErr := errors.New("network: connection reset")
+	validResponses := map[int]string{}
+	for i := 2; i <= 4; i++ {
+		validResponses[i] = shotResponse(i, visualBreakdownResponseShot{
+			VisualDescriptor: fmt.Sprintf("scene %d descriptor", i),
+			Transition:       domain.TransitionKenBurns,
+		})
+	}
+	gen := &sceneErrorGenerator{errOnScene: 1, err: transportErr, validResponses: validResponses}
+	state := sampleVisualBreakdownState(4)
+	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
+	if err == nil {
+		t.Fatal("expected transport error to propagate")
+	}
+	if !errors.Is(err, transportErr) {
+		t.Fatalf("expected transport error to propagate verbatim, got %v", err)
+	}
+	// Per spec: transport errors propagate immediately and do NOT consume the retry budget.
+	testutil.AssertEqual(t, gen.callsByScene[1], 1)
+	if state.VisualBreakdown != nil {
+		t.Fatalf("expected state.VisualBreakdown unchanged on transport failure, got %#v", state.VisualBreakdown)
+	}
+}
+
+func TestVisualBreakdowner_Run_GivesUpAfterOneRetry(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	invalid1 := `{"scene_num":1,"shots":[{"visual_descriptor":"shot","transition":""}]}`
+	invalid2 := `{"scene_num":1,"shots":[{"visual_descriptor":"shot","transition":"zoom"}]}`
+	gen := &queueTextGenerator{responsesByScene: retryQueueWithScene1Failures(invalid1, invalid2)}
+	state := sampleVisualBreakdownState(4)
+	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation after retry exhausted, got %v", err)
+	}
+	testutil.AssertEqual(t, gen.callsByScene[1], 2)
+	if state.VisualBreakdown != nil {
+		t.Fatalf("expected state.VisualBreakdown unchanged on failure, got %#v", state.VisualBreakdown)
+	}
+}
+
 func TestVisualBreakdowner_Run_RejectsEmptyScenes(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
@@ -326,6 +424,69 @@ func parseScenePromptNum(prompt string) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// sceneErrorGenerator returns errOnScene's queued error for any call to that
+// scene, and a single valid response for every other scene. Counts calls per
+// scene so retry-budget-not-consumed assertions are possible.
+type sceneErrorGenerator struct {
+	mu             sync.Mutex
+	errOnScene     int
+	err            error
+	validResponses map[int]string
+	callsByScene   map[int]int
+}
+
+func (g *sceneErrorGenerator) Generate(_ context.Context, req domain.TextRequest) (domain.TextResponse, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	sceneNum, ok := parseScenePromptNum(req.Prompt)
+	if !ok {
+		return domain.TextResponse{}, fmt.Errorf("sceneErrorGenerator: scene_num missing from prompt")
+	}
+	if g.callsByScene == nil {
+		g.callsByScene = map[int]int{}
+	}
+	g.callsByScene[sceneNum]++
+	if sceneNum == g.errOnScene {
+		return domain.TextResponse{}, g.err
+	}
+	resp, ok := g.validResponses[sceneNum]
+	if !ok {
+		return domain.TextResponse{}, fmt.Errorf("sceneErrorGenerator: no response for scene_num=%d", sceneNum)
+	}
+	return domain.TextResponse{NormalizedResponse: domain.NormalizedResponse{Content: resp, Model: req.Model, Provider: "openai"}}, nil
+}
+
+// queueTextGenerator pops responses from a per-scene FIFO queue, so a single
+// scene can be served multiple distinct responses across retries. Routes by
+// parsing "Scene N" from the rendered prompt; errors out if the prompt lacks
+// the scene token. callsByScene exposes per-scene call counts for retry
+// assertions.
+type queueTextGenerator struct {
+	mu               sync.Mutex
+	responsesByScene map[int][]string
+	callsByScene     map[int]int
+}
+
+func (q *queueTextGenerator) Generate(_ context.Context, req domain.TextRequest) (domain.TextResponse, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	sceneNum, ok := parseScenePromptNum(req.Prompt)
+	if !ok {
+		return domain.TextResponse{}, fmt.Errorf("queueTextGenerator: scene_num missing from prompt")
+	}
+	queue, ok := q.responsesByScene[sceneNum]
+	if !ok || len(queue) == 0 {
+		return domain.TextResponse{}, fmt.Errorf("queueTextGenerator: no response queued for scene_num=%d", sceneNum)
+	}
+	resp := queue[0]
+	q.responsesByScene[sceneNum] = queue[1:]
+	if q.callsByScene == nil {
+		q.callsByScene = map[int]int{}
+	}
+	q.callsByScene[sceneNum]++
+	return domain.TextResponse{NormalizedResponse: domain.NormalizedResponse{Content: resp, Model: req.Model, Provider: "openai"}}, nil
 }
 
 type driftingTextGenerator struct {

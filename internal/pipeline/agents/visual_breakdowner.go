@@ -24,6 +24,8 @@ type visualBreakdownResponseShot struct {
 	Transition       string `json:"transition"`
 }
 
+const visualBreakdownerPerSceneRetryBudget = 1 // one retry per scene on json/schema failure
+
 func NewVisualBreakdowner(
 	gen domain.TextGenerator,
 	cfg TextAgentConfig,
@@ -93,41 +95,8 @@ func NewVisualBreakdowner(
 		for i, scene := range scenes {
 			i, scene := i, scene
 			g.Go(func() error {
-				sceneDuration := estimator.Estimate(scene)
-				shotCount := ShotCountForDuration(sceneDuration)
-				prompt, err := renderVisualBreakdownPrompt(state, prompts, scene, frozen, sceneDuration, shotCount)
+				decoded, sceneDuration, err := runVisualBreakdownerScene(gctx, gen, cfg, prompts, state, scene, frozen, estimator)
 				if err != nil {
-					return err
-				}
-
-				resp, err := gen.Generate(gctx, domain.TextRequest{
-					Prompt:      prompt,
-					Model:       cfg.Model,
-					MaxTokens:   cfg.MaxTokens,
-					Temperature: cfg.Temperature,
-				})
-				if err != nil {
-					return err
-				}
-
-				if cfg.AuditLogger != nil {
-					_ = cfg.AuditLogger.Log(gctx, domain.AuditEntry{
-						Timestamp: time.Now(),
-						EventType: domain.AuditEventTextGeneration,
-						RunID:     state.RunID,
-						Stage:     "visual_breakdowner",
-						Provider:  resp.Provider,
-						Model:     resp.Model,
-						Prompt:    truncatePrompt(prompt, 2048),
-						CostUSD:   resp.CostUSD,
-					})
-				}
-
-				var decoded visualBreakdownResponse
-				if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
-					return fmt.Errorf("visual breakdowner: %w", err)
-				}
-				if err := validateVisualBreakdownResponse(scene.SceneNum, shotCount, decoded); err != nil {
 					return err
 				}
 				results[i] = buildVisualBreakdownScene(scene, frozen, sceneDuration, decoded)
@@ -145,6 +114,111 @@ func NewVisualBreakdowner(
 		state.VisualBreakdown = &output
 		return nil
 	}
+}
+
+func runVisualBreakdownerScene(
+	ctx context.Context,
+	gen domain.TextGenerator,
+	cfg TextAgentConfig,
+	prompts PromptAssets,
+	state *PipelineState,
+	scene domain.NarrationScene,
+	frozen string,
+	estimator SceneDurationEstimator,
+) (visualBreakdownResponse, float64, error) {
+	sceneDuration := estimator.Estimate(scene)
+	shotCount := ShotCountForDuration(sceneDuration)
+	prompt, err := renderVisualBreakdownPrompt(state, prompts, scene, frozen, sceneDuration, shotCount)
+	if err != nil {
+		return visualBreakdownResponse{}, 0, err
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= visualBreakdownerPerSceneRetryBudget; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return visualBreakdownResponse{}, 0, err
+		}
+
+		if cfg.Logger != nil {
+			cfg.Logger.Info("visual breakdowner attempt start",
+				"run_id", state.RunID,
+				"scene_num", scene.SceneNum,
+				"attempt", attempt,
+				"provider", cfg.Provider,
+				"model", cfg.Model,
+			)
+		}
+		callStart := time.Now()
+		resp, err := gen.Generate(ctx, domain.TextRequest{
+			Prompt:      prompt,
+			Model:       cfg.Model,
+			MaxTokens:   cfg.MaxTokens,
+			Temperature: cfg.Temperature,
+		})
+		if err != nil {
+			if cfg.Logger != nil {
+				cfg.Logger.Error("visual breakdowner attempt failed",
+					"run_id", state.RunID,
+					"scene_num", scene.SceneNum,
+					"attempt", attempt,
+					"duration_ms", time.Since(callStart).Milliseconds(),
+					"error", err.Error(),
+				)
+			}
+			return visualBreakdownResponse{}, 0, err
+		}
+		if cfg.Logger != nil {
+			cfg.Logger.Info("visual breakdowner attempt complete",
+				"run_id", state.RunID,
+				"scene_num", scene.SceneNum,
+				"attempt", attempt,
+				"duration_ms", time.Since(callStart).Milliseconds(),
+			)
+		}
+
+		if cfg.AuditLogger != nil {
+			_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+				Timestamp: time.Now(),
+				EventType: domain.AuditEventTextGeneration,
+				RunID:     state.RunID,
+				Stage:     "visual_breakdowner",
+				Provider:  resp.Provider,
+				Model:     resp.Model,
+				Prompt:    truncatePrompt(prompt, 2048),
+				CostUSD:   resp.CostUSD,
+			})
+		}
+
+		var decoded visualBreakdownResponse
+		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
+			lastErr = fmt.Errorf("visual breakdowner: %w", err)
+			if cfg.Logger != nil {
+				cfg.Logger.Info("visual breakdowner retry",
+					"run_id", state.RunID,
+					"scene_num", scene.SceneNum,
+					"attempt", attempt,
+					"reason", "json_decode",
+					"error", err.Error(),
+				)
+			}
+			continue
+		}
+		if err := validateVisualBreakdownResponse(scene.SceneNum, shotCount, decoded); err != nil {
+			lastErr = err
+			if cfg.Logger != nil {
+				cfg.Logger.Info("visual breakdowner retry",
+					"run_id", state.RunID,
+					"scene_num", scene.SceneNum,
+					"attempt", attempt,
+					"reason", "schema_validation",
+					"error", err.Error(),
+				)
+			}
+			continue
+		}
+		return decoded, sceneDuration, nil
+	}
+	return visualBreakdownResponse{}, 0, lastErr
 }
 
 func renderVisualBreakdownPrompt(

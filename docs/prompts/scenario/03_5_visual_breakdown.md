@@ -50,6 +50,7 @@ Rules:
 - output exactly `{shot_count}` items in `shots`
 - every `visual_descriptor` must be non-empty
 - every `visual_descriptor` must begin with `{frozen_descriptor}` verbatim
-- allowed `transition` values only: `ken_burns`, `cross_dissolve`, `hard_cut`
+- the `transition` field MUST be present and non-empty on every shot — omitting it or returning `""` is a contract violation
+- the `transition` value MUST be exactly one of: `ken_burns`, `cross_dissolve`, `hard_cut` — no other values are permitted
 - focus on factual consistency with the narration and SCP visual identity
 - do not add commentary, explanations, or extra keys
