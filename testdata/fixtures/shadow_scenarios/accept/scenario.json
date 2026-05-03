@@ -6,153 +6,465 @@
   "narration": {
     "scp_id": "SCP-ACCEPT",
     "title": "Shadow accept narration",
-    "scenes": [
+    "acts": [
       {
-        "scene_num": 1,
-        "act_id": "act_1",
-        "narration": "경보음이 울립니다.",
-        "fact_tags": [],
+        "act_id": "incident",
+        "monologue": "경보음이 울립니다. 문이 잠깁니다.",
+        "beats": [
+          {
+            "start_offset": 0,
+            "end_offset": 2,
+            "mood": "tense",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": true,
+            "color_palette": "red",
+            "atmosphere": "alert",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 2,
+            "end_offset": 5,
+            "mood": "tense",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": true,
+            "color_palette": "red",
+            "atmosphere": "alert",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 8,
+            "mood": "tense",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": true,
+            "color_palette": "red",
+            "atmosphere": "alert",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 8,
+            "end_offset": 11,
+            "mood": "tense",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": true,
+            "color_palette": "red",
+            "atmosphere": "alert",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 11,
+            "end_offset": 13,
+            "mood": "shock",
+            "location": "격리문",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": true,
+            "color_palette": "amber",
+            "atmosphere": "locking down",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 13,
+            "end_offset": 15,
+            "mood": "shock",
+            "location": "격리문",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": true,
+            "color_palette": "amber",
+            "atmosphere": "locking down",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 15,
+            "end_offset": 17,
+            "mood": "shock",
+            "location": "격리문",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": true,
+            "color_palette": "amber",
+            "atmosphere": "locking down",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 17,
+            "end_offset": 19,
+            "mood": "shock",
+            "location": "격리문",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": true,
+            "color_palette": "amber",
+            "atmosphere": "locking down",
+            "fact_tags": []
+          }
+        ],
         "mood": "tense",
-        "entity_visible": true,
-        "location": "통제실",
-        "characters_present": [
-          "경비원"
-        ],
-        "color_palette": "red",
-        "atmosphere": "alert",
-        "narration_beats": [
-          "경보음이 울립니다."
-        ]
+        "key_points": []
       },
       {
-        "scene_num": 2,
-        "act_id": "act_1",
-        "narration": "문이 잠깁니다.",
-        "fact_tags": [],
-        "mood": "shock",
-        "entity_visible": true,
-        "location": "격리문",
-        "characters_present": [
-          "경비원"
+        "act_id": "mystery",
+        "monologue": "창 밖의 그림자. 소리가 멀어집니다.",
+        "beats": [
+          {
+            "start_offset": 0,
+            "end_offset": 2,
+            "mood": "unease",
+            "location": "복도",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "black",
+            "atmosphere": "shifting",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 2,
+            "end_offset": 5,
+            "mood": "unease",
+            "location": "복도",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "black",
+            "atmosphere": "shifting",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 7,
+            "mood": "unease",
+            "location": "복도",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "black",
+            "atmosphere": "shifting",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 7,
+            "end_offset": 10,
+            "mood": "unease",
+            "location": "복도",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "black",
+            "atmosphere": "shifting",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 10,
+            "end_offset": 12,
+            "mood": "neutral",
+            "location": "복도",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "gray",
+            "atmosphere": "receding",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 12,
+            "end_offset": 15,
+            "mood": "neutral",
+            "location": "복도",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "gray",
+            "atmosphere": "receding",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 15,
+            "end_offset": 17,
+            "mood": "neutral",
+            "location": "복도",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "gray",
+            "atmosphere": "receding",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 17,
+            "end_offset": 20,
+            "mood": "neutral",
+            "location": "복도",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "gray",
+            "atmosphere": "receding",
+            "fact_tags": []
+          }
         ],
-        "color_palette": "amber",
-        "atmosphere": "locking down",
-        "narration_beats": [
-          "문이 잠깁니다."
-        ]
-      },
-      {
-        "scene_num": 3,
-        "act_id": "act_2",
-        "narration": "창 밖의 그림자.",
-        "fact_tags": [],
         "mood": "unease",
-        "entity_visible": true,
-        "location": "복도",
-        "characters_present": [
-          "연구원"
-        ],
-        "color_palette": "black",
-        "atmosphere": "shifting",
-        "narration_beats": [
-          "창 밖의 그림자."
-        ]
+        "key_points": []
       },
       {
-        "scene_num": 4,
-        "act_id": "act_2",
-        "narration": "소리가 멀어집니다.",
-        "fact_tags": [],
+        "act_id": "revelation",
+        "monologue": "기록이 재개됩니다. 잠시의 정적.",
+        "beats": [
+          {
+            "start_offset": 0,
+            "end_offset": 2,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "blue",
+            "atmosphere": "resuming",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 2,
+            "end_offset": 3,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "blue",
+            "atmosphere": "resuming",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 3,
+            "end_offset": 5,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "blue",
+            "atmosphere": "resuming",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 8,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "blue",
+            "atmosphere": "resuming",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 8,
+            "end_offset": 11,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "blue",
+            "atmosphere": "resuming",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 11,
+            "end_offset": 14,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "blue",
+            "atmosphere": "steady",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 14,
+            "end_offset": 16,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "blue",
+            "atmosphere": "steady",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 16,
+            "end_offset": 18,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "blue",
+            "atmosphere": "steady",
+            "fact_tags": []
+          }
+        ],
         "mood": "neutral",
-        "entity_visible": false,
-        "location": "복도",
-        "characters_present": [
-          "연구원"
-        ],
-        "color_palette": "gray",
-        "atmosphere": "receding",
-        "narration_beats": [
-          "소리가 멀어집니다."
-        ]
+        "key_points": []
       },
       {
-        "scene_num": 5,
-        "act_id": "act_3",
-        "narration": "기록이 재개됩니다.",
-        "fact_tags": [],
-        "mood": "neutral",
-        "entity_visible": false,
-        "location": "본부",
-        "characters_present": [
-          "연구원"
+        "act_id": "unresolved",
+        "monologue": "경보가 해제됩니다. 상황 종료.",
+        "beats": [
+          {
+            "start_offset": 0,
+            "end_offset": 2,
+            "mood": "calm",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": false,
+            "color_palette": "white",
+            "atmosphere": "cleared",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 2,
+            "end_offset": 3,
+            "mood": "calm",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": false,
+            "color_palette": "white",
+            "atmosphere": "cleared",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 3,
+            "end_offset": 5,
+            "mood": "calm",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": false,
+            "color_palette": "white",
+            "atmosphere": "cleared",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 6,
+            "mood": "calm",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": false,
+            "color_palette": "white",
+            "atmosphere": "cleared",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 6,
+            "end_offset": 8,
+            "mood": "calm",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": false,
+            "color_palette": "white",
+            "atmosphere": "cleared",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 8,
+            "end_offset": 11,
+            "mood": "calm",
+            "location": "통제실",
+            "characters_present": [
+              "경비원"
+            ],
+            "entity_visible": false,
+            "color_palette": "white",
+            "atmosphere": "cleared",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 11,
+            "end_offset": 14,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "white",
+            "atmosphere": "closing",
+            "fact_tags": []
+          },
+          {
+            "start_offset": 14,
+            "end_offset": 17,
+            "mood": "neutral",
+            "location": "본부",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "white",
+            "atmosphere": "closing",
+            "fact_tags": []
+          }
         ],
-        "color_palette": "blue",
-        "atmosphere": "resuming",
-        "narration_beats": [
-          "기록이 재개됩니다."
-        ]
-      },
-      {
-        "scene_num": 6,
-        "act_id": "act_3",
-        "narration": "잠시의 정적.",
-        "fact_tags": [],
-        "mood": "neutral",
-        "entity_visible": false,
-        "location": "본부",
-        "characters_present": [
-          "연구원"
-        ],
-        "color_palette": "blue",
-        "atmosphere": "steady",
-        "narration_beats": [
-          "잠시의 정적."
-        ]
-      },
-      {
-        "scene_num": 7,
-        "act_id": "act_4",
-        "narration": "경보가 해제됩니다.",
-        "fact_tags": [],
         "mood": "calm",
-        "entity_visible": false,
-        "location": "통제실",
-        "characters_present": [
-          "경비원"
-        ],
-        "color_palette": "white",
-        "atmosphere": "cleared",
-        "narration_beats": [
-          "경보가 해제됩니다."
-        ]
-      },
-      {
-        "scene_num": 8,
-        "act_id": "act_4",
-        "narration": "상황 종료.",
-        "fact_tags": [],
-        "mood": "neutral",
-        "entity_visible": false,
-        "location": "본부",
-        "characters_present": [
-          "연구원"
-        ],
-        "color_palette": "white",
-        "atmosphere": "closing",
-        "narration_beats": [
-          "상황 종료."
-        ]
+        "key_points": []
       }
     ],
     "metadata": {
       "language": "ko",
-      "scene_count": 8,
+      "scene_count": 32,
       "writer_model": "deepseek-v4-flash",
       "writer_provider": "deepseek",
       "prompt_template": "v1-scenario-writer",
       "format_guide_template": "v1-format-guide",
       "forbidden_terms_version": "v1"
     },
-    "source_version": "v1-llm-writer"
+    "source_version": "v2-monologue"
   }
 }

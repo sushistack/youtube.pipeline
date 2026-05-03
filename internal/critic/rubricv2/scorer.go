@@ -115,10 +115,10 @@ func Score(in Input) contractv2.CriticReport {
 // --- Criterion 1: hook ≤15s ---------------------------------------------
 
 func scoreHook(in Input) (int, *contractv2.Failure) {
-	if len(in.Script.Scenes) == 0 {
+	if len(in.Script.LegacyScenes()) == 0 {
 		return 0, &contractv2.Failure{FailureQuote: "no scenes"}
 	}
-	first := in.Script.Scenes[0]
+	first := in.Script.LegacyScenes()[0]
 	runes := []rune(first.Narration)
 	score := contractv2.MaxScorePerCriterion
 	notes := []string{}
@@ -150,7 +150,7 @@ func scoreHook(in Input) (int, *contractv2.Failure) {
 func scoreInformationDrip(in Input) (int, *contractv2.Failure) {
 	keywords := []string{"격리", "절차", "프로토콜", "수용", "수감", "수직"}
 	hitScenes := 0
-	for _, s := range in.Script.Scenes {
+	for _, s := range in.Script.LegacyScenes() {
 		for _, kw := range keywords {
 			if strings.Contains(s.Narration, kw) {
 				hitScenes++
@@ -176,7 +176,7 @@ func scoreInformationDrip(in Input) (int, *contractv2.Failure) {
 func scoreConcreteIncident(in Input) (int, *contractv2.Failure) {
 	sensoryVerbs := []string{"흘러내렸", "찢어졌", "갈라졌", "터졌", "무너졌", "스며들었", "쏟아졌"}
 	hitScenes := 0
-	for _, s := range in.Script.Scenes {
+	for _, s := range in.Script.LegacyScenes() {
 		for _, v := range sensoryVerbs {
 			if strings.Contains(s.Narration, v) {
 				hitScenes++
@@ -200,7 +200,7 @@ func scoreConcreteIncident(in Input) (int, *contractv2.Failure) {
 // --- Criterion 4: twist position ----------------------------------------
 
 func scoreTwistPosition(in Input) (int, *contractv2.Failure) {
-	scenes := in.Script.Scenes
+	scenes := in.Script.LegacyScenes()
 	total := len(scenes)
 	if total == 0 {
 		return 0, &contractv2.Failure{FailureQuote: "no scenes"}
@@ -235,7 +235,7 @@ func scoreTwistPosition(in Input) (int, *contractv2.Failure) {
 // --- Criterion 5: unresolved outro --------------------------------------
 
 func scoreUnresolvedOutro(in Input) (int, *contractv2.Failure) {
-	scenes := in.Script.Scenes
+	scenes := in.Script.LegacyScenes()
 	if len(scenes) == 0 {
 		return 0, &contractv2.Failure{FailureQuote: "no scenes"}
 	}
@@ -271,7 +271,7 @@ func scoreSentenceRhythm(in Input) (int, *contractv2.Failure) {
 	totalLen := 0
 	totalSentences := 0
 	violatingScene := -1
-	for i, s := range in.Script.Scenes {
+	for i, s := range in.Script.LegacyScenes() {
 		if !isTenseMood(s.Mood) {
 			continue
 		}
@@ -347,7 +347,7 @@ func scorePOVConsistency(in Input) (int, *contractv2.Failure) {
 	thirdPerson := []string{"재단은", "그것은", "조사관은", "요원은", "그들은"}
 	violations := 0
 	firstViolation := ""
-	for _, s := range in.Script.Scenes {
+	for _, s := range in.Script.LegacyScenes() {
 		hasSecond := containsAny(s.Narration, secondPerson)
 		hasThird := containsAny(s.Narration, thirdPerson)
 		if hasSecond && hasThird {
@@ -459,8 +459,9 @@ func scriptText(script *domain.NarrationScript) string {
 	if script == nil {
 		return ""
 	}
-	parts := make([]string, len(script.Scenes))
-	for i, s := range script.Scenes {
+	scenes := script.LegacyScenes()
+	parts := make([]string, len(scenes))
+	for i, s := range scenes {
 		parts[i] = s.Narration
 	}
 	return strings.Join(parts, "\n")

@@ -11,6 +11,7 @@ import (
 
 type PromptAssets struct {
 	WriterTemplate          string
+	SegmenterTemplate       string
 	PolisherTemplate        string
 	CriticTemplate          string
 	VisualBreakdownTemplate string
@@ -26,6 +27,7 @@ type PromptAssets struct {
 
 const (
 	writerPromptPath          = "docs/prompts/scenario/03_writing.md"
+	segmenterPromptPath       = "docs/prompts/scenario/03_segmenting.md"
 	polisherPromptPath        = "docs/prompts/scenario/03_5_polish.md"
 	criticPromptPath          = "docs/prompts/scenario/critic_agent.md"
 	visualBreakdownPromptPath = "docs/prompts/scenario/03_5_visual_breakdown.md"
@@ -61,6 +63,10 @@ func LoadPromptAssets(projectRoot string, useTemplatePrompts bool) (PromptAssets
 	if err != nil {
 		return PromptAssets{}, err
 	}
+	segmenterTemplate, err := loadSegmenterTemplate(projectRoot, useTemplatePrompts)
+	if err != nil {
+		return PromptAssets{}, err
+	}
 	polisherTemplate, err := readAsset(projectRoot, polisherPromptPath)
 	if err != nil {
 		return PromptAssets{}, err
@@ -93,6 +99,7 @@ func LoadPromptAssets(projectRoot string, useTemplatePrompts bool) (PromptAssets
 
 	return PromptAssets{
 		WriterTemplate:          writerTemplate,
+		SegmenterTemplate:       segmenterTemplate,
 		PolisherTemplate:        polisherTemplate,
 		CriticTemplate:          criticTemplate,
 		VisualBreakdownTemplate: visualBreakdownTemplate,
@@ -154,4 +161,18 @@ func loadWriterTemplate(projectRoot string, useTemplatePrompts bool) (string, er
 		return body, nil
 	}
 	return readAsset(projectRoot, writerPromptPath)
+}
+
+// loadSegmenterTemplate selects the v2 stage-2 beat-segmenter prompt source.
+// Mirrors loadWriterTemplate's `useTemplatePrompts` toggle so the embedded
+// + on-disk paths stay in lockstep.
+func loadSegmenterTemplate(projectRoot string, useTemplatePrompts bool) (string, error) {
+	if useTemplatePrompts {
+		body, err := prompts.ReadAgent(prompts.AgentScriptSegmenter)
+		if err != nil {
+			return "", fmt.Errorf("load prompt asset %s: %w", prompts.AgentScriptSegmenter, domain.ErrValidation)
+		}
+		return body, nil
+	}
+	return readAsset(projectRoot, segmenterPromptPath)
 }

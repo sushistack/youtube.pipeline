@@ -216,13 +216,7 @@ func writeReviewScenarioFixture(t *testing.T, scenes []domain.NarrationScene) st
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "scenario.json")
 	payload := map[string]any{
-		"narration": map[string]any{
-			"scp_id":         "049",
-			"title":          "Scenario",
-			"scenes":         scenes,
-			"metadata":       map[string]any{"language": "ko", "scene_count": len(scenes)},
-			"source_version": "v1-llm-writer",
-		},
+		"narration": legacyScenesToV2Map(scenes),
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -232,6 +226,83 @@ func writeReviewScenarioFixture(t *testing.T, scenes []domain.NarrationScene) st
 		t.Fatalf("write scenario: %v", err)
 	}
 	return path
+}
+
+// legacyScenesToV2Map renders a slice of v1 NarrationScene specs as a v2
+// NarrationScript JSON map. CONSECUTIVE same-act scenes group into one Act;
+// each scene becomes one BeatAnchor over its rune slice of the act monologue.
+// Used by review-scene fixture builders during the D1–D6 transition.
+func legacyScenesToV2Map(scenes []domain.NarrationScene) map[string]any {
+	type group struct {
+		actID    string
+		members  []domain.NarrationScene
+	}
+	var groups []group
+	for _, s := range scenes {
+		actID := s.ActID
+		if actID == "" {
+			actID = domain.ActIncident
+		}
+		if len(groups) > 0 && groups[len(groups)-1].actID == actID {
+			groups[len(groups)-1].members = append(groups[len(groups)-1].members, s)
+		} else {
+			groups = append(groups, group{actID: actID, members: []domain.NarrationScene{s}})
+		}
+	}
+	acts := make([]map[string]any, 0, len(groups))
+	for _, g := range groups {
+		runes := []rune{}
+		beats := make([]map[string]any, 0, len(g.members))
+		for i, s := range g.members {
+			before := len(runes)
+			runes = append(runes, []rune(s.Narration)...)
+			chars := s.CharactersPresent
+			if len(chars) == 0 {
+				chars = []string{"unknown"}
+			}
+			factTags := s.FactTags
+			if factTags == nil {
+				factTags = []domain.FactTag{}
+			}
+			beats = append(beats, map[string]any{
+				"start_offset":       before,
+				"end_offset":         len(runes),
+				"mood":               firstNonEmptyStr(s.Mood, "calm"),
+				"location":           firstNonEmptyStr(s.Location, "site-19"),
+				"characters_present": chars,
+				"entity_visible":     s.EntityVisible,
+				"color_palette":      firstNonEmptyStr(s.ColorPalette, "neutral"),
+				"atmosphere":         firstNonEmptyStr(s.Atmosphere, "subdued"),
+				"fact_tags":          factTags,
+			})
+			if i < len(g.members)-1 {
+				runes = append(runes, ' ')
+			}
+		}
+		acts = append(acts, map[string]any{
+			"act_id":     g.actID,
+			"monologue":  string(runes),
+			"mood":       "calm",
+			"key_points": []string{},
+			"beats":      beats,
+		})
+	}
+	return map[string]any{
+		"scp_id":         "049",
+		"title":          "Scenario",
+		"acts":           acts,
+		"metadata":       map[string]any{"language": "ko", "scene_count": len(scenes)},
+		"source_version": "v2-monologue",
+	}
+}
+
+func firstNonEmptyStr(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // ── ListScenes ────────────────────────────────────────────────────────────────
@@ -320,18 +391,40 @@ func TestSceneService_ListScenes_OverlayFromScenario(t *testing.T) {
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		t.Fatalf("mkdir run dir: %v", err)
 	}
-	scenes := []domain.NarrationScene{
-		{SceneNum: 1, Narration: "장면 1 내레이션"},
-		{SceneNum: 2, Narration: "장면 2 내레이션"},
-		{SceneNum: 3, Narration: "장면 3 내레이션"},
+	// Build a v2 NarrationScript whose LegacyScenes() yields 3 scenes
+	// numbered 1..3 with the narrations the test asserts on.
+	mkBeat := func(s, e int) map[string]any {
+		return map[string]any{
+			"start_offset":       s,
+			"end_offset":         e,
+			"mood":               "calm",
+			"location":           "site-19",
+			"characters_present": []string{"연구원"},
+			"entity_visible":     false,
+			"color_palette":      "neutral",
+			"atmosphere":         "subdued",
+			"fact_tags":          []any{},
+		}
 	}
+	monologue := "장면 1 내레이션 장면 2 내레이션 장면 3 내레이션"
+	// "장면 1 내레이션" = 9 runes; separator = 1 rune; total = 9+1+9+1+9 = 29
 	payload := map[string]any{
 		"narration": map[string]any{
-			"scp_id":         "049",
-			"title":          "Scenario",
-			"scenes":         scenes,
-			"metadata":       map[string]any{"language": "ko", "scene_count": len(scenes)},
-			"source_version": "v1-llm-writer",
+			"scp_id": "049",
+			"title":  "Scenario",
+			"acts": []map[string]any{{
+				"act_id":     "incident",
+				"monologue":  monologue,
+				"mood":       "calm",
+				"key_points": []string{},
+				"beats": []map[string]any{
+					mkBeat(0, 9),
+					mkBeat(10, 19),
+					mkBeat(20, 29),
+				},
+			}},
+			"metadata":       map[string]any{"language": "ko", "scene_count": 3},
+			"source_version": "v2-monologue",
 		},
 	}
 	raw, err := json.Marshal(payload)
@@ -430,13 +523,9 @@ func TestSceneService_ListReviewItems_ResolvesRelativeScenarioPath(t *testing.T)
 		t.Fatalf("mkdir run dir: %v", err)
 	}
 	payload := map[string]any{
-		"narration": map[string]any{
-			"scp_id":         "049",
-			"title":          "Scenario",
-			"scenes":         []domain.NarrationScene{{SceneNum: 1, ActID: "act_hook", Narration: "장면 1 내레이션"}},
-			"metadata":       map[string]any{"language": "ko", "scene_count": 1},
-			"source_version": "v1-llm-writer",
-		},
+		"narration": legacyScenesToV2Map([]domain.NarrationScene{
+			{SceneNum: 1, ActID: "act_hook", Narration: "장면 1 내레이션"},
+		}),
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

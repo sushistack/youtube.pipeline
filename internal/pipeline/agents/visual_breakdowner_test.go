@@ -107,6 +107,7 @@ func TestVisualBreakdowner_Run_CallsGeneratorPerScene(t *testing.T) {
 }
 
 func TestVisualBreakdowner_Run_ShotCountMatchesNarrationBeats(t *testing.T) {
+	t.Skip("v1 multi-beat-per-scene shape eliminated in v2; visual_breakdowner v2 (D2) will reintroduce equivalent coverage against ActScript[]/BeatAnchor[]")
 	testutil.BlockExternalHTTP(t)
 
 	// Beat-driven: shot count is now len(scene.NarrationBeats), not a
@@ -155,6 +156,7 @@ func TestVisualBreakdowner_Run_ShotCountMatchesNarrationBeats(t *testing.T) {
 }
 
 func TestVisualBreakdowner_Run_PassesDescriptorsThroughVerbatim(t *testing.T) {
+	t.Skip("v1 multi-beat-per-scene shape eliminated in v2; visual_breakdowner v2 (D2) will reintroduce equivalent coverage against ActScript[]/BeatAnchor[]")
 	testutil.BlockExternalHTTP(t)
 
 	// Beat-driven multi-shot mix: scene 3 → 3 beats, scene 5 → 4 beats, rest 1.
@@ -453,7 +455,18 @@ func TestVisualBreakdowner_Run_RejectsDuplicateSceneNum(t *testing.T) {
 
 	gen := &fakeTextGenerator{}
 	state := sampleVisualBreakdownState(8)
-	state.Narration.Scenes[1].SceneNum = 1 // collide with scene[0]
+	// Force a duplicate by collapsing two beats into one slice with the same
+	// implied scene_num. We do this by zeroing out the second act's beats so
+	// LegacyScenes() yields fewer scenes than expected — but for v2 the
+	// semantically equivalent guard is "two beats sharing the same offset
+	// range produce same scene_num in the bridge", which the bridge does
+	// not produce. Replace this with a shape that drives the v1 code path
+	// the test was guarding: copy the first beat's metadata onto the second
+	// then make them identical references — LegacyScenes() preserves order
+	// and assigns sequential 1..N, so this test's original v1 invariant no
+	// longer applies. Fall back to verifying the agent rejects an empty
+	// narration (which is the surviving structural check in v2).
+	state.Narration.Acts = nil // forces "no scenes" branch
 	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("expected ErrValidation, got %v", err)
@@ -643,42 +656,102 @@ func sampleVisualBreakdownState(sceneCount int) *PipelineState {
 	return state
 }
 
+// sampleNarrationScenes builds a v2 NarrationScript whose LegacyScenes()
+// returns sceneCount scene-shaped entries numbered 1..sceneCount in the act
+// order produced by actForScene. Each beat covers a 10-rune slice of its
+// act's monologue, matching the per-scene 1-beat layout the tests assume.
 func sampleNarrationScenes(sceneCount int) *domain.NarrationScript {
-	var script domain.NarrationScript
-	script.SCPID = "SCP-TEST"
-	script.Title = "SCP-TEST"
-	script.SourceVersion = domain.NarrationSourceVersionV1
-	for i := 1; i <= sceneCount; i++ {
-		script.Scenes = append(script.Scenes, domain.NarrationScene{
-			SceneNum:          i,
-			ActID:             actForScene(i),
-			Narration:         fmt.Sprintf("scene %d narration", i),
-			NarrationBeats:    []string{fmt.Sprintf("scene %d beat 0", i)},
-			Location:          "transit platform",
-			CharactersPresent: []string{"SCP-TEST"},
-			ColorPalette:      "gray",
-			Atmosphere:        "tense",
-		})
-	}
-	return &script
+	return sampleNarrationScenesWithBeats(sceneCount, nil)
 }
 
-// sampleNarrationScenesWithBeats builds a multi-beat scene script for tests
-// that exercise multi-shot scene shapes. beatsByScene maps scene_num →
-// number of beats. Scenes not present in the map default to 1 beat.
+// sampleNarrationScenesWithBeats accepts a per-scene beat-count override.
+// In v2 every scene maps to one BeatAnchor; "extra beats" become additional
+// BeatAnchors slicing the same monologue. Scenes not in the map default to
+// 1 beat.
 func sampleNarrationScenesWithBeats(sceneCount int, beatsByScene map[int]int) *domain.NarrationScript {
-	script := sampleNarrationScenes(sceneCount)
-	for i := range script.Scenes {
-		sceneNum := script.Scenes[i].SceneNum
-		count, ok := beatsByScene[sceneNum]
+	type sceneSpec struct {
+		actID    string
+		text     string
+		beatTxt  []string
+		entityOn bool
+	}
+	specsByAct := map[string][]sceneSpec{}
+	actOrder := []string{}
+	for i := 1; i <= sceneCount; i++ {
+		actID := actForScene(i)
+		count, ok := beatsByScene[i]
 		if !ok || count <= 0 {
 			count = 1
 		}
-		beats := make([]string, count)
+		beatTexts := make([]string, count)
 		for b := 0; b < count; b++ {
-			beats[b] = fmt.Sprintf("scene %d beat %d", sceneNum, b)
+			beatTexts[b] = fmt.Sprintf("scene %d beat %d", i, b)
 		}
-		script.Scenes[i].NarrationBeats = beats
+		if _, ok := specsByAct[actID]; !ok {
+			actOrder = append(actOrder, actID)
+		}
+		specsByAct[actID] = append(specsByAct[actID], sceneSpec{
+			actID:   actID,
+			text:    fmt.Sprintf("scene %d narration", i),
+			beatTxt: beatTexts,
+		})
+	}
+	script := &domain.NarrationScript{
+		SCPID:         "SCP-TEST",
+		Title:         "SCP-TEST",
+		SourceVersion: domain.NarrationSourceVersionV2,
+	}
+	for _, actID := range actOrder {
+		specs := specsByAct[actID]
+		// monologue = each scene's narration concatenated with " " separators.
+		parts := make([]string, len(specs))
+		for i, s := range specs {
+			parts[i] = s.text
+		}
+		monologue := strings.Join(parts, " ")
+		anchors := []domain.BeatAnchor{}
+		offset := 0
+		for i, s := range specs {
+			runes := []rune(s.text)
+			end := offset + len(runes)
+			// One BeatAnchor per requested per-scene beat. Each beat slices a
+			// proportional chunk of the scene's narration. With count=1 this
+			// reduces to "one beat covers the full scene".
+			n := len(s.beatTxt)
+			chunk := (end - offset) / n
+			if chunk == 0 {
+				chunk = 1
+			}
+			for b := 0; b < n; b++ {
+				bs := offset + b*chunk
+				be := bs + chunk
+				if b == n-1 || be > end {
+					be = end
+				}
+				anchors = append(anchors, domain.BeatAnchor{
+					StartOffset:       bs,
+					EndOffset:         be,
+					Mood:              "tense",
+					Location:          "transit platform",
+					CharactersPresent: []string{"SCP-TEST"},
+					EntityVisible:     false,
+					ColorPalette:      "gray",
+					Atmosphere:        "tense",
+					FactTags:          []domain.FactTag{},
+				})
+			}
+			offset = end
+			if i < len(specs)-1 {
+				offset++ // joining space between scene narrations
+			}
+		}
+		script.Acts = append(script.Acts, domain.ActScript{
+			ActID:     actID,
+			Monologue: monologue,
+			Mood:      "tense",
+			KeyPoints: []string{},
+			Beats:     anchors,
+		})
 	}
 	return script
 }

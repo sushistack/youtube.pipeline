@@ -484,8 +484,9 @@ func buildCharacterMap(state *agents.PipelineState) (map[int]bool, error) {
 		}
 		return out, nil
 	}
-	narrationByScene := make(map[int]bool, len(state.Narration.Scenes))
-	for _, scene := range state.Narration.Scenes {
+	legacyScenes := state.Narration.LegacyScenes()
+	narrationByScene := make(map[int]bool, len(legacyScenes))
+	for _, scene := range legacyScenes {
 		narrationByScene[scene.SceneNum] = scene.EntityVisible
 	}
 	// Validate every visual scene has a narration counterpart.

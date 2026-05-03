@@ -24,38 +24,83 @@ func TestNarrationScript_JSONRoundTrip(t *testing.T) {
 
 func TestNarrationScript_JSONTagsSnakeCase(t *testing.T) {
 	assertSnakeCaseJSONTags(t, reflect.TypeOf(NarrationScript{}))
+	assertSnakeCaseJSONTags(t, reflect.TypeOf(ActScript{}))
+	assertSnakeCaseJSONTags(t, reflect.TypeOf(BeatAnchor{}))
 	assertSnakeCaseJSONTags(t, reflect.TypeOf(NarrationScene{}))
 	assertSnakeCaseJSONTags(t, reflect.TypeOf(FactTag{}))
 	assertSnakeCaseJSONTags(t, reflect.TypeOf(NarrationMetadata{}))
 }
 
+// TestLegacyScenes_ProducesV1Shape verifies the bridge that downstream v1
+// agents (visual_breakdowner, polisher v1 stub, scene_service) consume
+// during the D1–D6 incremental migration.
+func TestLegacyScenes_ProducesV1Shape(t *testing.T) {
+	script := sampleNarrationScript()
+	legacy := script.LegacyScenes()
+	if got, want := len(legacy), 2; got != want {
+		t.Fatalf("len=%d want %d", got, want)
+	}
+	if legacy[0].SceneNum != 1 || legacy[1].SceneNum != 2 {
+		t.Fatalf("scene_num order: %d, %d", legacy[0].SceneNum, legacy[1].SceneNum)
+	}
+	if legacy[0].ActID != ActIncident {
+		t.Fatalf("act_id: %s", legacy[0].ActID)
+	}
+	if legacy[0].Narration != "문이 닫히는 순간." {
+		t.Fatalf("first narration: %q", legacy[0].Narration)
+	}
+	if legacy[1].Narration != "당신은 이미 늦었습니다." {
+		t.Fatalf("second narration: %q", legacy[1].Narration)
+	}
+}
+
 func sampleNarrationScript() NarrationScript {
+	monologue := "문이 닫히는 순간." + "당신은 이미 늦었습니다."
+	// rune offsets: "문이 닫히는 순간." = 10 runes; "당신은 이미 늦었습니다." = 12 runes
 	return NarrationScript{
 		SCPID: "SCP-TEST",
 		Title: "SCP-TEST",
-		Scenes: []NarrationScene{
+		Acts: []ActScript{
 			{
-				SceneNum:          1,
-				ActID:             ActIncident,
-				Narration:         "문이 닫히는 순간, 당신은 이미 늦었습니다.",
-				FactTags:          []FactTag{{Key: "containment", Content: "Three observers are required."}},
-				Mood:              "tense",
-				EntityVisible:     true,
-				Location:          "Site-19 containment chamber",
-				CharactersPresent: []string{"SCP-TEST", "Observer-1"},
-				ColorPalette:      "cold gray, alarm red",
-				Atmosphere:        "claustrophobic dread",
+				ActID:     ActIncident,
+				Monologue: monologue,
+				Mood:      "tense",
+				KeyPoints: []string{"door closes", "observer late"},
+				Beats: []BeatAnchor{
+					{
+						StartOffset:       0,
+						EndOffset:         10,
+						Mood:              "tense",
+						Location:          "Site-19 containment chamber",
+						CharactersPresent: []string{"SCP-TEST", "Observer-1"},
+						EntityVisible:     true,
+						ColorPalette:      "cold gray, alarm red",
+						Atmosphere:        "claustrophobic dread",
+						FactTags:          []FactTag{{Key: "containment", Content: "Three observers are required."}},
+					},
+					{
+						StartOffset:       10,
+						EndOffset:         23,
+						Mood:              "tense",
+						Location:          "Site-19 containment chamber",
+						CharactersPresent: []string{"SCP-TEST", "Observer-1"},
+						EntityVisible:     true,
+						ColorPalette:      "cold gray, alarm red",
+						Atmosphere:        "claustrophobic dread",
+						FactTags:          []FactTag{},
+					},
+				},
 			},
 		},
 		Metadata: NarrationMetadata{
 			Language:              LanguageKorean,
-			SceneCount:            1,
-			WriterModel:           "gpt-test",
-			WriterProvider:        "openai",
+			SceneCount:            2,
+			WriterModel:           "qwen-max",
+			WriterProvider:        "dashscope",
 			PromptTemplate:        "03_writing.md",
 			FormatGuideTemplate:   "format_guide.md",
 			ForbiddenTermsVersion: "sha256",
 		},
-		SourceVersion: NarrationSourceVersionV1,
+		SourceVersion: NarrationSourceVersionV2,
 	}
 }

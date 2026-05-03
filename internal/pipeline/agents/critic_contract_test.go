@@ -25,7 +25,15 @@ func TestCriticPostReviewerSchema_RejectsOutOfRangeSceneNum(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	err := validateMinorPolicyFindings(
 		[]domain.MinorPolicyFinding{{SceneNum: 99, Reason: "미성년자가 위험에 노출됩니다."}},
-		&domain.NarrationScript{Scenes: []domain.NarrationScene{{SceneNum: 1}}},
+		&domain.NarrationScript{Acts: []domain.ActScript{{
+			ActID:     domain.ActIncident,
+			Monologue: "한 줄.",
+			Beats: []domain.BeatAnchor{{
+				StartOffset: 0, EndOffset: 3,
+				Mood: "calm", Location: "x", CharactersPresent: []string{"y"},
+				ColorPalette: "z", Atmosphere: "w",
+			}},
+		}}},
 	)
 	if err == nil {
 		t.Fatal("expected error, got nil")

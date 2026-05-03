@@ -1,0 +1,13 @@
+{
+  "act_id": "incident",
+  "beats": [
+    {"start_offset": 0,  "end_offset": 10, "mood": "shock",   "location": "platform edge",   "characters_present": ["SCP-TEST"],         "entity_visible": true,  "color_palette": "alarm red, cold gray", "atmosphere": "sudden dread",       "fact_tags": [{"key": "incident", "content": "first sighting reported"}]},
+    {"start_offset": 10, "end_offset": 20, "mood": "tense",   "location": "transit platform", "characters_present": ["SCP-TEST", "Observer-1"], "entity_visible": true,  "color_palette": "shadow black, dirty white", "atmosphere": "ringing silence",  "fact_tags": []},
+    {"start_offset": 20, "end_offset": 30, "mood": "uneasy",  "location": "platform stairs",  "characters_present": ["Observer-1"],       "entity_visible": false, "color_palette": "muted yellow, gray", "atmosphere": "delayed echo",       "fact_tags": []},
+    {"start_offset": 30, "end_offset": 40, "mood": "alert",   "location": "control booth",    "characters_present": ["Observer-2"],       "entity_visible": false, "color_palette": "monitor green, steel", "atmosphere": "nervous hum",      "fact_tags": [{"key": "monitoring", "content": "footage shows motion"}]},
+    {"start_offset": 40, "end_offset": 50, "mood": "shock",   "location": "control booth",    "characters_present": ["Observer-2", "SCP-TEST"], "entity_visible": true,  "color_palette": "alarm red", "atmosphere": "alarm triggered",       "fact_tags": []},
+    {"start_offset": 50, "end_offset": 60, "mood": "tense",   "location": "platform end",     "characters_present": ["SCP-TEST"],         "entity_visible": true,  "color_palette": "concrete gray", "atmosphere": "approaching danger", "fact_tags": []},
+    {"start_offset": 60, "end_offset": 70, "mood": "panic",   "location": "platform end",     "characters_present": ["Observer-1"],       "entity_visible": false, "color_palette": "shadow black", "atmosphere": "lost in dark",        "fact_tags": []},
+    {"start_offset": 70, "end_offset": 80, "mood": "dread",   "location": "stairwell",        "characters_present": ["Observer-1"],       "entity_visible": true,  "color_palette": "fluorescent flicker", "atmosphere": "no safe exit", "fact_tags": []}
+  ]
+}

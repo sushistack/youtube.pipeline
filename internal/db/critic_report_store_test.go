@@ -97,25 +97,31 @@ func TestCriticReportStore_NarrationAttempt_RoundTrip(t *testing.T) {
 		t.Fatalf("seed run: %v", err)
 	}
 
+	monologue := "그 의사는 도착한 모든 곳에서 사람들을 치료한다고 말했습니다."
 	narration := &domain.NarrationScript{
 		SCPID: "049",
 		Title: "Plague Doctor",
-		Scenes: []domain.NarrationScene{
+		Acts: []domain.ActScript{
 			{
-				SceneNum:          1,
-				ActID:             "incident",
-				Narration:         "그 의사는 도착한 모든 곳에서 사람들을 치료한다고 말했습니다.",
-				FactTags:          []domain.FactTag{},
-				Mood:              "ominous",
-				EntityVisible:     true,
-				Location:          "Site-19 cell",
-				CharactersPresent: []string{"SCP-049"},
-				ColorPalette:      "muted gray, candlelight amber",
-				Atmosphere:        "claustrophobic dread",
+				ActID:     domain.ActIncident,
+				Monologue: monologue,
+				Mood:      "ominous",
+				KeyPoints: []string{},
+				Beats: []domain.BeatAnchor{{
+					StartOffset:       0,
+					EndOffset:         len([]rune(monologue)),
+					Mood:              "ominous",
+					Location:          "Site-19 cell",
+					CharactersPresent: []string{"SCP-049"},
+					EntityVisible:     true,
+					ColorPalette:      "muted gray, candlelight amber",
+					Atmosphere:        "claustrophobic dread",
+					FactTags:          []domain.FactTag{},
+				}},
 			},
 		},
 		Metadata:      domain.NarrationMetadata{},
-		SourceVersion: "v1-writer",
+		SourceVersion: domain.NarrationSourceVersionV2,
 	}
 
 	if err := store.InsertNarrationAttempt(context.Background(), "scp-049-run-1", 2, narration); err != nil {
@@ -136,8 +142,8 @@ func TestCriticReportStore_NarrationAttempt_RoundTrip(t *testing.T) {
 	if rec.Narration == nil || rec.Narration.SCPID != "049" {
 		t.Fatalf("Narration round-trip failed: %+v", rec.Narration)
 	}
-	if len(rec.Narration.Scenes) != 1 || rec.Narration.Scenes[0].ActID != "incident" {
-		t.Errorf("Scene round-trip failed: %+v", rec.Narration.Scenes)
+	if len(rec.Narration.Acts) != 1 || rec.Narration.Acts[0].ActID != domain.ActIncident {
+		t.Errorf("Act round-trip failed: %+v", rec.Narration.Acts)
 	}
 }
 

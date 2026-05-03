@@ -5,8 +5,14 @@ package domain
 type PipelineConfig struct {
 	// LLM Model IDs
 	WriterModel string `yaml:"writer_model" mapstructure:"writer_model"`
-	CriticModel string `yaml:"critic_model" mapstructure:"critic_model"`
-	TTSModel    string `yaml:"tts_model"    mapstructure:"tts_model"`
+	// SegmenterModel is the v2 stage-2 beat-segmenter model. Per spec D1
+	// the segmenter runs on a smaller LLM (qwen-plus) optimized for offset
+	// arithmetic on a fixed monologue, distinct from WriterModel which
+	// handles creative density. DashScope-hosted (DashScope-only per
+	// memory/feedback_api_dashscope_only.md).
+	SegmenterModel string `yaml:"segmenter_model" mapstructure:"segmenter_model"`
+	CriticModel    string `yaml:"critic_model" mapstructure:"critic_model"`
+	TTSModel       string `yaml:"tts_model"    mapstructure:"tts_model"`
 	// ImageModel is the text-to-image model used for non-character shots
 	// (e.g. "qwen-image"). It is intentionally distinct from ImageEditModel
 	// because qwen-image does not accept reference images; routing depends
@@ -30,7 +36,11 @@ type PipelineConfig struct {
 
 	// Provider names (for Writer ≠ Critic enforcement)
 	WriterProvider string `yaml:"writer_provider" mapstructure:"writer_provider"`
-	CriticProvider string `yaml:"critic_provider" mapstructure:"critic_provider"`
+	// SegmenterProvider names the provider for the v2 stage-2 segmenter.
+	// Defaults to "dashscope" because Qwen models are only called via
+	// DashScope (memory/feedback_api_dashscope_only.md).
+	SegmenterProvider string `yaml:"segmenter_provider" mapstructure:"segmenter_provider"`
+	CriticProvider    string `yaml:"critic_provider" mapstructure:"critic_provider"`
 
 	// ImageProvider is the provider for image generation ("comfyui" default —
 	// local FLUX.2 Klein 4B via ComfyUIEndpoint; "dashscope" remains supported
@@ -146,6 +156,7 @@ type PipelineConfig struct {
 func DefaultConfig() PipelineConfig {
 	return PipelineConfig{
 		WriterModel:              "deepseek-v4-flash",
+		SegmenterModel:           "qwen-plus",
 		CriticModel:              "gemini-3.1-flash-lite-preview",
 		TTSModel:                 "qwen3-tts-flash-2025-09-18",
 		TTSVoice:                 "Ethan",
@@ -153,6 +164,7 @@ func DefaultConfig() PipelineConfig {
 		ImageModel:               "qwen-image",
 		ImageEditModel:           "qwen-image-edit",
 		WriterProvider:           "deepseek",
+		SegmenterProvider:        "dashscope",
 		CriticProvider:           "gemini",
 		ImageProvider:            "comfyui",
 		TTSProvider:              "dashscope",

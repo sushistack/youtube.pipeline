@@ -137,7 +137,8 @@ func runTTSTrack(
 	if state.Narration == nil {
 		return TTSTrackResult{}, fmt.Errorf("tts track: %w: scenario.json missing narration", domain.ErrValidation)
 	}
-	if len(state.Narration.Scenes) == 0 {
+	legacyScenes := state.Narration.LegacyScenes()
+	if len(legacyScenes) == 0 {
 		return TTSTrackResult{}, fmt.Errorf("tts track: %w: scenario.json has zero scenes", domain.ErrValidation)
 	}
 
@@ -172,9 +173,9 @@ func runTTSTrack(
 		Observation: domain.NewStageObservation(domain.StageTTS),
 	}
 
-	seenSceneNum := make(map[int]struct{}, len(state.Narration.Scenes))
+	seenSceneNum := make(map[int]struct{}, len(legacyScenes))
 	start := clk.Now()
-	for _, scene := range state.Narration.Scenes {
+	for _, scene := range legacyScenes {
 		if scene.SceneNum <= 0 {
 			return result, fmt.Errorf("tts track: %w: scene_num must be >= 1, got %d", domain.ErrValidation, scene.SceneNum)
 		}

@@ -5,190 +5,634 @@
   "input": {
     "scp_id": "SCP-173",
     "title": "SCP-173 - 조각상",
-    "scenes": [
+    "acts": [
       {
-        "scene_num": 1,
-        "act_id": "act_hook",
-        "narration": "눈을 깜빡이는 순간, 그것은 이미 당신 뒤에 서 있습니다.",
-        "fact_tags": [
+        "act_id": "incident",
+        "monologue": "눈을 깜빡이는 순간, 그것은 이미 당신 뒤에 서 있습니다.",
+        "beats": [
           {
-            "key": "class",
-            "content": "유클리드"
+            "start_offset": 0,
+            "end_offset": 4,
+            "mood": "tension",
+            "location": "특수 격리 구역",
+            "characters_present": [
+              "D급 인원"
+            ],
+            "entity_visible": true,
+            "color_palette": "dark_concrete",
+            "atmosphere": "suffocating",
+            "fact_tags": [
+              {
+                "key": "class",
+                "content": "유클리드"
+              }
+            ]
+          },
+          {
+            "start_offset": 4,
+            "end_offset": 8,
+            "mood": "tension",
+            "location": "특수 격리 구역",
+            "characters_present": [
+              "D급 인원"
+            ],
+            "entity_visible": true,
+            "color_palette": "dark_concrete",
+            "atmosphere": "suffocating",
+            "fact_tags": [
+              {
+                "key": "class",
+                "content": "유클리드"
+              }
+            ]
+          },
+          {
+            "start_offset": 8,
+            "end_offset": 12,
+            "mood": "tension",
+            "location": "특수 격리 구역",
+            "characters_present": [
+              "D급 인원"
+            ],
+            "entity_visible": true,
+            "color_palette": "dark_concrete",
+            "atmosphere": "suffocating",
+            "fact_tags": [
+              {
+                "key": "class",
+                "content": "유클리드"
+              }
+            ]
+          },
+          {
+            "start_offset": 12,
+            "end_offset": 16,
+            "mood": "tension",
+            "location": "특수 격리 구역",
+            "characters_present": [
+              "D급 인원"
+            ],
+            "entity_visible": true,
+            "color_palette": "dark_concrete",
+            "atmosphere": "suffocating",
+            "fact_tags": [
+              {
+                "key": "class",
+                "content": "유클리드"
+              }
+            ]
+          },
+          {
+            "start_offset": 16,
+            "end_offset": 20,
+            "mood": "tension",
+            "location": "특수 격리 구역",
+            "characters_present": [
+              "D급 인원"
+            ],
+            "entity_visible": true,
+            "color_palette": "dark_concrete",
+            "atmosphere": "suffocating",
+            "fact_tags": [
+              {
+                "key": "class",
+                "content": "유클리드"
+              }
+            ]
+          },
+          {
+            "start_offset": 20,
+            "end_offset": 24,
+            "mood": "tension",
+            "location": "특수 격리 구역",
+            "characters_present": [
+              "D급 인원"
+            ],
+            "entity_visible": true,
+            "color_palette": "dark_concrete",
+            "atmosphere": "suffocating",
+            "fact_tags": [
+              {
+                "key": "class",
+                "content": "유클리드"
+              }
+            ]
+          },
+          {
+            "start_offset": 24,
+            "end_offset": 28,
+            "mood": "tension",
+            "location": "특수 격리 구역",
+            "characters_present": [
+              "D급 인원"
+            ],
+            "entity_visible": true,
+            "color_palette": "dark_concrete",
+            "atmosphere": "suffocating",
+            "fact_tags": [
+              {
+                "key": "class",
+                "content": "유클리드"
+              }
+            ]
+          },
+          {
+            "start_offset": 28,
+            "end_offset": 32,
+            "mood": "tension",
+            "location": "특수 격리 구역",
+            "characters_present": [
+              "D급 인원"
+            ],
+            "entity_visible": true,
+            "color_palette": "dark_concrete",
+            "atmosphere": "suffocating",
+            "fact_tags": [
+              {
+                "key": "class",
+                "content": "유클리드"
+              }
+            ]
           }
         ],
         "mood": "tension",
-        "entity_visible": true,
-        "location": "특수 격리 구역",
-        "characters_present": [
-          "D급 인원"
-        ],
-        "color_palette": "dark_concrete",
-        "atmosphere": "suffocating",
-        "narration_beats": [
-          "눈을 깜빡이는 순간, 그것은 이미 당신 뒤에 서 있습니다."
-        ]
+        "key_points": []
       },
       {
-        "scene_num": 2,
-        "act_id": "act_lore",
-        "narration": "재단 데이터베이스에 따르면 SCP-173은 1993년 처음 발견되었습니다.",
-        "fact_tags": [
+        "act_id": "mystery",
+        "monologue": "재단 데이터베이스에 따르면 SCP-173은 1993년 처음 발견되었습니다.",
+        "beats": [
           {
-            "key": "discovered",
-            "content": "1993"
+            "start_offset": 0,
+            "end_offset": 5,
+            "mood": "investigative",
+            "location": "재단 기록 보관소",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "muted_gray",
+            "atmosphere": "clinical",
+            "fact_tags": [
+              {
+                "key": "discovered",
+                "content": "1993"
+              }
+            ]
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 10,
+            "mood": "investigative",
+            "location": "재단 기록 보관소",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "muted_gray",
+            "atmosphere": "clinical",
+            "fact_tags": [
+              {
+                "key": "discovered",
+                "content": "1993"
+              }
+            ]
+          },
+          {
+            "start_offset": 10,
+            "end_offset": 15,
+            "mood": "investigative",
+            "location": "재단 기록 보관소",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "muted_gray",
+            "atmosphere": "clinical",
+            "fact_tags": [
+              {
+                "key": "discovered",
+                "content": "1993"
+              }
+            ]
+          },
+          {
+            "start_offset": 15,
+            "end_offset": 20,
+            "mood": "investigative",
+            "location": "재단 기록 보관소",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "muted_gray",
+            "atmosphere": "clinical",
+            "fact_tags": [
+              {
+                "key": "discovered",
+                "content": "1993"
+              }
+            ]
+          },
+          {
+            "start_offset": 20,
+            "end_offset": 25,
+            "mood": "investigative",
+            "location": "재단 기록 보관소",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "muted_gray",
+            "atmosphere": "clinical",
+            "fact_tags": [
+              {
+                "key": "discovered",
+                "content": "1993"
+              }
+            ]
+          },
+          {
+            "start_offset": 25,
+            "end_offset": 30,
+            "mood": "investigative",
+            "location": "재단 기록 보관소",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "muted_gray",
+            "atmosphere": "clinical",
+            "fact_tags": [
+              {
+                "key": "discovered",
+                "content": "1993"
+              }
+            ]
+          },
+          {
+            "start_offset": 30,
+            "end_offset": 35,
+            "mood": "investigative",
+            "location": "재단 기록 보관소",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "muted_gray",
+            "atmosphere": "clinical",
+            "fact_tags": [
+              {
+                "key": "discovered",
+                "content": "1993"
+              }
+            ]
+          },
+          {
+            "start_offset": 35,
+            "end_offset": 41,
+            "mood": "investigative",
+            "location": "재단 기록 보관소",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": false,
+            "color_palette": "muted_gray",
+            "atmosphere": "clinical",
+            "fact_tags": [
+              {
+                "key": "discovered",
+                "content": "1993"
+              }
+            ]
           }
         ],
         "mood": "investigative",
-        "entity_visible": false,
-        "location": "재단 기록 보관소",
-        "characters_present": [
-          "연구원"
-        ],
-        "color_palette": "muted_gray",
-        "atmosphere": "clinical",
-        "narration_beats": [
-          "재단 데이터베이스에 따르면 SCP-173은 1993년 처음 발견되었습니다."
-        ]
+        "key_points": []
       },
       {
-        "scene_num": 3,
-        "act_id": "act_threat",
-        "narration": "격리실 내 시선 접촉이 끊기면 SCP-173은 초인적 속도로 이동합니다.",
-        "fact_tags": [
+        "act_id": "revelation",
+        "monologue": "격리실 내 시선 접촉이 끊기면 SCP-173은 초인적 속도로 이동합니다.",
+        "beats": [
           {
-            "key": "ability",
-            "content": "시선 차단 시 이동"
+            "start_offset": 0,
+            "end_offset": 5,
+            "mood": "dread",
+            "location": "격리실 내부",
+            "characters_present": [
+              "D급 인원",
+              "감시 요원"
+            ],
+            "entity_visible": true,
+            "color_palette": "blood_red_tint",
+            "atmosphere": "hostile",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "시선 차단 시 이동"
+              }
+            ]
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 10,
+            "mood": "dread",
+            "location": "격리실 내부",
+            "characters_present": [
+              "D급 인원",
+              "감시 요원"
+            ],
+            "entity_visible": true,
+            "color_palette": "blood_red_tint",
+            "atmosphere": "hostile",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "시선 차단 시 이동"
+              }
+            ]
+          },
+          {
+            "start_offset": 10,
+            "end_offset": 15,
+            "mood": "dread",
+            "location": "격리실 내부",
+            "characters_present": [
+              "D급 인원",
+              "감시 요원"
+            ],
+            "entity_visible": true,
+            "color_palette": "blood_red_tint",
+            "atmosphere": "hostile",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "시선 차단 시 이동"
+              }
+            ]
+          },
+          {
+            "start_offset": 15,
+            "end_offset": 20,
+            "mood": "dread",
+            "location": "격리실 내부",
+            "characters_present": [
+              "D급 인원",
+              "감시 요원"
+            ],
+            "entity_visible": true,
+            "color_palette": "blood_red_tint",
+            "atmosphere": "hostile",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "시선 차단 시 이동"
+              }
+            ]
+          },
+          {
+            "start_offset": 20,
+            "end_offset": 25,
+            "mood": "dread",
+            "location": "격리실 내부",
+            "characters_present": [
+              "D급 인원",
+              "감시 요원"
+            ],
+            "entity_visible": true,
+            "color_palette": "blood_red_tint",
+            "atmosphere": "hostile",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "시선 차단 시 이동"
+              }
+            ]
+          },
+          {
+            "start_offset": 25,
+            "end_offset": 30,
+            "mood": "dread",
+            "location": "격리실 내부",
+            "characters_present": [
+              "D급 인원",
+              "감시 요원"
+            ],
+            "entity_visible": true,
+            "color_palette": "blood_red_tint",
+            "atmosphere": "hostile",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "시선 차단 시 이동"
+              }
+            ]
+          },
+          {
+            "start_offset": 30,
+            "end_offset": 35,
+            "mood": "dread",
+            "location": "격리실 내부",
+            "characters_present": [
+              "D급 인원",
+              "감시 요원"
+            ],
+            "entity_visible": true,
+            "color_palette": "blood_red_tint",
+            "atmosphere": "hostile",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "시선 차단 시 이동"
+              }
+            ]
+          },
+          {
+            "start_offset": 35,
+            "end_offset": 40,
+            "mood": "dread",
+            "location": "격리실 내부",
+            "characters_present": [
+              "D급 인원",
+              "감시 요원"
+            ],
+            "entity_visible": true,
+            "color_palette": "blood_red_tint",
+            "atmosphere": "hostile",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "시선 차단 시 이동"
+              }
+            ]
           }
         ],
         "mood": "dread",
-        "entity_visible": true,
-        "location": "격리실 내부",
-        "characters_present": [
-          "D급 인원",
-          "감시 요원"
-        ],
-        "color_palette": "blood_red_tint",
-        "atmosphere": "hostile",
-        "narration_beats": [
-          "격리실 내 시선 접촉이 끊기면 SCP-173은 초인적 속도로 이동합니다."
-        ]
+        "key_points": []
       },
       {
-        "scene_num": 4,
-        "act_id": "act_incident",
-        "narration": "2001년 격리 실패 사건에서 14명의 인원이 사망했습니다.",
-        "fact_tags": [
+        "act_id": "unresolved",
+        "monologue": "2001년 격리 실패 사건에서 14명의 인원이 사망했습니다.",
+        "beats": [
           {
-            "key": "incident",
-            "content": "격리 실패 2001"
+            "start_offset": 0,
+            "end_offset": 4,
+            "mood": "horror",
+            "location": "구역 19",
+            "characters_present": [
+              "희생자들"
+            ],
+            "entity_visible": false,
+            "color_palette": "monochrome",
+            "atmosphere": "desolate",
+            "fact_tags": [
+              {
+                "key": "incident",
+                "content": "격리 실패 2001"
+              }
+            ]
+          },
+          {
+            "start_offset": 4,
+            "end_offset": 8,
+            "mood": "horror",
+            "location": "구역 19",
+            "characters_present": [
+              "희생자들"
+            ],
+            "entity_visible": false,
+            "color_palette": "monochrome",
+            "atmosphere": "desolate",
+            "fact_tags": [
+              {
+                "key": "incident",
+                "content": "격리 실패 2001"
+              }
+            ]
+          },
+          {
+            "start_offset": 8,
+            "end_offset": 12,
+            "mood": "horror",
+            "location": "구역 19",
+            "characters_present": [
+              "희생자들"
+            ],
+            "entity_visible": false,
+            "color_palette": "monochrome",
+            "atmosphere": "desolate",
+            "fact_tags": [
+              {
+                "key": "incident",
+                "content": "격리 실패 2001"
+              }
+            ]
+          },
+          {
+            "start_offset": 12,
+            "end_offset": 16,
+            "mood": "horror",
+            "location": "구역 19",
+            "characters_present": [
+              "희생자들"
+            ],
+            "entity_visible": false,
+            "color_palette": "monochrome",
+            "atmosphere": "desolate",
+            "fact_tags": [
+              {
+                "key": "incident",
+                "content": "격리 실패 2001"
+              }
+            ]
+          },
+          {
+            "start_offset": 16,
+            "end_offset": 20,
+            "mood": "horror",
+            "location": "구역 19",
+            "characters_present": [
+              "희생자들"
+            ],
+            "entity_visible": false,
+            "color_palette": "monochrome",
+            "atmosphere": "desolate",
+            "fact_tags": [
+              {
+                "key": "incident",
+                "content": "격리 실패 2001"
+              }
+            ]
+          },
+          {
+            "start_offset": 20,
+            "end_offset": 24,
+            "mood": "horror",
+            "location": "구역 19",
+            "characters_present": [
+              "희생자들"
+            ],
+            "entity_visible": false,
+            "color_palette": "monochrome",
+            "atmosphere": "desolate",
+            "fact_tags": [
+              {
+                "key": "incident",
+                "content": "격리 실패 2001"
+              }
+            ]
+          },
+          {
+            "start_offset": 24,
+            "end_offset": 28,
+            "mood": "horror",
+            "location": "구역 19",
+            "characters_present": [
+              "희생자들"
+            ],
+            "entity_visible": false,
+            "color_palette": "monochrome",
+            "atmosphere": "desolate",
+            "fact_tags": [
+              {
+                "key": "incident",
+                "content": "격리 실패 2001"
+              }
+            ]
+          },
+          {
+            "start_offset": 28,
+            "end_offset": 33,
+            "mood": "horror",
+            "location": "구역 19",
+            "characters_present": [
+              "희생자들"
+            ],
+            "entity_visible": false,
+            "color_palette": "monochrome",
+            "atmosphere": "desolate",
+            "fact_tags": [
+              {
+                "key": "incident",
+                "content": "격리 실패 2001"
+              }
+            ]
           }
         ],
         "mood": "horror",
-        "entity_visible": false,
-        "location": "구역 19",
-        "characters_present": [
-          "희생자들"
-        ],
-        "color_palette": "monochrome",
-        "atmosphere": "desolate",
-        "narration_beats": [
-          "2001년 격리 실패 사건에서 14명의 인원이 사망했습니다."
-        ]
-      },
-      {
-        "scene_num": 5,
-        "act_id": "act_procedure",
-        "narration": "현재 격리 프로토콜은 최소 3명의 인원이 동시에 시선을 유지하도록 요구합니다.",
-        "fact_tags": [
-          {
-            "key": "protocol",
-            "content": "3인 시선 유지"
-          }
-        ],
-        "mood": "procedural",
-        "entity_visible": true,
-        "location": "격리 구역 입구",
-        "characters_present": [
-          "격리 팀"
-        ],
-        "color_palette": "safety_yellow",
-        "atmosphere": "tense_routine",
-        "narration_beats": [
-          "현재 격리 프로토콜은 최소 3명의 인원이 동시에 시선을 유지하도록 요구합니다."
-        ]
-      },
-      {
-        "scene_num": 6,
-        "act_id": "act_mystery",
-        "narration": "SCP-173의 기원은 불명입니다. 발견 당시 창고에 단독으로 있었습니다.",
-        "fact_tags": [
-          {
-            "key": "origin",
-            "content": "불명"
-          }
-        ],
-        "mood": "mysterious",
-        "entity_visible": false,
-        "location": "최초 발견 창고",
-        "characters_present": [
-          "발견자"
-        ],
-        "color_palette": "dusty_sepia",
-        "atmosphere": "eerie",
-        "narration_beats": [
-          "SCP-173의 기원은 불명입니다. 발견 당시 창고에 단독으로 있었습니다."
-        ]
-      },
-      {
-        "scene_num": 7,
-        "act_id": "act_escalation",
-        "narration": "당신도 지금 이 순간, 화면에서 눈을 떼지 않고 있지 않습니까?",
-        "fact_tags": [],
-        "mood": "fourth_wall",
-        "entity_visible": false,
-        "location": "시청자 공간",
-        "characters_present": [
-          "시청자"
-        ],
-        "color_palette": "screen_glow_blue",
-        "atmosphere": "immersive",
-        "narration_beats": [
-          "당신도 지금 이 순간, 화면에서 눈을 떼지 않고 있지 않습니까?"
-        ]
-      },
-      {
-        "scene_num": 8,
-        "act_id": "act_close",
-        "narration": "재단은 SCP-173을 안전하게 봉인했다고 말합니다. 하지만 과연 그것이 사실일까요?",
-        "fact_tags": [
-          {
-            "key": "status",
-            "content": "격리 중"
-          }
-        ],
-        "mood": "ominous",
-        "entity_visible": false,
-        "location": "재단 본부",
-        "characters_present": [
-          "재단 대변인"
-        ],
-        "color_palette": "cold_white",
-        "atmosphere": "unsettling",
-        "narration_beats": [
-          "재단은 SCP-173을 안전하게 봉인했다고 말합니다. 하지만 과연 그것이 사실일까요?"
-        ]
+        "key_points": []
       }
     ],
     "metadata": {
       "language": "ko",
-      "scene_count": 8,
+      "scene_count": 32,
       "writer_model": "deepseek-v4-flash",
       "writer_provider": "deepseek",
       "prompt_template": "v1-scenario-writer",
       "format_guide_template": "v1-format-guide",
       "forbidden_terms_version": "v1"
     },
-    "source_version": "v1-llm-writer"
+    "source_version": "v2-monologue"
   },
   "expected_verdict": "pass",
   "category": "known_pass",

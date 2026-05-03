@@ -98,7 +98,7 @@ func (f *ForbiddenTerms) MatchNarration(script *domain.NarrationScript) []Forbid
 			})
 		}
 	}
-	for _, scene := range script.Scenes {
+	for _, scene := range script.LegacyScenes() {
 		fields := []string{scene.Narration, scene.Location, scene.Atmosphere, scene.Mood}
 		for _, tag := range scene.FactTags {
 			fields = append(fields, tag.Content)
@@ -128,7 +128,7 @@ func (p *MinorSensitivePatterns) MatchNarration(script *domain.NarrationScript) 
 		return nil
 	}
 	hits := make([]MinorRegexHit, 0)
-	for _, scene := range script.Scenes {
+	for _, scene := range script.LegacyScenes() {
 		fields := []string{scene.Narration, scene.Location, scene.Atmosphere, scene.Mood}
 		for _, tag := range scene.FactTags {
 			fields = append(fields, tag.Content)

@@ -913,7 +913,7 @@ func loadNarrationScenes(path string) ([]domain.NarrationScene, error) {
 	if envelope.Narration == nil {
 		return nil, fmt.Errorf("scenario.json missing narration payload: %w", domain.ErrNotFound)
 	}
-	return envelope.Narration.Scenes, nil
+	return envelope.Narration.LegacyScenes(), nil
 }
 
 func extractTimelineReason(contextSnapshot *string) *string {

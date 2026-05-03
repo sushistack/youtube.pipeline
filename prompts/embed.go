@@ -31,6 +31,12 @@ var agentTemplates embed.FS
 // memory/feedback_config_not_env.md.
 const AgentScriptWriter = "script_writer"
 
+// AgentScriptSegmenter is the canonical name for the v2 stage-2 beat
+// segmentation template. Stage 1 (script_writer) produces the act
+// monologue; this template is rendered with the just-written monologue
+// + offsets contract so the LLM emits BeatAnchor[] slices.
+const AgentScriptSegmenter = "script_segmenter"
+
 // ReadAgent returns the embedded template body for the given agent name.
 // Returns an error wrapped with the agent name when the template is
 // missing — the caller can decide whether to fall back to the legacy

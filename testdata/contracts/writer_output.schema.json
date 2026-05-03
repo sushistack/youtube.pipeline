@@ -1,50 +1,63 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["scp_id", "title", "scenes", "metadata", "source_version"],
+  "required": ["scp_id", "title", "acts", "metadata", "source_version"],
   "additionalProperties": false,
   "properties": {
     "scp_id": { "type": "string", "minLength": 1 },
     "title": { "type": "string", "minLength": 1 },
-    "scenes": {
+    "acts": {
       "type": "array",
       "minItems": 4,
-      "maxItems": 32,
+      "maxItems": 4,
       "items": {
         "type": "object",
-        "required": ["scene_num", "act_id", "narration", "narration_beats", "fact_tags", "mood", "entity_visible", "location", "characters_present", "color_palette", "atmosphere"],
+        "required": ["act_id", "monologue", "beats", "mood", "key_points"],
         "additionalProperties": false,
         "properties": {
-          "scene_num": { "type": "integer", "minimum": 1 },
           "act_id": { "type": "string", "minLength": 1 },
-          "narration": { "type": "string", "minLength": 1 },
-          "narration_beats": {
+          "monologue": { "type": "string", "minLength": 1 },
+          "mood": { "type": "string", "minLength": 1 },
+          "key_points": {
             "type": "array",
-            "minItems": 1,
             "items": { "type": "string", "minLength": 1 }
           },
-          "fact_tags": {
+          "beats": {
             "type": "array",
+            "minItems": 8,
+            "maxItems": 10,
             "items": {
               "type": "object",
-              "required": ["key", "content"],
+              "required": ["start_offset", "end_offset", "mood", "location", "characters_present", "entity_visible", "color_palette", "atmosphere", "fact_tags"],
               "additionalProperties": false,
               "properties": {
-                "key": { "type": "string", "minLength": 1 },
-                "content": { "type": "string", "minLength": 1 }
+                "start_offset": { "type": "integer", "minimum": 0 },
+                "end_offset": { "type": "integer", "minimum": 1 },
+                "mood": { "type": "string", "minLength": 1 },
+                "location": { "type": "string", "minLength": 1 },
+                "characters_present": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string", "minLength": 1 }
+                },
+                "entity_visible": { "type": "boolean" },
+                "color_palette": { "type": "string", "minLength": 1 },
+                "atmosphere": { "type": "string", "minLength": 1 },
+                "fact_tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["key", "content"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "key": { "type": "string", "minLength": 1 },
+                      "content": { "type": "string", "minLength": 1 }
+                    }
+                  }
+                }
               }
             }
-          },
-          "mood": { "type": "string", "minLength": 1 },
-          "entity_visible": { "type": "boolean" },
-          "location": { "type": "string", "minLength": 1 },
-          "characters_present": {
-            "type": "array",
-            "minItems": 1,
-            "items": { "type": "string", "minLength": 1 }
-          },
-          "color_palette": { "type": "string", "minLength": 1 },
-          "atmosphere": { "type": "string", "minLength": 1 }
+          }
         }
       }
     },
@@ -54,7 +67,7 @@
       "additionalProperties": false,
       "properties": {
         "language": { "const": "ko" },
-        "scene_count": { "type": "integer", "minimum": 4, "maximum": 32 },
+        "scene_count": { "type": "integer", "minimum": 32, "maximum": 40 },
         "writer_model": { "type": "string", "minLength": 1 },
         "writer_provider": { "type": "string", "minLength": 1 },
         "prompt_template": { "type": "string", "minLength": 1 },
@@ -62,6 +75,6 @@
         "forbidden_terms_version": { "type": "string", "minLength": 1 }
       }
     },
-    "source_version": { "const": "v1-llm-writer" }
+    "source_version": { "const": "v2-monologue" }
   }
 }

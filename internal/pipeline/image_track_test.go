@@ -135,14 +135,31 @@ type imageTrackFixture struct {
 }
 
 func scenarioStateForTest(runID string, scenes []sceneFixture, frozen string) *agents.PipelineState {
-	narrationScenes := make([]domain.NarrationScene, 0, len(scenes))
+	// v2 transition: build a single-act NarrationScript whose LegacyScenes()
+	// returns one NarrationScene per fixture scene. Each scene → 1 BeatAnchor.
+	monoBuilder := []rune{}
+	anchors := []domain.BeatAnchor{}
+	for i, s := range scenes {
+		runes := []rune(s.narration)
+		before := len(monoBuilder)
+		monoBuilder = append(monoBuilder, runes...)
+		anchors = append(anchors, domain.BeatAnchor{
+			StartOffset:       before,
+			EndOffset:         len(monoBuilder),
+			Mood:              "tense",
+			Location:          "site-19",
+			CharactersPresent: []string{"unknown"},
+			EntityVisible:     s.entityVisible,
+			ColorPalette:      "neutral",
+			Atmosphere:        "subdued",
+			FactTags:          []domain.FactTag{},
+		})
+		if i < len(scenes)-1 {
+			monoBuilder = append(monoBuilder, ' ')
+		}
+	}
 	vbScenes := make([]domain.VisualBreakdownScene, 0, len(scenes))
 	for _, s := range scenes {
-		narrationScenes = append(narrationScenes, domain.NarrationScene{
-			SceneNum:      s.sceneNum,
-			Narration:     s.narration,
-			EntityVisible: s.entityVisible,
-		})
 		shots := make([]domain.VisualShot, 0, len(s.shots))
 		for i, descriptor := range s.shots {
 			shots = append(shots, domain.VisualShot{
@@ -163,8 +180,14 @@ func scenarioStateForTest(runID string, scenes []sceneFixture, frozen string) *a
 		RunID: runID,
 		SCPID: "049",
 		Narration: &domain.NarrationScript{
-			SCPID:  "049",
-			Scenes: narrationScenes,
+			SCPID:         "049",
+			SourceVersion: domain.NarrationSourceVersionV2,
+			Acts: []domain.ActScript{{
+				ActID:     domain.ActIncident,
+				Monologue: string(monoBuilder),
+				Beats:     anchors,
+				Mood:      "tense",
+			}},
 		},
 		VisualBreakdown: &domain.VisualBreakdownOutput{
 			SCPID:            "049",
@@ -839,10 +862,17 @@ func TestImageTrack_FrozenDescriptorOverridePrecedesArtifactValue(t *testing.T) 
 		RunID: runID,
 		SCPID: "049",
 		Narration: &domain.NarrationScript{
-			SCPID: "049",
-			Scenes: []domain.NarrationScene{
-				{SceneNum: 1, Narration: "n1", EntityVisible: false},
-			},
+			SCPID:         "049",
+			SourceVersion: domain.NarrationSourceVersionV2,
+			Acts: []domain.ActScript{{
+				ActID:     domain.ActIncident,
+				Monologue: "n1",
+				Beats: []domain.BeatAnchor{{
+					StartOffset: 0, EndOffset: 2,
+					Mood: "calm", Location: "site-19", CharactersPresent: []string{"unknown"},
+					EntityVisible: false, ColorPalette: "neutral", Atmosphere: "subdued",
+				}},
+			}},
 		},
 		VisualBreakdown: &domain.VisualBreakdownOutput{
 			SCPID:            "049",

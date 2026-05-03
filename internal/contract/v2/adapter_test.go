@@ -10,15 +10,35 @@ import (
 
 func TestFromNarrationLossyAdapter(t *testing.T) {
 	t.Parallel()
+	mkAct := func(actID, narration, mood, location, palette, atmos string, entity bool, chars []string) domain.ActScript {
+		runes := []rune(narration)
+		return domain.ActScript{
+			ActID:     actID,
+			Monologue: narration,
+			Mood:      mood,
+			KeyPoints: []string{},
+			Beats: []domain.BeatAnchor{{
+				StartOffset:       0,
+				EndOffset:         len(runes),
+				Mood:              mood,
+				Location:          location,
+				CharactersPresent: chars,
+				EntityVisible:     entity,
+				ColorPalette:      palette,
+				Atmosphere:        atmos,
+				FactTags:          []domain.FactTag{},
+			}},
+		}
+	}
 	in := &domain.NarrationScript{
 		SCPID: "SCP-173",
 		Title: "조각상",
-		Scenes: []domain.NarrationScene{
-			{SceneNum: 1, ActID: "incident", Narration: "검은 액체가 흘러내렸죠.", Mood: "tense", Location: "복도", ColorPalette: "암녹색", CharactersPresent: []string{"D-1099"}, EntityVisible: true, Atmosphere: "정적"},
-			{SceneNum: 2, ActID: "mystery", Narration: "그것은 움직이지 않았다.", Mood: "calm", Location: "격리실"},
-			{SceneNum: 3, ActID: "unresolved", Narration: "그것은 아직 그곳에 있다.", Mood: "ominous"},
+		Acts: []domain.ActScript{
+			mkAct("incident", "검은 액체가 흘러내렸죠.", "tense", "복도", "암녹색", "정적", true, []string{"D-1099"}),
+			mkAct("mystery", "그것은 움직이지 않았다.", "calm", "격리실", "", "", false, nil),
+			mkAct("unresolved", "그것은 아직 그곳에 있다.", "ominous", "", "", "", false, nil),
 		},
-		SourceVersion: domain.NarrationSourceVersionV1,
+		SourceVersion: domain.NarrationSourceVersionV2,
 	}
 	got := contractv2.FromNarration(in)
 	if len(got.Scenes) != 3 {

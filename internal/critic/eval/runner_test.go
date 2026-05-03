@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"os"
 	"path/filepath"
 	"testing"
@@ -193,40 +194,50 @@ func appendManifestPair(t testing.TB, root string, idx int, dirName string) {
 	}
 }
 
-// minimalNarrationInput returns a json.RawMessage with a valid NarrationScript.
+// minimalNarrationInput returns a json.RawMessage with a valid v2 NarrationScript.
 // Uses a hardcoded minimal payload without schema validation (runner tests do not
 // exercise ValidateFixture).
 func minimalNarrationInput() json.RawMessage {
-	scenes := make([]map[string]interface{}, 8)
-	for i := range scenes {
-		scenes[i] = map[string]interface{}{
-			"scene_num":          i + 1,
-			"act_id":             fmt.Sprintf("act_%d", i+1),
-			"narration":          "테스트 나레이션입니다.",
-			"narration_beats":    []string{"테스트 나레이션입니다."},
-			"fact_tags":          []interface{}{},
-			"mood":               "neutral",
-			"entity_visible":     false,
-			"location":           "격리실",
-			"characters_present": []string{"연구원"},
-			"color_palette":      "gray",
-			"atmosphere":         "calm",
+	actIDs := []string{"incident", "mystery", "revelation", "unresolved"}
+	acts := make([]map[string]interface{}, 4)
+	for i, id := range actIDs {
+		monologue := strings.Repeat("가", 80)
+		beats := make([]map[string]interface{}, 8)
+		for b := 0; b < 8; b++ {
+			beats[b] = map[string]interface{}{
+				"start_offset":       b * 10,
+				"end_offset":         (b + 1) * 10,
+				"mood":               "calm",
+				"location":           "격리실",
+				"characters_present": []string{"연구원"},
+				"entity_visible":     false,
+				"color_palette":      "gray",
+				"atmosphere":         "calm",
+				"fact_tags":          []interface{}{},
+			}
+		}
+		acts[i] = map[string]interface{}{
+			"act_id":     id,
+			"monologue":  monologue,
+			"beats":      beats,
+			"mood":       "calm",
+			"key_points": []string{},
 		}
 	}
 	payload := map[string]interface{}{
 		"scp_id": "SCP-TEST",
 		"title":  "테스트 시나리오",
-		"scenes": scenes,
+		"acts":   acts,
 		"metadata": map[string]interface{}{
-			"language":               "ko",
-			"scene_count":            8,
-			"writer_model":           "deepseek-v4-flash",
-			"writer_provider":        "deepseek",
-			"prompt_template":        "v1-scenario-writer",
-			"format_guide_template":  "v1-format-guide",
-			"forbidden_terms_version": "v1",
+			"language":                "ko",
+			"scene_count":             32,
+			"writer_model":            "qwen-max",
+			"writer_provider":         "dashscope",
+			"prompt_template":         "v2",
+			"format_guide_template":   "v2",
+			"forbidden_terms_version": "v2",
 		},
-		"source_version": "v1-llm-writer",
+		"source_version": "v2-monologue",
 	}
 	b, _ := json.Marshal(payload)
 	return b

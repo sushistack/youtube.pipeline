@@ -55,7 +55,7 @@ func TestPostWriterCritic_Run_PrecheckRetryWithoutLLMCall(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	state := sampleCriticState(t)
-	state.Narration.Scenes[0].Narration = "이건 wiki 문체입니다."
+	state.Narration.Acts[0].Monologue = "이건 wiki 문체입니다."
 	gen := &fakeTextGenerator{}
 	err := NewPostWriterCritic(gen, TextAgentConfig{Model: "critic-model", Provider: "anthropic"}, sampleWriterAssets(), mustValidator(t, "writer_output.schema.json"), mustValidator(t, "critic_post_writer.schema.json"), mustTerms(t), "openai")(context.Background(), state)
 	if err != nil {
@@ -157,7 +157,7 @@ func TestPostReviewerCritic_Run_PrecheckForbiddenTermsShortCircuits(t *testing.T
 	testutil.BlockExternalHTTP(t)
 
 	state := samplePostReviewerCriticState(t)
-	state.Narration.Scenes[0].Narration = "이건 wiki 문체입니다."
+	state.Narration.Acts[0].Monologue = "이건 wiki 문체입니다."
 	gen := &fakeTextGenerator{}
 	err := NewPostReviewerCritic(gen, TextAgentConfig{Model: "critic-model", Provider: "anthropic"}, sampleWriterAssets(), mustValidator(t, "writer_output.schema.json"), mustValidator(t, "visual_breakdown.schema.json"), mustValidator(t, "reviewer_report.schema.json"), mustValidator(t, "critic_post_reviewer.schema.json"), mustTerms(t), "openai")(context.Background(), state)
 	if err != nil {
@@ -241,7 +241,7 @@ func TestPostWriterPrecheck_SchemaFailureShortCircuits(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	state := sampleCriticState(t)
-	state.Narration.Scenes = nil
+	state.Narration.Acts = nil
 	precheck, err := runPostWriterPrecheck(state.Narration, mustValidator(t, "writer_output.schema.json"), mustTerms(t))
 	if err != nil {
 		t.Fatalf("precheck: %v", err)
@@ -255,7 +255,7 @@ func TestPostWriterPrecheck_ForbiddenTermsShortCircuits(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	state := sampleCriticState(t)
-	state.Narration.Scenes[0].Narration = "이건 wiki 문체입니다."
+	state.Narration.Acts[0].Monologue = "이건 wiki 문체입니다."
 	precheck, err := runPostWriterPrecheck(state.Narration, mustValidator(t, "writer_output.schema.json"), mustTerms(t))
 	if err != nil {
 		t.Fatalf("precheck: %v", err)
@@ -279,7 +279,7 @@ func TestPostWriterCritic_Run_PrecheckReportIsSchemaValidated(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	state := sampleCriticState(t)
-	state.Narration.Scenes[0].Narration = "이건 wiki 문체입니다."
+	state.Narration.Acts[0].Monologue = "이건 wiki 문체입니다."
 	gen := &fakeTextGenerator{}
 	err := NewPostWriterCritic(gen, TextAgentConfig{Model: "critic-model", Provider: "anthropic"}, sampleWriterAssets(), mustValidator(t, "writer_output.schema.json"), mustValidator(t, "critic_post_writer.schema.json"), mustTerms(t), "openai")(context.Background(), state)
 	if err != nil {

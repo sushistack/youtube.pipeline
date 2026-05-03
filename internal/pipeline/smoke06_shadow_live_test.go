@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +113,33 @@ func (smoke06Evaluator) Evaluate(_ context.Context, fixture eval.Fixture) (eval.
 func writeScenarioArtifact(t *testing.T, outputDir, runID string) {
 	t.Helper()
 
+	// v2 NarrationScript: 4 acts × 8 beats = 32 beats minimum.
+	actIDs := []string{"incident", "mystery", "revelation", "unresolved"}
+	acts := make([]map[string]any, 4)
+	for i, actID := range actIDs {
+		monologue := strings.Repeat("가", 80)
+		beats := make([]map[string]any, 8)
+		for b := 0; b < 8; b++ {
+			beats[b] = map[string]any{
+				"start_offset":       b * 10,
+				"end_offset":         (b + 1) * 10,
+				"mood":               "neutral",
+				"location":           "containment chamber",
+				"characters_present": []string{"researcher"},
+				"entity_visible":     false,
+				"color_palette":      "gray",
+				"atmosphere":         "calm",
+				"fact_tags":          []map[string]any{},
+			}
+		}
+		acts[i] = map[string]any{
+			"act_id":     actID,
+			"monologue":  monologue,
+			"beats":      beats,
+			"mood":       "neutral",
+			"key_points": []string{},
+		}
+	}
 	envelope := map[string]any{
 		"run_id":      runID,
 		"scp_id":      "SCP-049",
@@ -120,122 +148,17 @@ func writeScenarioArtifact(t *testing.T, outputDir, runID string) {
 		"narration": map[string]any{
 			"scp_id": "SCP-049",
 			"title":  "Shadow smoke",
-			"scenes": []map[string]any{
-				{
-					"scene_num":          1,
-					"act_id":             "act_1",
-					"narration":          "실험 장면입니다.",
-					"narration_beats":    []string{"실험 장면입니다."},
-					"fact_tags":          []map[string]any{},
-					"mood":               "neutral",
-					"entity_visible":     false,
-					"location":           "containment chamber",
-					"characters_present": []string{"researcher"},
-					"color_palette":      "gray",
-					"atmosphere":         "calm",
-				},
-				{
-					"scene_num":          2,
-					"act_id":             "act_1",
-					"narration":          "관찰 로그를 검토합니다.",
-					"narration_beats":    []string{"관찰 로그를 검토합니다."},
-					"fact_tags":          []map[string]any{},
-					"mood":               "neutral",
-					"entity_visible":     false,
-					"location":           "control room",
-					"characters_present": []string{"researcher"},
-					"color_palette":      "gray",
-					"atmosphere":         "calm",
-				},
-				{
-					"scene_num":          3,
-					"act_id":             "act_2",
-					"narration":          "이상 징후를 기록합니다.",
-					"narration_beats":    []string{"이상 징후를 기록합니다."},
-					"fact_tags":          []map[string]any{},
-					"mood":               "tense",
-					"entity_visible":     false,
-					"location":           "observation deck",
-					"characters_present": []string{"researcher"},
-					"color_palette":      "gray",
-					"atmosphere":         "tense",
-				},
-				{
-					"scene_num":          4,
-					"act_id":             "act_2",
-					"narration":          "봉인 절차를 진행합니다.",
-					"narration_beats":    []string{"봉인 절차를 진행합니다."},
-					"fact_tags":          []map[string]any{},
-					"mood":               "tense",
-					"entity_visible":     false,
-					"location":           "containment corridor",
-					"characters_present": []string{"researcher"},
-					"color_palette":      "gray",
-					"atmosphere":         "tense",
-				},
-				{
-					"scene_num":          5,
-					"act_id":             "act_3",
-					"narration":          "후속 분석을 시작합니다.",
-					"narration_beats":    []string{"후속 분석을 시작합니다."},
-					"fact_tags":          []map[string]any{},
-					"mood":               "neutral",
-					"entity_visible":     false,
-					"location":           "analysis lab",
-					"characters_present": []string{"researcher"},
-					"color_palette":      "gray",
-					"atmosphere":         "calm",
-				},
-				{
-					"scene_num":          6,
-					"act_id":             "act_3",
-					"narration":          "결론을 정리합니다.",
-					"narration_beats":    []string{"결론을 정리합니다."},
-					"fact_tags":          []map[string]any{},
-					"mood":               "neutral",
-					"entity_visible":     false,
-					"location":           "analysis lab",
-					"characters_present": []string{"researcher"},
-					"color_palette":      "gray",
-					"atmosphere":         "calm",
-				},
-				{
-					"scene_num":          7,
-					"act_id":             "act_4",
-					"narration":          "문서를 마감합니다.",
-					"narration_beats":    []string{"문서를 마감합니다."},
-					"fact_tags":          []map[string]any{},
-					"mood":               "neutral",
-					"entity_visible":     false,
-					"location":           "records room",
-					"characters_present": []string{"researcher"},
-					"color_palette":      "gray",
-					"atmosphere":         "calm",
-				},
-				{
-					"scene_num":          8,
-					"act_id":             "act_4",
-					"narration":          "보관 절차를 완료합니다.",
-					"narration_beats":    []string{"보관 절차를 완료합니다."},
-					"fact_tags":          []map[string]any{},
-					"mood":               "neutral",
-					"entity_visible":     false,
-					"location":           "records room",
-					"characters_present": []string{"researcher"},
-					"color_palette":      "gray",
-					"atmosphere":         "calm",
-				},
-			},
+			"acts":   acts,
 			"metadata": map[string]any{
 				"language":                "ko",
-				"scene_count":             8,
+				"scene_count":             32,
 				"writer_model":            "qwen-max",
 				"writer_provider":         "dashscope",
-				"prompt_template":         "v1",
-				"format_guide_template":   "v1",
-				"forbidden_terms_version": "v1",
+				"prompt_template":         "v2",
+				"format_guide_template":   "v2",
+				"forbidden_terms_version": "v2",
 			},
-			"source_version": "v1-llm-writer",
+			"source_version": "v2-monologue",
 		},
 	}
 	data, err := json.Marshal(envelope)

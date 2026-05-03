@@ -18,8 +18,9 @@ func FromNarration(in *domain.NarrationScript) ScriptOutput {
 	if in == nil {
 		return ScriptOutput{}
 	}
-	scenes := make([]Scene, len(in.Scenes))
-	for i, s := range in.Scenes {
+	legacy := in.LegacyScenes()
+	scenes := make([]Scene, len(legacy))
+	for i, s := range legacy {
 		scenes[i] = Scene{
 			SceneID:         s.SceneNum,
 			Section:         s.ActID,
@@ -37,7 +38,7 @@ func FromNarration(in *domain.NarrationScript) ScriptOutput {
 	out := ScriptOutput{
 		TitleCandidates: titles,
 		Scenes:          scenes,
-		OutroHookKO:     extractOutroHook(in.Scenes),
+		OutroHookKO:     extractOutroHook(legacy),
 		SourceAttribution: Attribution{
 			SCPNumber: in.SCPID,
 			License:   "CC BY-SA 3.0",

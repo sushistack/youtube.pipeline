@@ -19,14 +19,32 @@ func TestReadAgentScriptWriter(t *testing.T) {
 	required := []string{
 		"{scp_id}",
 		"{act_id}",
-		"{scene_num_range}",
-		"{scene_budget}",
+		"{monologue_rune_cap}",
 		"{format_guide}",
 		"{forbidden_terms_section}",
 		"{quality_feedback}",
-		"Cold-open hook within 15 seconds",
-		"Twist position 70–85%",
-		"Unresolved outro",
+	}
+	for _, r := range required {
+		if !strings.Contains(body, r) {
+			t.Errorf("template missing required marker %q", r)
+		}
+	}
+}
+
+func TestReadAgentScriptSegmenter(t *testing.T) {
+	t.Parallel()
+	body, err := prompts.ReadAgent(prompts.AgentScriptSegmenter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body == "" {
+		t.Fatal("template body empty")
+	}
+	required := []string{
+		"{act_id}",
+		"{monologue}",
+		"{monologue_rune_count}",
+		"{fact_tag_catalog}",
 	}
 	for _, r := range required {
 		if !strings.Contains(body, r) {

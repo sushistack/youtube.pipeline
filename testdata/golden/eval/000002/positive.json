@@ -5,184 +5,626 @@
   "input": {
     "scp_id": "SCP-096",
     "title": "SCP-096 - 수줍음이 많은 남자",
-    "scenes": [
+    "acts": [
       {
-        "scene_num": 1,
-        "act_id": "act_hook",
-        "narration": "사진 한 장. 단 하나의 픽셀. 그것으로 충분합니다. 당신은 이미 표적이 되었습니다.",
-        "fact_tags": [
+        "act_id": "incident",
+        "monologue": "사진 한 장. 단 하나의 픽셀. 그것으로 충분합니다. 당신은 이미 표적이 되었습니다.",
+        "beats": [
           {
-            "key": "trigger",
-            "content": "얼굴 인식"
+            "start_offset": 0,
+            "end_offset": 5,
+            "mood": "dread",
+            "location": "인터넷 어딘가",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "digital_white_noise",
+            "atmosphere": "existential_dread",
+            "fact_tags": [
+              {
+                "key": "trigger",
+                "content": "얼굴 인식"
+              }
+            ]
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 11,
+            "mood": "dread",
+            "location": "인터넷 어딘가",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "digital_white_noise",
+            "atmosphere": "existential_dread",
+            "fact_tags": [
+              {
+                "key": "trigger",
+                "content": "얼굴 인식"
+              }
+            ]
+          },
+          {
+            "start_offset": 11,
+            "end_offset": 17,
+            "mood": "dread",
+            "location": "인터넷 어딘가",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "digital_white_noise",
+            "atmosphere": "existential_dread",
+            "fact_tags": [
+              {
+                "key": "trigger",
+                "content": "얼굴 인식"
+              }
+            ]
+          },
+          {
+            "start_offset": 17,
+            "end_offset": 23,
+            "mood": "dread",
+            "location": "인터넷 어딘가",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "digital_white_noise",
+            "atmosphere": "existential_dread",
+            "fact_tags": [
+              {
+                "key": "trigger",
+                "content": "얼굴 인식"
+              }
+            ]
+          },
+          {
+            "start_offset": 23,
+            "end_offset": 29,
+            "mood": "dread",
+            "location": "인터넷 어딘가",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "digital_white_noise",
+            "atmosphere": "existential_dread",
+            "fact_tags": [
+              {
+                "key": "trigger",
+                "content": "얼굴 인식"
+              }
+            ]
+          },
+          {
+            "start_offset": 29,
+            "end_offset": 35,
+            "mood": "dread",
+            "location": "인터넷 어딘가",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "digital_white_noise",
+            "atmosphere": "existential_dread",
+            "fact_tags": [
+              {
+                "key": "trigger",
+                "content": "얼굴 인식"
+              }
+            ]
+          },
+          {
+            "start_offset": 35,
+            "end_offset": 41,
+            "mood": "dread",
+            "location": "인터넷 어딘가",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "digital_white_noise",
+            "atmosphere": "existential_dread",
+            "fact_tags": [
+              {
+                "key": "trigger",
+                "content": "얼굴 인식"
+              }
+            ]
+          },
+          {
+            "start_offset": 41,
+            "end_offset": 47,
+            "mood": "dread",
+            "location": "인터넷 어딘가",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "digital_white_noise",
+            "atmosphere": "existential_dread",
+            "fact_tags": [
+              {
+                "key": "trigger",
+                "content": "얼굴 인식"
+              }
+            ]
           }
         ],
         "mood": "dread",
-        "entity_visible": false,
-        "location": "인터넷 어딘가",
-        "characters_present": [
-          "피해자"
-        ],
-        "color_palette": "digital_white_noise",
-        "atmosphere": "existential_dread",
-        "narration_beats": [
-          "사진 한 장. 단 하나의 픽셀. 그것으로 충분합니다. 당신은 이미 표적이 되었습니다."
-        ]
+        "key_points": []
       },
       {
-        "scene_num": 2,
-        "act_id": "act_lore",
-        "narration": "SCP-096는 키 2.38미터의 인형으로, 극도로 낮은 체지방률을 보입니다.",
-        "fact_tags": [
+        "act_id": "mystery",
+        "monologue": "SCP-096는 키 2.38미터의 인형으로, 극도로 낮은 체지방률을 보입니다.",
+        "beats": [
           {
-            "key": "height",
-            "content": "2.38m"
+            "start_offset": 0,
+            "end_offset": 5,
+            "mood": "clinical",
+            "location": "격리실",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "cold_fluorescent",
+            "atmosphere": "unsettling",
+            "fact_tags": [
+              {
+                "key": "height",
+                "content": "2.38m"
+              }
+            ]
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 10,
+            "mood": "clinical",
+            "location": "격리실",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "cold_fluorescent",
+            "atmosphere": "unsettling",
+            "fact_tags": [
+              {
+                "key": "height",
+                "content": "2.38m"
+              }
+            ]
+          },
+          {
+            "start_offset": 10,
+            "end_offset": 15,
+            "mood": "clinical",
+            "location": "격리실",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "cold_fluorescent",
+            "atmosphere": "unsettling",
+            "fact_tags": [
+              {
+                "key": "height",
+                "content": "2.38m"
+              }
+            ]
+          },
+          {
+            "start_offset": 15,
+            "end_offset": 21,
+            "mood": "clinical",
+            "location": "격리실",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "cold_fluorescent",
+            "atmosphere": "unsettling",
+            "fact_tags": [
+              {
+                "key": "height",
+                "content": "2.38m"
+              }
+            ]
+          },
+          {
+            "start_offset": 21,
+            "end_offset": 26,
+            "mood": "clinical",
+            "location": "격리실",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "cold_fluorescent",
+            "atmosphere": "unsettling",
+            "fact_tags": [
+              {
+                "key": "height",
+                "content": "2.38m"
+              }
+            ]
+          },
+          {
+            "start_offset": 26,
+            "end_offset": 32,
+            "mood": "clinical",
+            "location": "격리실",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "cold_fluorescent",
+            "atmosphere": "unsettling",
+            "fact_tags": [
+              {
+                "key": "height",
+                "content": "2.38m"
+              }
+            ]
+          },
+          {
+            "start_offset": 32,
+            "end_offset": 37,
+            "mood": "clinical",
+            "location": "격리실",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "cold_fluorescent",
+            "atmosphere": "unsettling",
+            "fact_tags": [
+              {
+                "key": "height",
+                "content": "2.38m"
+              }
+            ]
+          },
+          {
+            "start_offset": 37,
+            "end_offset": 43,
+            "mood": "clinical",
+            "location": "격리실",
+            "characters_present": [
+              "연구원"
+            ],
+            "entity_visible": true,
+            "color_palette": "cold_fluorescent",
+            "atmosphere": "unsettling",
+            "fact_tags": [
+              {
+                "key": "height",
+                "content": "2.38m"
+              }
+            ]
           }
         ],
         "mood": "clinical",
-        "entity_visible": true,
-        "location": "격리실",
-        "characters_present": [
-          "연구원"
-        ],
-        "color_palette": "cold_fluorescent",
-        "atmosphere": "unsettling",
-        "narration_beats": [
-          "SCP-096는 키 2.38미터의 인형으로, 극도로 낮은 체지방률을 보입니다."
-        ]
+        "key_points": []
       },
       {
-        "scene_num": 3,
-        "act_id": "act_threat",
-        "narration": "SCP-096의 얼굴을 본 자는 누구든, 어디에 있든, SCP-096이 찾아옵니다.",
-        "fact_tags": [
+        "act_id": "revelation",
+        "monologue": "SCP-096의 얼굴을 본 자는 누구든, 어디에 있든, SCP-096이 찾아옵니다.",
+        "beats": [
           {
-            "key": "ability",
-            "content": "원거리 추적"
+            "start_offset": 0,
+            "end_offset": 5,
+            "mood": "horror",
+            "location": "전 세계",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "blood_wash",
+            "atmosphere": "inescapable",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "원거리 추적"
+              }
+            ]
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 11,
+            "mood": "horror",
+            "location": "전 세계",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "blood_wash",
+            "atmosphere": "inescapable",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "원거리 추적"
+              }
+            ]
+          },
+          {
+            "start_offset": 11,
+            "end_offset": 17,
+            "mood": "horror",
+            "location": "전 세계",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "blood_wash",
+            "atmosphere": "inescapable",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "원거리 추적"
+              }
+            ]
+          },
+          {
+            "start_offset": 17,
+            "end_offset": 23,
+            "mood": "horror",
+            "location": "전 세계",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "blood_wash",
+            "atmosphere": "inescapable",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "원거리 추적"
+              }
+            ]
+          },
+          {
+            "start_offset": 23,
+            "end_offset": 28,
+            "mood": "horror",
+            "location": "전 세계",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "blood_wash",
+            "atmosphere": "inescapable",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "원거리 추적"
+              }
+            ]
+          },
+          {
+            "start_offset": 28,
+            "end_offset": 34,
+            "mood": "horror",
+            "location": "전 세계",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "blood_wash",
+            "atmosphere": "inescapable",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "원거리 추적"
+              }
+            ]
+          },
+          {
+            "start_offset": 34,
+            "end_offset": 40,
+            "mood": "horror",
+            "location": "전 세계",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "blood_wash",
+            "atmosphere": "inescapable",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "원거리 추적"
+              }
+            ]
+          },
+          {
+            "start_offset": 40,
+            "end_offset": 46,
+            "mood": "horror",
+            "location": "전 세계",
+            "characters_present": [
+              "피해자"
+            ],
+            "entity_visible": false,
+            "color_palette": "blood_wash",
+            "atmosphere": "inescapable",
+            "fact_tags": [
+              {
+                "key": "ability",
+                "content": "원거리 추적"
+              }
+            ]
           }
         ],
         "mood": "horror",
-        "entity_visible": false,
-        "location": "전 세계",
-        "characters_present": [
-          "피해자"
-        ],
-        "color_palette": "blood_wash",
-        "atmosphere": "inescapable",
-        "narration_beats": [
-          "SCP-096의 얼굴을 본 자는 누구든, 어디에 있든, SCP-096이 찾아옵니다."
-        ]
+        "key_points": []
       },
       {
-        "scene_num": 4,
-        "act_id": "act_incident",
-        "narration": "████ 사건에서 SCP-096는 15,000킬로미터를 2시간 만에 이동했습니다.",
-        "fact_tags": [
+        "act_id": "unresolved",
+        "monologue": "████ 사건에서 SCP-096는 15,000킬로미터를 2시간 만에 이동했습니다.",
+        "beats": [
           {
-            "key": "speed",
-            "content": "고속 이동 기록"
+            "start_offset": 0,
+            "end_offset": 5,
+            "mood": "awe",
+            "location": "대서양",
+            "characters_present": [
+              "기동 특수 부대"
+            ],
+            "entity_visible": false,
+            "color_palette": "ocean_dark",
+            "atmosphere": "overwhelming",
+            "fact_tags": [
+              {
+                "key": "speed",
+                "content": "고속 이동 기록"
+              }
+            ]
+          },
+          {
+            "start_offset": 5,
+            "end_offset": 11,
+            "mood": "awe",
+            "location": "대서양",
+            "characters_present": [
+              "기동 특수 부대"
+            ],
+            "entity_visible": false,
+            "color_palette": "ocean_dark",
+            "atmosphere": "overwhelming",
+            "fact_tags": [
+              {
+                "key": "speed",
+                "content": "고속 이동 기록"
+              }
+            ]
+          },
+          {
+            "start_offset": 11,
+            "end_offset": 16,
+            "mood": "awe",
+            "location": "대서양",
+            "characters_present": [
+              "기동 특수 부대"
+            ],
+            "entity_visible": false,
+            "color_palette": "ocean_dark",
+            "atmosphere": "overwhelming",
+            "fact_tags": [
+              {
+                "key": "speed",
+                "content": "고속 이동 기록"
+              }
+            ]
+          },
+          {
+            "start_offset": 16,
+            "end_offset": 22,
+            "mood": "awe",
+            "location": "대서양",
+            "characters_present": [
+              "기동 특수 부대"
+            ],
+            "entity_visible": false,
+            "color_palette": "ocean_dark",
+            "atmosphere": "overwhelming",
+            "fact_tags": [
+              {
+                "key": "speed",
+                "content": "고속 이동 기록"
+              }
+            ]
+          },
+          {
+            "start_offset": 22,
+            "end_offset": 27,
+            "mood": "awe",
+            "location": "대서양",
+            "characters_present": [
+              "기동 특수 부대"
+            ],
+            "entity_visible": false,
+            "color_palette": "ocean_dark",
+            "atmosphere": "overwhelming",
+            "fact_tags": [
+              {
+                "key": "speed",
+                "content": "고속 이동 기록"
+              }
+            ]
+          },
+          {
+            "start_offset": 27,
+            "end_offset": 33,
+            "mood": "awe",
+            "location": "대서양",
+            "characters_present": [
+              "기동 특수 부대"
+            ],
+            "entity_visible": false,
+            "color_palette": "ocean_dark",
+            "atmosphere": "overwhelming",
+            "fact_tags": [
+              {
+                "key": "speed",
+                "content": "고속 이동 기록"
+              }
+            ]
+          },
+          {
+            "start_offset": 33,
+            "end_offset": 39,
+            "mood": "awe",
+            "location": "대서양",
+            "characters_present": [
+              "기동 특수 부대"
+            ],
+            "entity_visible": false,
+            "color_palette": "ocean_dark",
+            "atmosphere": "overwhelming",
+            "fact_tags": [
+              {
+                "key": "speed",
+                "content": "고속 이동 기록"
+              }
+            ]
+          },
+          {
+            "start_offset": 39,
+            "end_offset": 45,
+            "mood": "awe",
+            "location": "대서양",
+            "characters_present": [
+              "기동 특수 부대"
+            ],
+            "entity_visible": false,
+            "color_palette": "ocean_dark",
+            "atmosphere": "overwhelming",
+            "fact_tags": [
+              {
+                "key": "speed",
+                "content": "고속 이동 기록"
+              }
+            ]
           }
         ],
         "mood": "awe",
-        "entity_visible": false,
-        "location": "대서양",
-        "characters_present": [
-          "기동 특수 부대"
-        ],
-        "color_palette": "ocean_dark",
-        "atmosphere": "overwhelming",
-        "narration_beats": [
-          "████ 사건에서 SCP-096는 15,000킬로미터를 2시간 만에 이동했습니다."
-        ]
-      },
-      {
-        "scene_num": 5,
-        "act_id": "act_procedure",
-        "narration": "격리 규약은 단순합니다. SCP-096의 얼굴을 절대 보지 마십시오.",
-        "fact_tags": [
-          {
-            "key": "containment",
-            "content": "시각 차단"
-          }
-        ],
-        "mood": "grim",
-        "entity_visible": true,
-        "location": "격리 구역",
-        "characters_present": [
-          "격리 팀"
-        ],
-        "color_palette": "warning_red",
-        "atmosphere": "strict",
-        "narration_beats": [
-          "격리 규약은 단순합니다. SCP-096의 얼굴을 절대 보지 마십시오."
-        ]
-      },
-      {
-        "scene_num": 6,
-        "act_id": "act_mystery",
-        "narration": "SCP-096가 우는 이유는 아직 밝혀지지 않았습니다. 무엇이 그토록 슬프게 만드는 걸까요?",
-        "fact_tags": [],
-        "mood": "melancholic",
-        "entity_visible": false,
-        "location": "격리실",
-        "characters_present": [
-          "관찰자"
-        ],
-        "color_palette": "gray_sorrow",
-        "atmosphere": "haunting",
-        "narration_beats": [
-          "SCP-096가 우는 이유는 아직 밝혀지지 않았습니다. 무엇이 그토록 슬프게 만드는 걸까요?"
-        ]
-      },
-      {
-        "scene_num": 7,
-        "act_id": "act_escalation",
-        "narration": "지금 이 영상을 보는 당신의 얼굴, 혹시 어딘가에 찍혀 있지는 않나요?",
-        "fact_tags": [],
-        "mood": "fourth_wall",
-        "entity_visible": false,
-        "location": "시청자 공간",
-        "characters_present": [
-          "시청자"
-        ],
-        "color_palette": "camera_flash",
-        "atmosphere": "paranoid",
-        "narration_beats": [
-          "지금 이 영상을 보는 당신의 얼굴, 혹시 어딘가에 찍혀 있지는 않나요?"
-        ]
-      },
-      {
-        "scene_num": 8,
-        "act_id": "act_close",
-        "narration": "재단은 모든 사진을 통제하고 있습니다. 적어도 그렇게 믿고 싶습니다.",
-        "fact_tags": [
-          {
-            "key": "status",
-            "content": "격리 유지 중"
-          }
-        ],
-        "mood": "ominous",
-        "entity_visible": false,
-        "location": "재단 본부",
-        "characters_present": [
-          "재단 요원"
-        ],
-        "color_palette": "surveillance_blue",
-        "atmosphere": "unsettling",
-        "narration_beats": [
-          "재단은 모든 사진을 통제하고 있습니다. 적어도 그렇게 믿고 싶습니다."
-        ]
+        "key_points": []
       }
     ],
     "metadata": {
       "language": "ko",
-      "scene_count": 8,
+      "scene_count": 32,
       "writer_model": "deepseek-v4-flash",
       "writer_provider": "deepseek",
       "prompt_template": "v1-scenario-writer",
       "format_guide_template": "v1-format-guide",
       "forbidden_terms_version": "v1"
     },
-    "source_version": "v1-llm-writer"
+    "source_version": "v2-monologue"
   },
   "expected_verdict": "pass",
   "category": "known_pass",

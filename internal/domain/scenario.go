@@ -165,20 +165,28 @@ var ActScenesPerBeat = map[string]int{
 	ActUnresolved: 1,
 }
 
-// ActNarrationRuneCap is the per-act inclusive cap on a single scene's
-// narration length, in runes. Numbers are tuned for voice-over density
-// parity with golden-channel exemplars (`docs/exemplars/scp-049-hada.txt`),
-// which run ~5500 KR chars per ~10-min video. At the target 18-24 scene
-// budget, these caps support ≥4500 chars total while keeping `incident`
-// hooks tight (e.g. 3×120 + 5×400 + 7×520 + 3×280 = 6840 at 18 scenes).
+// ActMonologueRuneCap is the per-act inclusive cap on the act's continuous
+// monologue length, in runes. v2 unit is the act monologue (not per-scene),
+// so the v1 per-scene caps are rescaled ~4× to align with hada-golden density
+// (`docs/exemplars/scp-049-hada.txt`, ~5500 KR chars per ~10-min video).
 //
-//	incident   = 120 (≤15s cold-open rule still applies; 20-rune headroom over the legacy 100 lets the hook close on a definite-state line)
-//	mystery    = 400 (≈50s @ 7-8 KR chars/sec — fits the 35-50s atmospheric scene target)
-//	revelation = 520 (climax needs the most room for sensory + numeric anchors)
-//	unresolved = 280 (closer + optional definite-state line; widened to fit the new closer-discipline rule)
-var ActNarrationRuneCap = map[string]int{
-	ActIncident:   120,
-	ActMystery:    400,
-	ActRevelation: 520,
-	ActUnresolved: 280,
+// Sum at the cap floors: 480+1600+2080+1120 = 5280 runes — fits the ≥4500
+// Lever P parity floor with headroom, and stays under hada's ~5500 ceiling
+// so the writer doesn't bloat past golden density. Per-act ratios mirror v1:
+// incident is the tightest (cold-open hook still wants compression), mystery
+// and revelation carry the bulk of the explanation arc, unresolved leaves room
+// for the closer with the relaxed CTA + 의문문 rule.
+//
+//	incident   =  480 (~4× v1's 120 — opening discovery section)
+//	mystery    = 1600 (~4× v1's 400 — abilities/protocol setup)
+//	revelation = 2080 (~4× v1's 520 — climax with sensory + numeric anchors)
+//	unresolved = 1120 (~4× v1's 280 — closer + reflective questions + CTA)
+//
+// Stage-2 beat segmentation (8–10 beats/act) operates within these monologue
+// boundaries; it neither rescales nor enforces this cap.
+var ActMonologueRuneCap = map[string]int{
+	ActIncident:   480,
+	ActMystery:    1600,
+	ActRevelation: 2080,
+	ActUnresolved: 1120,
 }

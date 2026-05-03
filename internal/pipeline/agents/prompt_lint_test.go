@@ -31,11 +31,20 @@ var promptRendererContract = []struct {
 		name: "writer",
 		path: writerPromptPath,
 		substitutes: []string{
-			"scp_id", "act_id", "scene_num_range", "scene_budget",
+			"scp_id", "act_id", "monologue_rune_cap",
 			"act_synopsis", "act_key_points", "prior_act_summary",
 			"scp_visual_reference", "containment_constraints", "format_guide",
 			"forbidden_terms_section", "glossary_section", "quality_feedback",
 			"exemplar_scenes",
+		},
+	},
+	{
+		name: "writer_segmenter",
+		path: segmenterPromptPath,
+		substitutes: []string{
+			"act_id", "act_mood", "act_key_points",
+			"monologue", "monologue_rune_count",
+			"scp_visual_reference", "fact_tag_catalog",
 		},
 	},
 	{

@@ -55,7 +55,11 @@ func NewVisualBreakdowner(
 		case estimator == nil:
 			return fmt.Errorf("visual breakdowner: %w: estimator is nil", domain.ErrValidation)
 		}
-		if len(state.Narration.Scenes) == 0 {
+		// v2 transition: synthesize the legacy per-scene shape via the
+		// LegacyScenes() bridge (snapshot — does NOT roundtrip back to
+		// state.Narration). Visual breakdowner v2 (D2) replaces this.
+		legacyScenes := state.Narration.LegacyScenes()
+		if len(legacyScenes) == 0 {
 			return fmt.Errorf("visual breakdowner: %w: narration has no scenes", domain.ErrValidation)
 		}
 		if err := ctx.Err(); err != nil {
@@ -67,7 +71,7 @@ func NewVisualBreakdowner(
 			SCPID:            state.Narration.SCPID,
 			Title:            state.Narration.Title,
 			FrozenDescriptor: frozen,
-			Scenes:           make([]domain.VisualBreakdownScene, 0, len(state.Narration.Scenes)),
+			Scenes:           make([]domain.VisualBreakdownScene, 0, len(legacyScenes)),
 			ShotOverrides:    map[int]domain.ShotOverride{},
 			Metadata: domain.VisualBreakdownMetadata{
 				VisualBreakdownModel:    cfg.Model,
@@ -78,15 +82,15 @@ func NewVisualBreakdowner(
 			SourceVersion: domain.VisualBreakdownSourceVersionV1,
 		}
 
-		seen := make(map[int]struct{}, len(state.Narration.Scenes))
-		for _, scene := range state.Narration.Scenes {
+		seen := make(map[int]struct{}, len(legacyScenes))
+		for _, scene := range legacyScenes {
 			if _, dup := seen[scene.SceneNum]; dup {
 				return fmt.Errorf("visual breakdowner: %w: duplicate scene_num=%d", domain.ErrValidation, scene.SceneNum)
 			}
 			seen[scene.SceneNum] = struct{}{}
 		}
 
-		scenes := state.Narration.Scenes
+		scenes := legacyScenes
 		results := make([]domain.VisualBreakdownScene, len(scenes))
 
 		concurrency := cfg.Concurrency

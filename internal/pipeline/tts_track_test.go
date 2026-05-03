@@ -101,21 +101,43 @@ func (f *fakeRetryRecorder) RecordRetry(_ context.Context, _ string, stage domai
 	return nil
 }
 
-// ttsTrackScenario builds a PipelineState with the given narration scenes.
+// ttsTrackScenario builds a PipelineState with the given narration scenes
+// stitched into a v2 single-act monologue. LegacyScenes() reproduces the
+// original per-scene shape (SceneNum 1..N, Narration matching narrations[i]).
 func ttsTrackScenario(runID string, narrations []string) *agents.PipelineState {
-	scenes := make([]domain.NarrationScene, len(narrations))
+	monoBuilder := []rune{}
+	anchors := make([]domain.BeatAnchor, 0, len(narrations))
 	for i, n := range narrations {
-		scenes[i] = domain.NarrationScene{
-			SceneNum:  i + 1,
-			Narration: n,
+		runes := []rune(n)
+		before := len(monoBuilder)
+		monoBuilder = append(monoBuilder, runes...)
+		anchors = append(anchors, domain.BeatAnchor{
+			StartOffset:       before,
+			EndOffset:         len(monoBuilder),
+			Mood:              "calm",
+			Location:          "site-19",
+			CharactersPresent: []string{"unknown"},
+			EntityVisible:     false,
+			ColorPalette:      "neutral",
+			Atmosphere:        "subdued",
+			FactTags:          []domain.FactTag{},
+		})
+		if i < len(narrations)-1 {
+			monoBuilder = append(monoBuilder, ' ')
 		}
 	}
 	return &agents.PipelineState{
 		RunID: runID,
 		SCPID: "049",
 		Narration: &domain.NarrationScript{
-			SCPID:  "049",
-			Scenes: scenes,
+			SCPID:         "049",
+			SourceVersion: domain.NarrationSourceVersionV2,
+			Acts: []domain.ActScript{{
+				ActID:     domain.ActIncident,
+				Monologue: string(monoBuilder),
+				Beats:     anchors,
+				Mood:      "calm",
+			}},
 		},
 	}
 }
@@ -258,10 +280,11 @@ func TestTTSTrack_PreservesOriginalNarrationInScenarioAndSegments(t *testing.T) 
 		t.Fatalf("track: %v", err)
 	}
 
-	// Scenario narration must be untouched in memory.
-	if scenario.Narration.Scenes[0].Narration != original {
-		t.Errorf("in-memory narration mutated: got %q, want %q",
-			scenario.Narration.Scenes[0].Narration, original)
+	// Scenario narration must be untouched in memory. v2: read via the
+	// LegacyScenes() bridge.
+	legacy := scenario.Narration.LegacyScenes()
+	if len(legacy) == 0 || legacy[0].Narration != original {
+		t.Errorf("in-memory narration mutated: got %v, want %q", legacy, original)
 	}
 
 	// segments.narration must be untouched in DB.

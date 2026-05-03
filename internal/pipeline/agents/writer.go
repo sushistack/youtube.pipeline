@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,68 +14,81 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
 
+// TextAgentConfig is the shared per-agent configuration carrier. Both the
+// stage-1 writer (qwen-max) and the stage-2 segmenter (qwen-plus) use this
+// shape; the writer agent constructor takes two TextAgentConfig values.
 type TextAgentConfig struct {
 	Model       string
 	Provider    string
 	MaxTokens   int
 	Temperature float64
 	// Concurrency caps the number of in-flight LLM calls when an agent fans
-	// out work in parallel (today: visual_breakdowner per-scene). Writer is
-	// fully serial across acts (cascade requires each act to see its actual
-	// predecessor's narration tail), so the writer ignores this value.
-	// Zero or negative falls back to a per-agent default; sequential agents
-	// ignore it.
+	// out work in parallel (today: visual_breakdowner per-scene). Writer
+	// stage 1 cascades serially (each act sees its actual predecessor's
+	// monologue tail for canon Lever B). Stage 2 of act N can run as soon
+	// as stage 1 of act N completes, but for D1 the simpler implementation
+	// runs both stages of one act before moving on. Zero or negative falls
+	// back to a per-agent default; sequential agents ignore this.
 	Concurrency int
-	// AuditLogger is the optional audit logger. When non-nil, text_generation
-	// audit entries are written after each successful Generate call. Nil is
-	// allowed (no-op guard) — all existing tests continue to pass without
-	// modification because they construct TextAgentConfig without this field.
 	AuditLogger domain.AuditLogger
-	// Logger is the optional structured logger. When non-nil, the agent emits
-	// per-attempt LLM-call boundary events ("attempt start", "attempt complete",
-	// retry decisions). Nil falls back to no-op so existing tests stay valid.
-	// Used to localize Phase A hangs to the inner LLM call vs. validation step.
-	Logger *slog.Logger
+	Logger      *slog.Logger
 }
 
-// writerActResponse is the per-act LLM response shape. The full
-// NarrationScript is assembled by the writer agent after merging
-// every act's response.
-type writerActResponse struct {
-	ActID  string                  `json:"act_id"`
-	Scenes []domain.NarrationScene `json:"scenes"`
+// writerMonologueResponse is the stage-1 LLM response shape: a single
+// continuous Korean monologue for one act, plus mood/key_points metadata
+// the segmenter consumes.
+type writerMonologueResponse struct {
+	ActID     string   `json:"act_id"`
+	Monologue string   `json:"monologue"`
+	Mood      string   `json:"mood"`
+	KeyPoints []string `json:"key_points"`
 }
 
-// writerActSpec captures everything the writer needs to render and
-// validate a single per-act LLM call.
+// writerSegmenterResponse is the stage-2 LLM response shape: 8–10 ordered
+// BeatAnchor slices into the just-written monologue.
+type writerSegmenterResponse struct {
+	ActID string              `json:"act_id"`
+	Beats []domain.BeatAnchor `json:"beats"`
+}
+
+// writerActSpec captures everything the writer needs to render and validate
+// both stages for a single act.
 type writerActSpec struct {
-	Index      int // 0..3 in domain.ActOrder
-	Act        domain.Act
-	SceneNumLo int
-	SceneNumHi int
+	Index int // 0..3 in domain.ActOrder
+	Act   domain.Act
+}
+
+// actCallMeta carries the upstream response metadata (model/provider) for
+// the metadata-fill step. Only the first successful stage-1 response's
+// metadata is used (drift across acts is silently tolerated, matching v1).
+type actCallMeta struct {
+	resp domain.TextResponse
 }
 
 const (
-	writerPerActRetryBudget = 1   // one retry per act on schema violation
-	priorActBeatRuneCap     = 240 // bound on the prior-act narration tail injected into the next act's prompt (cascade: Act N+1 sees Act N's tail)
-	// Per-act narration rune caps live in domain.ActNarrationRuneCap (see
-	// scenario.go). validateWriterActResponse looks up the cap for the
-	// current act so cold-open scenes stay tight (incident=120 enforces
-	// the ≤15s rule from docs/prompts/scenario/03_writing.md) while the
-	// climax has room to breathe (revelation=520). Schema-violation
-	// retries re-render the same prompt; persistent overruns fail fast
-	// rather than dragging cap drift downstream into TTS/image stages.
+	writerPerStageRetryBudget = 1   // one retry per stage on schema/validation failure
+	priorActTailRuneCap       = 240 // bound on the prior-act monologue tail injected into the next act's stage-1 prompt
+	beatCountMin              = 8   // plan resolution P2: 8–10 beats per act
+	beatCountMax              = 10
 )
 
 // defaultAgentConcurrency is the fan-out cap when TextAgentConfig.Concurrency
-// is unset for parallel agents that aren't writer-specific (e.g. visual
-// breakdowner). Picked to stay within DashScope's 10 RPM / 2 concurrent limit
-// while still gaining most of the wall-clock win over fully sequential calls.
+// is unset for parallel agents.
 const defaultAgentConcurrency = 4
 
+// NewWriter constructs the v2 two-stage writer agent. Stage 1 (writerCfg,
+// qwen-max in serve.go) writes the act monologue; stage 2 (segmenterCfg,
+// qwen-plus) segments it into BeatAnchors. Per-act fan-out: stage 1 cascades
+// serially (Act N sees Act N-1's monologue tail for continuity), and each
+// act's stage 2 runs immediately after that act's stage 1 completes.
+//
+// Atomicity: state.Narration is set ONLY when every act of every stage
+// succeeds. A partial result (some acts have monologue but no beats) NEVER
+// persists. D6 owns resume implications.
 func NewWriter(
 	gen domain.TextGenerator,
-	cfg TextAgentConfig,
+	writerCfg TextAgentConfig,
+	segmenterCfg TextAgentConfig,
 	prompts PromptAssets,
 	validator *Validator,
 	terms *ForbiddenTerms,
@@ -89,10 +101,14 @@ func NewWriter(
 			return fmt.Errorf("writer: %w: research is nil", domain.ErrValidation)
 		case state.Structure == nil:
 			return fmt.Errorf("writer: %w: structure is nil", domain.ErrValidation)
-		case cfg.Model == "":
-			return fmt.Errorf("writer: %w: model is empty", domain.ErrValidation)
-		case cfg.Provider == "":
-			return fmt.Errorf("writer: %w: provider is empty", domain.ErrValidation)
+		case writerCfg.Model == "":
+			return fmt.Errorf("writer: %w: stage-1 model is empty", domain.ErrValidation)
+		case writerCfg.Provider == "":
+			return fmt.Errorf("writer: %w: stage-1 provider is empty", domain.ErrValidation)
+		case segmenterCfg.Model == "":
+			return fmt.Errorf("writer: %w: stage-2 model is empty", domain.ErrValidation)
+		case segmenterCfg.Provider == "":
+			return fmt.Errorf("writer: %w: stage-2 provider is empty", domain.ErrValidation)
 		case gen == nil:
 			return fmt.Errorf("writer: %w: generator is nil", domain.ErrValidation)
 		case validator == nil:
@@ -109,42 +125,46 @@ func NewWriter(
 			return err
 		}
 
-		// PriorCriticFeedback is injected identically into every act's prompt
-		// (see spec §4 Critic feedback). Future per-act targeting can split
-		// it; today we mirror the legacy single-call writer's behavior.
 		qualityFeedback := state.PriorCriticFeedback
 
-		// Cascade: Acts 1→2→3→4 are written sequentially so each act sees
-		// its actual predecessor's narration tail. Pure parallel fan-out
-		// (the prior design) sent Act 1's tail to Acts 2/3/4 indistinctly,
-		// which left Act 3 narrating against Act 1's mood and Act 4 closing
-		// against Act 1's hook — cross-act drift the cascade fixes.
-		// Wall-clock cost: ~4× a single act's runtime, accepted in exchange
-		// for narration coherence. See spec
-		// `_bmad-output/implementation-artifacts/spec-writer-continuity-commentary-volume-bridge.md`.
-		responses := make([]writerActResponse, len(specs))
-		metas := make([]actCallMeta, len(specs))
-		priorSummary := ""
+		acts := make([]domain.ActScript, len(specs))
+		var firstMeta actCallMeta
+		priorTail := ""
 		for i, spec := range specs {
-			resp, meta, err := runWriterAct(ctx, gen, cfg, prompts, terms, state, spec, priorSummary, qualityFeedback)
+			monoResp, monoMeta, err := runWriterActMonologue(ctx, gen, writerCfg, prompts, terms, state, spec, priorTail, qualityFeedback)
 			if err != nil {
 				return err
 			}
-			responses[i] = resp
-			metas[i] = meta
-			priorSummary = summarizePriorAct(resp)
+			if i == 0 {
+				firstMeta = monoMeta
+			}
+			beatsResp, _, err := runWriterActBeats(ctx, gen, segmenterCfg, prompts, state, spec, monoResp)
+			if err != nil {
+				return err
+			}
+			acts[i] = domain.ActScript{
+				ActID:     spec.Act.ID,
+				Monologue: monoResp.Monologue,
+				Beats:     beatsResp.Beats,
+				Mood:      monoResp.Mood,
+				KeyPoints: monoResp.KeyPoints,
+			}
+			priorTail = summarizePriorActMonologue(monoResp.Monologue)
 		}
 
-		script, err := mergeWriterActs(state, specs, responses)
-		if err != nil {
-			return err
+		title := state.Research.Title
+		if title == "" {
+			title = state.SCPID
 		}
-
-		fillNarrationMetadata(&script, metas[0].resp, cfg, terms)
+		script := domain.NarrationScript{
+			SCPID: state.SCPID,
+			Title: title,
+			Acts:  acts,
+		}
+		fillNarrationMetadata(&script, firstMeta.resp, writerCfg, terms)
 		if err := validator.Validate(script); err != nil {
 			return fmt.Errorf("writer: %w", err)
 		}
-
 		hits := terms.MatchNarration(&script)
 		if len(hits) > 0 {
 			return fmt.Errorf("writer: %s: %w", formatForbiddenTermHits(hits), domain.ErrValidation)
@@ -155,39 +175,26 @@ func NewWriter(
 	}
 }
 
-// actCallMeta carries the upstream response metadata (model/provider) for
-// the metadata-fill step. Only the first successful response's metadata
-// is used (drift across acts is silently tolerated, matching the legacy
-// single-call writer).
-type actCallMeta struct {
-	resp domain.TextResponse
-}
-
 func planWriterActs(structure *domain.StructurerOutput) ([]writerActSpec, error) {
 	if structure == nil || len(structure.Acts) != len(domain.ActOrder) {
 		return nil, fmt.Errorf("writer: %w: structure must have %d acts", domain.ErrValidation, len(domain.ActOrder))
 	}
 	specs := make([]writerActSpec, len(structure.Acts))
-	offset := 1
 	for i, act := range structure.Acts {
 		if act.ID != domain.ActOrder[i] {
 			return nil, fmt.Errorf("writer: %w: act %d id=%s, want %s", domain.ErrValidation, i, act.ID, domain.ActOrder[i])
 		}
-		if act.SceneBudget < 1 {
-			return nil, fmt.Errorf("writer: %w: act %s scene_budget=%d (must be >=1)", domain.ErrValidation, act.ID, act.SceneBudget)
-		}
-		specs[i] = writerActSpec{
-			Index:      i,
-			Act:        act,
-			SceneNumLo: offset,
-			SceneNumHi: offset + act.SceneBudget - 1,
-		}
-		offset += act.SceneBudget
+		specs[i] = writerActSpec{Index: i, Act: act}
 	}
 	return specs, nil
 }
 
-func runWriterAct(
+// runWriterActMonologue is stage 1: one LLM call (qwen-max) producing the
+// continuous Korean monologue for `spec.Act`. Truncation retries are
+// preserved per stage (`finish_reason=length` is retryable). Validator
+// rejects act_id mismatch, missing monologue/mood/key_points, or rune
+// count over the per-act cap.
+func runWriterActMonologue(
 	ctx context.Context,
 	gen domain.TextGenerator,
 	cfg TextAgentConfig,
@@ -195,22 +202,22 @@ func runWriterAct(
 	terms *ForbiddenTerms,
 	state *PipelineState,
 	spec writerActSpec,
-	priorSummary string,
+	priorTail string,
 	qualityFeedback string,
-) (writerActResponse, actCallMeta, error) {
-	prompt, err := renderWriterActPrompt(state, prompts, terms, spec, priorSummary, qualityFeedback)
+) (writerMonologueResponse, actCallMeta, error) {
+	prompt, err := renderWriterActPrompt(state, prompts, terms, spec, priorTail, qualityFeedback)
 	if err != nil {
-		return writerActResponse{}, actCallMeta{}, err
+		return writerMonologueResponse{}, actCallMeta{}, err
 	}
 
-	type writerAttemptResult struct {
-		decoded writerActResponse
+	type result struct {
+		decoded writerMonologueResponse
 		meta    actCallMeta
 	}
 
 	opts := retryOpts{
-		Stage:  "writer",
-		Budget: writerPerActRetryBudget,
+		Stage:  "writer_monologue",
+		Budget: writerPerStageRetryBudget,
 		Logger: cfg.Logger,
 		BaseAttrs: []slog.Attr{
 			slog.String("run_id", state.RunID),
@@ -218,19 +225,18 @@ func runWriterAct(
 		},
 	}
 
-	out, err := runWithRetry(ctx, opts, func(attempt int) (writerAttemptResult, retryReason, error) {
+	out, err := runWithRetry(ctx, opts, func(attempt int) (result, retryReason, error) {
+		callStart := time.Now()
 		if cfg.Logger != nil {
-			cfg.Logger.Info("writer attempt start",
+			cfg.Logger.Info("writer monologue attempt start",
 				"run_id", state.RunID,
 				"act_id", spec.Act.ID,
 				"attempt", attempt,
 				"provider", cfg.Provider,
 				"model", cfg.Model,
 				"prompt_chars", utf8.RuneCountInString(prompt),
-				"has_quality_feedback", qualityFeedback != "",
 			)
 		}
-		callStart := time.Now()
 		resp, err := gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
@@ -239,170 +245,216 @@ func runWriterAct(
 		})
 		if err != nil {
 			if cfg.Logger != nil {
-				cfg.Logger.Error("writer attempt failed",
-					"run_id", state.RunID,
-					"act_id", spec.Act.ID,
-					"attempt", attempt,
-					"duration_ms", time.Since(callStart).Milliseconds(),
-					"error", err.Error(),
-				)
+				cfg.Logger.Error("writer monologue attempt failed",
+					"run_id", state.RunID, "act_id", spec.Act.ID, "attempt", attempt,
+					"duration_ms", time.Since(callStart).Milliseconds(), "error", err.Error())
 			}
-			// Transport error: propagate immediately. Returning a sentinel
-			// retry-aborting reason isn't enough because runWithRetry would
-			// still loop; instead, package the error and surface it via the
-			// retryAbort signal.
-			return writerAttemptResult{}, retryReasonAbort, err
+			return result{}, retryReasonAbort, err
 		}
 		if cfg.Logger != nil {
-			cfg.Logger.Info("writer attempt complete",
-				"run_id", state.RunID,
-				"act_id", spec.Act.ID,
-				"attempt", attempt,
+			cfg.Logger.Info("writer monologue attempt complete",
+				"run_id", state.RunID, "act_id", spec.Act.ID, "attempt", attempt,
 				"duration_ms", time.Since(callStart).Milliseconds(),
 				"finish_reason", resp.FinishReason,
-				"tokens_in", resp.TokensIn,
-				"tokens_out", resp.TokensOut,
-			)
+				"tokens_in", resp.TokensIn, "tokens_out", resp.TokensOut)
 		}
-
 		if cfg.AuditLogger != nil {
 			_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
 				Timestamp: time.Now(),
 				EventType: domain.AuditEventTextGeneration,
 				RunID:     state.RunID,
-				Stage:     "writer",
+				Stage:     "writer_monologue",
 				Provider:  resp.Provider,
 				Model:     resp.Model,
 				Prompt:    truncatePrompt(prompt, 2048),
 				CostUSD:   resp.CostUSD,
 			})
 		}
-
-		// Truncated completions on writer act calls are intermittent and
-		// driven by model variance: at temperature 0.7 the LLM occasionally
-		// over-runs the per-scene rune cap, bloating the JSON envelope past
-		// max_tokens. Re-rolling lands inside budget on most attempts, so
-		// burn the retry budget here rather than aborting the whole stage
-		// on a single stochastic miss. Decoding the half-written JSON would
-		// still fail; surface the clearer truncation message via the retry
-		// reason instead.
 		if isTruncatedFinishReason(resp.FinishReason) {
-			return writerAttemptResult{}, retryReasonTruncation, fmt.Errorf(
-				"writer: act %s: provider truncated completion (finish_reason=%q); raise max_tokens or shorten the prompt: %w",
+			return result{}, retryReasonTruncation, fmt.Errorf(
+				"writer: act %s monologue: provider truncated completion (finish_reason=%q): %w",
 				spec.Act.ID, resp.FinishReason, domain.ErrValidation,
 			)
 		}
-
-		var decoded writerActResponse
+		var decoded writerMonologueResponse
 		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
-			return writerAttemptResult{}, retryReasonJSONDecode, fmt.Errorf("writer: act %s: %w", spec.Act.ID, err)
+			return result{}, retryReasonJSONDecode, fmt.Errorf("writer: act %s monologue: %w", spec.Act.ID, err)
 		}
-		if err := validateWriterActResponse(spec, decoded); err != nil {
-			return writerAttemptResult{}, retryReasonSchemaValidation, err
+		if err := validateWriterMonologueResponse(spec, decoded); err != nil {
+			return result{}, retryReasonSchemaValidation, err
 		}
-		return writerAttemptResult{decoded: decoded, meta: actCallMeta{resp: resp}}, "", nil
+		return result{decoded: decoded, meta: actCallMeta{resp: resp}}, "", nil
 	})
 	if err != nil {
-		return writerActResponse{}, actCallMeta{}, err
+		return writerMonologueResponse{}, actCallMeta{}, err
 	}
 	return out.decoded, out.meta, nil
 }
 
-func validateWriterActResponse(spec writerActSpec, decoded writerActResponse) error {
+func validateWriterMonologueResponse(spec writerActSpec, decoded writerMonologueResponse) error {
 	if decoded.ActID != spec.Act.ID {
-		return fmt.Errorf("writer: act %s: response act_id=%q: %w", spec.Act.ID, decoded.ActID, domain.ErrValidation)
+		return fmt.Errorf("writer: act %s monologue: response act_id=%q: %w", spec.Act.ID, decoded.ActID, domain.ErrValidation)
 	}
-	if len(decoded.Scenes) != spec.Act.SceneBudget {
-		return fmt.Errorf("writer: act %s: scene count=%d want=%d: %w", spec.Act.ID, len(decoded.Scenes), spec.Act.SceneBudget, domain.ErrValidation)
+	if strings.TrimSpace(decoded.Monologue) == "" {
+		return fmt.Errorf("writer: act %s monologue: empty: %w", spec.Act.ID, domain.ErrValidation)
 	}
-	// Look up the per-act cap once before iterating so unrecognized act IDs
-	// fail even when the LLM emits zero scenes (a zero-scene response would
-	// otherwise skip the loop and silently pass this validator).
-	runeCap, ok := domain.ActNarrationRuneCap[spec.Act.ID]
+	if strings.TrimSpace(decoded.Mood) == "" {
+		return fmt.Errorf("writer: act %s monologue: mood is empty: %w", spec.Act.ID, domain.ErrValidation)
+	}
+	if len(decoded.KeyPoints) == 0 {
+		return fmt.Errorf("writer: act %s monologue: key_points is empty: %w", spec.Act.ID, domain.ErrValidation)
+	}
+	cap, ok := domain.ActMonologueRuneCap[spec.Act.ID]
 	if !ok {
-		return fmt.Errorf("writer: act %s: no narration cap configured: %w", spec.Act.ID, domain.ErrValidation)
+		return fmt.Errorf("writer: act %s monologue: no monologue cap configured: %w", spec.Act.ID, domain.ErrValidation)
 	}
-	prev := spec.SceneNumLo - 1
-	for i, scene := range decoded.Scenes {
-		if scene.SceneNum < spec.SceneNumLo || scene.SceneNum > spec.SceneNumHi {
-			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d out of range [%d,%d]: %w",
-				spec.Act.ID, i, scene.SceneNum, spec.SceneNumLo, spec.SceneNumHi, domain.ErrValidation)
-		}
-		if scene.SceneNum <= prev {
-			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d not strictly ascending after %d: %w",
-				spec.Act.ID, i, scene.SceneNum, prev, domain.ErrValidation)
-		}
-		if scene.ActID != spec.Act.ID {
-			return fmt.Errorf("writer: act %s: scene[%d] act_id=%q: %w",
-				spec.Act.ID, i, scene.ActID, domain.ErrValidation)
-		}
-		if n := utf8.RuneCountInString(scene.Narration); n > runeCap {
-			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d narration length=%d runes exceeds cap=%d (one-visual-beat rule, see docs/prompts/scenario/03_writing.md): %w",
-				spec.Act.ID, i, scene.SceneNum, n, runeCap, domain.ErrValidation)
-		}
-		// Surface schema-required metadata at the per-act level so the
-		// per-act retry budget can rescue an LLM that left
-		// characters_present/narration_beats empty or omitted a string
-		// metadata field. Without these checks the merged-script schema
-		// validator catches the same failures, but only after retries
-		// have already been spent — that path produces an unrecoverable
-		// writer failure on a typically transient LLM mistake (the
-		// prompt explicitly forbids these omissions, but the model
-		// occasionally drops them on environment-only or abstract scenes).
-		if len(scene.CharactersPresent) == 0 {
-			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d characters_present is empty (schema requires ≥1, prompt requires SCP or specific identifier even for environment-only scenes): %w",
-				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
-		}
-		if len(scene.NarrationBeats) == 0 {
-			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d narration_beats is empty (schema requires ≥1): %w",
-				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
-		}
-		if strings.TrimSpace(scene.Location) == "" {
-			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d location is empty: %w",
-				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
-		}
-		if strings.TrimSpace(scene.ColorPalette) == "" {
-			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d color_palette is empty: %w",
-				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
-		}
-		if strings.TrimSpace(scene.Atmosphere) == "" {
-			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d atmosphere is empty: %w",
-				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
-		}
-		prev = scene.SceneNum
+	if n := utf8.RuneCountInString(decoded.Monologue); n > cap {
+		return fmt.Errorf("writer: act %s monologue: rune length=%d exceeds cap=%d: %w",
+			spec.Act.ID, n, cap, domain.ErrValidation)
 	}
 	return nil
 }
 
-func mergeWriterActs(state *PipelineState, specs []writerActSpec, responses []writerActResponse) (domain.NarrationScript, error) {
-	totalScenes := 0
-	for _, spec := range specs {
-		totalScenes += spec.Act.SceneBudget
+// runWriterActBeats is stage 2: one LLM call (qwen-plus) segmenting the
+// just-written monologue into 8–10 BeatAnchors. Validator enforces the
+// ordering / coverage / metadata rules.
+func runWriterActBeats(
+	ctx context.Context,
+	gen domain.TextGenerator,
+	cfg TextAgentConfig,
+	prompts PromptAssets,
+	state *PipelineState,
+	spec writerActSpec,
+	mono writerMonologueResponse,
+) (writerSegmenterResponse, actCallMeta, error) {
+	prompt, err := renderSegmenterPrompt(state, prompts, spec, mono)
+	if err != nil {
+		return writerSegmenterResponse{}, actCallMeta{}, err
 	}
-	scenes := make([]domain.NarrationScene, 0, totalScenes)
-	for _, resp := range responses {
-		scenes = append(scenes, resp.Scenes...)
-	}
-	sort.Slice(scenes, func(i, j int) bool {
-		return scenes[i].SceneNum < scenes[j].SceneNum
-	})
-	for i, scene := range scenes {
-		want := i + 1
-		if scene.SceneNum != want {
-			return domain.NarrationScript{}, fmt.Errorf("writer: merged scene[%d] scene_num=%d want=%d: %w",
-				i, scene.SceneNum, want, domain.ErrValidation)
-		}
+	monologueRuneCount := utf8.RuneCountInString(mono.Monologue)
+
+	type result struct {
+		decoded writerSegmenterResponse
+		meta    actCallMeta
 	}
 
-	title := state.Research.Title
-	if title == "" {
-		title = state.SCPID
+	opts := retryOpts{
+		Stage:  "writer_segmenter",
+		Budget: writerPerStageRetryBudget,
+		Logger: cfg.Logger,
+		BaseAttrs: []slog.Attr{
+			slog.String("run_id", state.RunID),
+			slog.String("act_id", spec.Act.ID),
+		},
 	}
-	return domain.NarrationScript{
-		SCPID:  state.SCPID,
-		Title:  title,
-		Scenes: scenes,
-	}, nil
+
+	out, err := runWithRetry(ctx, opts, func(attempt int) (result, retryReason, error) {
+		callStart := time.Now()
+		if cfg.Logger != nil {
+			cfg.Logger.Info("writer segmenter attempt start",
+				"run_id", state.RunID, "act_id", spec.Act.ID, "attempt", attempt,
+				"provider", cfg.Provider, "model", cfg.Model,
+				"monologue_runes", monologueRuneCount)
+		}
+		resp, err := gen.Generate(ctx, domain.TextRequest{
+			Prompt:      prompt,
+			Model:       cfg.Model,
+			MaxTokens:   cfg.MaxTokens,
+			Temperature: cfg.Temperature,
+		})
+		if err != nil {
+			if cfg.Logger != nil {
+				cfg.Logger.Error("writer segmenter attempt failed",
+					"run_id", state.RunID, "act_id", spec.Act.ID, "attempt", attempt,
+					"duration_ms", time.Since(callStart).Milliseconds(), "error", err.Error())
+			}
+			return result{}, retryReasonAbort, err
+		}
+		if cfg.Logger != nil {
+			cfg.Logger.Info("writer segmenter attempt complete",
+				"run_id", state.RunID, "act_id", spec.Act.ID, "attempt", attempt,
+				"duration_ms", time.Since(callStart).Milliseconds(),
+				"finish_reason", resp.FinishReason,
+				"tokens_in", resp.TokensIn, "tokens_out", resp.TokensOut)
+		}
+		if cfg.AuditLogger != nil {
+			_ = cfg.AuditLogger.Log(ctx, domain.AuditEntry{
+				Timestamp: time.Now(),
+				EventType: domain.AuditEventTextGeneration,
+				RunID:     state.RunID,
+				Stage:     "writer_segmenter",
+				Provider:  resp.Provider,
+				Model:     resp.Model,
+				Prompt:    truncatePrompt(prompt, 2048),
+				CostUSD:   resp.CostUSD,
+			})
+		}
+		if isTruncatedFinishReason(resp.FinishReason) {
+			return result{}, retryReasonTruncation, fmt.Errorf(
+				"writer: act %s segmenter: provider truncated completion (finish_reason=%q): %w",
+				spec.Act.ID, resp.FinishReason, domain.ErrValidation,
+			)
+		}
+		var decoded writerSegmenterResponse
+		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
+			return result{}, retryReasonJSONDecode, fmt.Errorf("writer: act %s segmenter: %w", spec.Act.ID, err)
+		}
+		if err := validateWriterSegmenterResponse(spec, decoded, monologueRuneCount); err != nil {
+			return result{}, retryReasonSchemaValidation, err
+		}
+		return result{decoded: decoded, meta: actCallMeta{resp: resp}}, "", nil
+	})
+	if err != nil {
+		return writerSegmenterResponse{}, actCallMeta{}, err
+	}
+	return out.decoded, out.meta, nil
+}
+
+func validateWriterSegmenterResponse(spec writerActSpec, decoded writerSegmenterResponse, monologueRuneCount int) error {
+	if decoded.ActID != spec.Act.ID {
+		return fmt.Errorf("writer: act %s segmenter: response act_id=%q: %w", spec.Act.ID, decoded.ActID, domain.ErrValidation)
+	}
+	n := len(decoded.Beats)
+	if n < beatCountMin || n > beatCountMax {
+		return fmt.Errorf("writer: act %s segmenter: beat count=%d outside [%d, %d]: %w",
+			spec.Act.ID, n, beatCountMin, beatCountMax, domain.ErrValidation)
+	}
+	prevEnd := 0
+	for i, beat := range decoded.Beats {
+		if beat.StartOffset < 0 {
+			return fmt.Errorf("writer: act %s segmenter: beat[%d] start_offset=%d < 0: %w",
+				spec.Act.ID, i, beat.StartOffset, domain.ErrValidation)
+		}
+		if beat.EndOffset > monologueRuneCount {
+			return fmt.Errorf("writer: act %s segmenter: beat[%d] end_offset=%d > monologue_rune_count=%d: %w",
+				spec.Act.ID, i, beat.EndOffset, monologueRuneCount, domain.ErrValidation)
+		}
+		if beat.StartOffset >= beat.EndOffset {
+			return fmt.Errorf("writer: act %s segmenter: beat[%d] start_offset=%d >= end_offset=%d (zero or inverted slice): %w",
+				spec.Act.ID, i, beat.StartOffset, beat.EndOffset, domain.ErrValidation)
+		}
+		if beat.StartOffset < prevEnd {
+			return fmt.Errorf("writer: act %s segmenter: beat[%d] start_offset=%d overlaps prev end_offset=%d: %w",
+				spec.Act.ID, i, beat.StartOffset, prevEnd, domain.ErrValidation)
+		}
+		if strings.TrimSpace(beat.Mood) == "" {
+			return fmt.Errorf("writer: act %s segmenter: beat[%d] mood is empty: %w", spec.Act.ID, i, domain.ErrValidation)
+		}
+		if strings.TrimSpace(beat.Location) == "" {
+			return fmt.Errorf("writer: act %s segmenter: beat[%d] location is empty: %w", spec.Act.ID, i, domain.ErrValidation)
+		}
+		if len(beat.CharactersPresent) == 0 {
+			return fmt.Errorf("writer: act %s segmenter: beat[%d] characters_present is empty: %w", spec.Act.ID, i, domain.ErrValidation)
+		}
+		if strings.TrimSpace(beat.ColorPalette) == "" {
+			return fmt.Errorf("writer: act %s segmenter: beat[%d] color_palette is empty: %w", spec.Act.ID, i, domain.ErrValidation)
+		}
+		if strings.TrimSpace(beat.Atmosphere) == "" {
+			return fmt.Errorf("writer: act %s segmenter: beat[%d] atmosphere is empty: %w", spec.Act.ID, i, domain.ErrValidation)
+		}
+		prevEnd = beat.EndOffset
+	}
+	return nil
 }
 
 func renderWriterActPrompt(
@@ -410,7 +462,7 @@ func renderWriterActPrompt(
 	prompts PromptAssets,
 	terms *ForbiddenTerms,
 	spec writerActSpec,
-	priorSummary string,
+	priorTail string,
 	qualityFeedback string,
 ) (string, error) {
 	visualJSON, err := json.MarshalIndent(state.Research.VisualIdentity, "", "  ")
@@ -419,7 +471,6 @@ func renderWriterActPrompt(
 	}
 	forbidden := renderForbiddenTermsSection(terms.Raw)
 	keyPoints := renderKeyPoints(spec.Act.KeyPoints)
-	sceneRange := fmt.Sprintf("%d..%d", spec.SceneNumLo, spec.SceneNumHi)
 	exemplar, ok := prompts.ExemplarsByAct[spec.Act.ID]
 	if !ok || exemplar == "" {
 		return "", fmt.Errorf("writer: act %s: no exemplar narration available: %w", spec.Act.ID, domain.ErrValidation)
@@ -428,14 +479,21 @@ func renderWriterActPrompt(
 	if containment == "" {
 		containment = "(none specified — apply default Foundation containment conventions)"
 	}
+	cap, ok := domain.ActMonologueRuneCap[spec.Act.ID]
+	if !ok {
+		return "", fmt.Errorf("writer: act %s: no monologue cap configured: %w", spec.Act.ID, domain.ErrValidation)
+	}
+	priorBlock := priorTail
+	if priorBlock == "" {
+		priorBlock = "(이 act 가 첫 act 입니다 — origin-first 또는 incident-first 자유롭게 선택하세요.)"
+	}
 	replacer := strings.NewReplacer(
 		"{scp_id}", state.SCPID,
 		"{act_id}", spec.Act.ID,
-		"{scene_num_range}", sceneRange,
-		"{scene_budget}", strconv.Itoa(spec.Act.SceneBudget),
+		"{monologue_rune_cap}", strconv.Itoa(cap),
 		"{act_synopsis}", spec.Act.Synopsis,
 		"{act_key_points}", keyPoints,
-		"{prior_act_summary}", priorSummary,
+		"{prior_act_summary}", priorBlock,
 		"{scp_visual_reference}", string(visualJSON),
 		"{containment_constraints}", containment,
 		"{format_guide}", prompts.FormatGuide,
@@ -445,6 +503,34 @@ func renderWriterActPrompt(
 		"{exemplar_scenes}", exemplar,
 	)
 	return replacer.Replace(prompts.WriterTemplate), nil
+}
+
+func renderSegmenterPrompt(
+	state *PipelineState,
+	prompts PromptAssets,
+	spec writerActSpec,
+	mono writerMonologueResponse,
+) (string, error) {
+	if prompts.SegmenterTemplate == "" {
+		return "", fmt.Errorf("writer: act %s segmenter: empty template: %w", spec.Act.ID, domain.ErrValidation)
+	}
+	visualJSON, err := json.MarshalIndent(state.Research.VisualIdentity, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("writer: marshal visual identity: %w", domain.ErrValidation)
+	}
+	keyPoints := renderKeyPoints(mono.KeyPoints)
+	factCatalog := renderFactTagCatalog(state.Research)
+	monologueRuneCount := utf8.RuneCountInString(mono.Monologue)
+	replacer := strings.NewReplacer(
+		"{act_id}", spec.Act.ID,
+		"{act_mood}", mono.Mood,
+		"{act_key_points}", keyPoints,
+		"{monologue}", mono.Monologue,
+		"{monologue_rune_count}", strconv.Itoa(monologueRuneCount),
+		"{scp_visual_reference}", string(visualJSON),
+		"{fact_tag_catalog}", factCatalog,
+	)
+	return replacer.Replace(prompts.SegmenterTemplate), nil
 }
 
 func renderKeyPoints(points []string) string {
@@ -470,33 +556,40 @@ func renderForbiddenTermsSection(patterns []string) string {
 	return strings.Join(lines, "\n")
 }
 
-// summarizePriorAct condenses an act's narration tail into a continuity
-// hint for the next act. Returns "" for an empty act (defensive — also
-// used as the seed value before Act 1 runs, which renders an empty
-// `{prior_act_summary}` in Act 1's prompt). Each act sees its actual
-// predecessor's tail in the cascade; the rune cap keeps prompt cost
-// bounded even though the summary is no longer shared across siblings.
-func summarizePriorAct(act writerActResponse) string {
-	if len(act.Scenes) == 0 {
-		return ""
+// renderFactTagCatalog distills the researcher output into the canonical
+// fact-tag catalog the segmenter can reference. Listed as `key: content`
+// lines so the LLM picks unique keys for `fact_tags[].key`.
+func renderFactTagCatalog(r *domain.ResearcherOutput) string {
+	if r == nil {
+		return "(none)"
 	}
-	last := act.Scenes[len(act.Scenes)-1]
-	beat := truncatePrompt(strings.TrimSpace(last.Narration), priorActBeatRuneCap)
-	parts := []string{
-		fmt.Sprintf("Previous act ended on this beat: %s", beat),
+	lines := []string{}
+	if r.ObjectClass != "" {
+		lines = append(lines, fmt.Sprintf("- object_class: %s", r.ObjectClass))
 	}
-	if last.Mood != "" {
-		parts = append(parts, fmt.Sprintf("Maintain the tone established there (mood: %s).", last.Mood))
+	for i, prop := range r.AnomalousProperties {
+		lines = append(lines, fmt.Sprintf("- anomaly_%d: %s", i+1, prop))
 	}
-	parts = append(parts, "Do NOT re-introduce the entity from scratch and do NOT recap the hook.")
-	return strings.Join(parts, " ")
+	if r.OriginAndDiscovery != "" {
+		lines = append(lines, fmt.Sprintf("- origin: %s", r.OriginAndDiscovery))
+	}
+	if len(lines) == 0 {
+		return "(none)"
+	}
+	return strings.Join(lines, "\n")
 }
 
-// isTruncatedFinishReason reports whether a provider's finish_reason
-// indicates the response was cut off by the output token cap (vs. the
-// model genuinely finishing). Decoded JSON from a truncated response is
-// almost always invalid; surface a clear error early instead of letting
-// the per-act retry burn its budget on the same broken shape.
+// summarizePriorActMonologue condenses the previous act's monologue tail
+// into a continuity hint for the next act's stage-1 prompt. Cap at
+// priorActTailRuneCap so prompt cost stays bounded across the cascade.
+func summarizePriorActMonologue(monologue string) string {
+	tail := truncatePrompt(strings.TrimSpace(monologue), priorActTailRuneCap)
+	if tail == "" {
+		return ""
+	}
+	return fmt.Sprintf("이전 act 의 마지막 부분: %s\n\n이 톤·페이싱을 이어받으세요. 개체 재소개·hook 재사용 금지.", tail)
+}
+
 func isTruncatedFinishReason(reason string) bool {
 	switch strings.ToLower(strings.TrimSpace(reason)) {
 	case "length", "max_tokens":
@@ -506,7 +599,6 @@ func isTruncatedFinishReason(reason string) bool {
 	}
 }
 
-// truncatePrompt rune-aware truncates s to at most n runes.
 func truncatePrompt(s string, n int) string {
 	if n <= 0 {
 		return ""
@@ -524,14 +616,18 @@ func fillNarrationMetadata(script *domain.NarrationScript, resp domain.TextRespo
 	if resp.Provider == "" {
 		resp.Provider = cfg.Provider
 	}
+	totalBeats := 0
+	for _, act := range script.Acts {
+		totalBeats += len(act.Beats)
+	}
 	script.Metadata = domain.NarrationMetadata{
 		Language:              domain.LanguageKorean,
-		SceneCount:            len(script.Scenes),
+		SceneCount:            totalBeats,
 		WriterModel:           resp.Model,
 		WriterProvider:        resp.Provider,
 		PromptTemplate:        filepath.Base(writerPromptPath),
 		FormatGuideTemplate:   filepath.Base(formatGuidePath),
 		ForbiddenTermsVersion: terms.Version,
 	}
-	script.SourceVersion = domain.NarrationSourceVersionV1
+	script.SourceVersion = domain.NarrationSourceVersionV2
 }

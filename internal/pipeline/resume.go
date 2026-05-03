@@ -175,17 +175,21 @@ func (e *Engine) SetCriticReportStore(s CriticReportStore) {
 // failure is logged but the transition still completes (scenes will simply
 // stay empty until manual intervention; the run is not stuck).
 func (e *Engine) seedSegmentsAtScenarioReview(ctx context.Context, runID string, narration *domain.NarrationScript) {
-	if e.narrationSeed == nil || narration == nil || len(narration.Scenes) == 0 {
+	if e.narrationSeed == nil || narration == nil {
 		return
 	}
-	inserted, err := e.narrationSeed.SeedFromNarration(ctx, runID, narration.Scenes)
+	legacyScenes := narration.LegacyScenes()
+	if len(legacyScenes) == 0 {
+		return
+	}
+	inserted, err := e.narrationSeed.SeedFromNarration(ctx, runID, legacyScenes)
 	if err != nil {
 		e.logger.Warn("seed segments at scenario_review failed",
-			"run_id", runID, "scenes", len(narration.Scenes), "error", err.Error())
+			"run_id", runID, "scenes", len(legacyScenes), "error", err.Error())
 		return
 	}
 	e.logger.Info("seeded segments from narration",
-		"run_id", runID, "rows_inserted", inserted, "scenes_total", len(narration.Scenes))
+		"run_id", runID, "rows_inserted", inserted, "scenes_total", len(legacyScenes))
 }
 
 // SetHITLSessionStore wires the full HITL session store used to upsert

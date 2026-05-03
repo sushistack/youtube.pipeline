@@ -337,7 +337,7 @@ func validateMinorPolicyFindings(findings []domain.MinorPolicyFinding, script *d
 	if len(findings) == 0 || script == nil {
 		return nil
 	}
-	sceneCount := len(script.Scenes)
+	sceneCount := len(script.LegacyScenes())
 	for _, finding := range findings {
 		if finding.SceneNum < 1 || finding.SceneNum > sceneCount {
 			return fmt.Errorf("minor_policy_findings scene_num=%d out of range (1..%d): %w", finding.SceneNum, sceneCount, domain.ErrValidation)

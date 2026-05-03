@@ -397,13 +397,25 @@ func buildPhaseARunner(
 	writerCfg := agents.TextAgentConfig{
 		Model:    cfg.WriterModel,
 		Provider: cfg.WriterProvider,
-		// Per-act output budget. 8192 was borderline: at temperature 0.7
-		// the model occasionally over-runs per-scene rune caps, bloating
-		// JSON metadata past 8192 (finish_reason=length). 12288 leaves
-		// ~50% headroom; combined with the retry-on-truncation policy
-		// (writer.go), intermittent stage failures should drop sharply.
+		// v2 stage-1: per-act monologue output budget. Reuses the cycle-C
+		// 12288-token headroom (originally tuned for v1 per-act envelopes
+		// at temp 0.7); v2 monologues are larger units (~480–2080 runes
+		// per act) and the JSON envelope adds metadata overhead, so the
+		// retry-on-truncation policy stays the safety net.
 		MaxTokens:   12288,
 		Temperature: 0.7,
+		AuditLogger: auditLogger,
+		Logger:      logger,
+	}
+	// v2 stage-2: beat segmenter (qwen-plus per spec D1). Offset arithmetic
+	// over a fixed monologue is a deterministic-shaped task — temperature 0
+	// reduces re-roll variance on the structured output. MaxTokens 4096 is
+	// generous for a 10-beat JSON array (each beat ~150 chars metadata).
+	segmenterCfg := agents.TextAgentConfig{
+		Model:       cfg.SegmenterModel,
+		Provider:    cfg.SegmenterProvider,
+		MaxTokens:   4096,
+		Temperature: 0.0,
 		AuditLogger: auditLogger,
 		Logger:      logger,
 	}
@@ -441,7 +453,7 @@ func buildPhaseARunner(
 
 	researcher := agents.NewResearcher(corpus, researchV, writerGen, roleClassifierCfg, prompts)
 	structurer := agents.NewStructurer(structureV)
-	writer := agents.NewWriter(writerGen, writerCfg, prompts, writerV, terms)
+	writer := agents.NewWriter(writerGen, writerCfg, segmenterCfg, prompts, writerV, terms)
 	polisher := agents.NewPolisher(writerGen, polisherCfg, prompts, writerV, terms)
 	postWriterCritic := agents.NewPostWriterCritic(criticGen, criticCfg, prompts, writerV, criticPostWriterV, terms, cfg.WriterProvider)
 	visualBreakdowner := agents.NewVisualBreakdowner(writerGen, writerCfg, prompts, visualV, agents.NewHeuristicDurationEstimator())

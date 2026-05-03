@@ -105,24 +105,33 @@ func writeShadowScenarioAt(t *testing.T, root, rel string) {
 	}
 }
 
-// shadowScenarioJSON returns a scenario.json payload with an 8-scene
-// narration matching writer_output.schema.json — the exact Fixture.Input
-// shape Golden already feeds the evaluator.
+// shadowScenarioJSON returns a scenario.json payload matching v2
+// writer_output.schema.json — 4 acts × 8 beats per act = 32 beats total.
 func shadowScenarioJSON() []byte {
-	scenes := make([]map[string]any, 8)
-	for i := range scenes {
-		scenes[i] = map[string]any{
-			"scene_num":          i + 1,
-			"act_id":             fmt.Sprintf("act_%d", (i/2)+1),
-			"narration":          "테스트 나레이션입니다.",
-			"narration_beats":    []string{"테스트 나레이션입니다."},
-			"fact_tags":          []any{},
-			"mood":               "neutral",
-			"entity_visible":     false,
-			"location":           "격리실",
-			"characters_present": []string{"연구원"},
-			"color_palette":      "gray",
-			"atmosphere":         "calm",
+	actIDs := []string{"incident", "mystery", "revelation", "unresolved"}
+	acts := make([]map[string]any, 4)
+	for i, actID := range actIDs {
+		monologue := strings.Repeat("가", 80)
+		beats := make([]map[string]any, 8)
+		for b := 0; b < 8; b++ {
+			beats[b] = map[string]any{
+				"start_offset":       b * 10,
+				"end_offset":         (b + 1) * 10,
+				"mood":               "calm",
+				"location":           "격리실",
+				"characters_present": []string{"연구원"},
+				"entity_visible":     false,
+				"color_palette":      "gray",
+				"atmosphere":         "calm",
+				"fact_tags":          []any{},
+			}
+		}
+		acts[i] = map[string]any{
+			"act_id":     actID,
+			"monologue":  monologue,
+			"beats":      beats,
+			"mood":       "calm",
+			"key_points": []string{},
 		}
 	}
 	envelope := map[string]any{
@@ -133,17 +142,17 @@ func shadowScenarioJSON() []byte {
 		"narration": map[string]any{
 			"scp_id": "SCP-SHADOW",
 			"title":  "shadow test",
-			"scenes": scenes,
+			"acts":   acts,
 			"metadata": map[string]any{
 				"language":                "ko",
-				"scene_count":             8,
-				"writer_model":            "deepseek-v4-flash",
-				"writer_provider":         "deepseek",
-				"prompt_template":         "v1",
-				"format_guide_template":   "v1",
-				"forbidden_terms_version": "v1",
+				"scene_count":             32,
+				"writer_model":            "qwen-max",
+				"writer_provider":         "dashscope",
+				"prompt_template":         "v2",
+				"format_guide_template":   "v2",
+				"forbidden_terms_version": "v2",
 			},
-			"source_version": "v1-llm-writer",
+			"source_version": "v2-monologue",
 		},
 	}
 	b, _ := json.Marshal(envelope)
@@ -257,8 +266,8 @@ func TestLoadShadowInput_ProjectRelativePath(t *testing.T) {
 	if err := json.Unmarshal(f.Input, &narration); err != nil {
 		t.Fatalf("unmarshal narration: %v", err)
 	}
-	if narration["source_version"] != "v1-llm-writer" {
-		t.Errorf("expected source_version=v1-llm-writer, got %v", narration["source_version"])
+	if narration["source_version"] != "v2-monologue" {
+		t.Errorf("expected source_version=v2-monologue, got %v", narration["source_version"])
 	}
 }
 

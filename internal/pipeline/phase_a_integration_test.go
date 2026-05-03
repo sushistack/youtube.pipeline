@@ -546,22 +546,50 @@ func samplePhaseAResearch() *domain.ResearcherOutput {
 }
 
 func samplePhaseANarration() *domain.NarrationScript {
+	// v2 shape: 4 acts × {2,3,3,2} beats = 10 beats total. LegacyScenes()
+	// returns 10 NarrationScenes numbered 1..10 in act order, matching what
+	// the integration test downstream stages expected from the v1 schema.
+	mkAct := func(actID string, narrations []string) domain.ActScript {
+		monologue := strings.Join(narrations, " ")
+		anchors := make([]domain.BeatAnchor, 0, len(narrations))
+		offset := 0
+		for i, n := range narrations {
+			runes := []rune(n)
+			end := offset + len(runes)
+			anchors = append(anchors, domain.BeatAnchor{
+				StartOffset:       offset,
+				EndOffset:         end,
+				Mood:              "calm",
+				Location:          "site-19",
+				CharactersPresent: []string{"unknown"},
+				EntityVisible:     false,
+				ColorPalette:      "neutral",
+				Atmosphere:        "subdued",
+				FactTags:          []domain.FactTag{},
+			})
+			offset = end
+			if i < len(narrations)-1 {
+				offset++
+			}
+		}
+		return domain.ActScript{
+			ActID:     actID,
+			Monologue: monologue,
+			Beats:     anchors,
+			Mood:      "calm",
+			KeyPoints: []string{},
+		}
+	}
 	return &domain.NarrationScript{
 		SCPID: "SCP-TEST",
 		Title: "SCP-TEST",
-		Scenes: []domain.NarrationScene{
-			{SceneNum: 1, ActID: domain.ActIncident, Narration: "scene 1"},
-			{SceneNum: 2, ActID: domain.ActIncident, Narration: "scene 2"},
-			{SceneNum: 3, ActID: domain.ActMystery, Narration: "scene 3"},
-			{SceneNum: 4, ActID: domain.ActMystery, Narration: "scene 4"},
-			{SceneNum: 5, ActID: domain.ActMystery, Narration: "scene 5"},
-			{SceneNum: 6, ActID: domain.ActRevelation, Narration: "scene 6"},
-			{SceneNum: 7, ActID: domain.ActRevelation, Narration: "scene 7"},
-			{SceneNum: 8, ActID: domain.ActRevelation, Narration: "scene 8"},
-			{SceneNum: 9, ActID: domain.ActUnresolved, Narration: "scene 9"},
-			{SceneNum: 10, ActID: domain.ActUnresolved, Narration: "scene 10"},
+		Acts: []domain.ActScript{
+			mkAct(domain.ActIncident, []string{"scene 1", "scene 2"}),
+			mkAct(domain.ActMystery, []string{"scene 3", "scene 4", "scene 5"}),
+			mkAct(domain.ActRevelation, []string{"scene 6", "scene 7", "scene 8"}),
+			mkAct(domain.ActUnresolved, []string{"scene 9", "scene 10"}),
 		},
-		SourceVersion: domain.NarrationSourceVersionV1,
+		SourceVersion: domain.NarrationSourceVersionV2,
 	}
 }
 
