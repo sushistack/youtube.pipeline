@@ -253,6 +253,17 @@ func (r *PhaseARunner) Run(ctx context.Context, state *agents.PipelineState) err
 			r.writeCache(entry.ps, runDir, state)
 		}
 
+		// Writer debug dump: persist narration to writer_debug.json so the
+		// fewshot exemplar effect can be inspected even when downstream
+		// stages (visual_breakdowner / critic) fail before scenario.json
+		// is written. This is NOT a cache — tryLoadCache never reads it.
+		// TODO: remove once the next-session-visual-breakdown-alignment
+		// cycle stabilizes the visual_breakdowner stage and the full
+		// scenario.json is reliably produced again.
+		if entry.ps == agents.StageWriter && state.Narration != nil {
+			r.writeWriterDebug(runDir, state)
+		}
+
 		// Short-circuit: if post_writer_critic rejects the narration, skip
 		// visual_breakdowner/reviewer/post_reviewer_critic entirely. The
 		// narration will be rewritten on the next attempt — running downstream
@@ -473,6 +484,32 @@ func (r *PhaseARunner) writeCache(ps agents.PipelineStage, runDir string, state 
 	}
 
 	r.logger.Info("agent cache written", "pipeline_stage", ps.String(), "run_id", state.RunID)
+}
+
+// writeWriterDebug dumps state.Narration to writer_debug.json so the
+// fewshot exemplar effect on narration tone can be inspected without
+// the full pipeline succeeding (visual_breakdowner / critic stages may
+// still fail downstream). Write-only — tryLoadCache never reads this
+// file. Errors are logged but not returned. Intended to be removed
+// once visual_breakdowner is hardened.
+func (r *PhaseARunner) writeWriterDebug(runDir string, state *agents.PipelineState) {
+	debugFile := filepath.Join(runDir, "writer_debug.json")
+	data, err := json.MarshalIndent(state.Narration, "", "  ")
+	if err != nil {
+		r.logger.Warn("writer debug marshal failed", "run_id", state.RunID, "error", err.Error())
+		return
+	}
+	tmp := debugFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		r.logger.Warn("writer debug write failed", "run_id", state.RunID, "error", err.Error())
+		return
+	}
+	if err := os.Rename(tmp, debugFile); err != nil {
+		r.logger.Warn("writer debug rename failed", "run_id", state.RunID, "error", err.Error())
+		os.Remove(tmp)
+		return
+	}
+	r.logger.Info("writer debug dump written", "run_id", state.RunID, "path", debugFile)
 }
 
 // ScenarioPath returns the canonical path to scenario.json for the
