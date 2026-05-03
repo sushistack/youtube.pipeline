@@ -297,7 +297,32 @@ func (e *Engine) advancePhaseA(ctx context.Context, runID string, run *domain.Ru
 	if err := e.phaseA.Run(ctx, state); err != nil {
 		return fmt.Errorf("advance %s: %w", runID, err)
 	}
-	if state.Critic == nil || state.Critic.PostReviewer == nil {
+	if state.Critic == nil {
+		return fmt.Errorf("advance %s: %w: critic result missing", runID, domain.ErrValidation)
+	}
+	// post_writer_critic short-circuits the rest of Phase A on retry (see
+	// phase_a.go), so PostReviewer can be legitimately nil. Surface the
+	// post_writer retry as a write-stage failure here — symmetric with the
+	// post_reviewer retry handling below — instead of failing the advance
+	// with a misleading "post_reviewer missing" validation error.
+	if pw := state.Critic.PostWriter; pw != nil && pw.Verdict == domain.CriticVerdictRetry {
+		var score *float64
+		if !pw.Precheck.ShortCircuited {
+			normalized := NormalizeCriticScore(pw.OverallScore)
+			score = &normalized
+		}
+		res := domain.PhaseAAdvanceResult{
+			Stage:       domain.StageWrite,
+			Status:      domain.StatusFailed,
+			RetryReason: stringPtrOrNil(pw.RetryReason),
+			CriticScore: score,
+		}
+		if err := e.runs.ApplyPhaseAResult(ctx, runID, res); err != nil {
+			return fmt.Errorf("advance %s: apply phase a retry result: %w", runID, err)
+		}
+		return fmt.Errorf("advance %s: %w: %s", runID, domain.ErrStageFailed, pw.RetryReason)
+	}
+	if state.Critic.PostReviewer == nil {
 		return fmt.Errorf("advance %s: %w: post_reviewer critic result missing", runID, domain.ErrValidation)
 	}
 

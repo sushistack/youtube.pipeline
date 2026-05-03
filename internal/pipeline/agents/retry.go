@@ -14,9 +14,18 @@ type retryReason string
 const (
 	retryReasonJSONDecode       retryReason = "json_decode"
 	retryReasonSchemaValidation retryReason = "schema_validation"
+	// retryReasonTruncation signals the provider hit max_tokens mid-response
+	// (finish_reason=length). Empirically intermittent on writer act calls —
+	// model variance occasionally produces over-cap narration that bloats the
+	// JSON envelope past the configured ceiling. Retryable: a re-roll at
+	// temperature 0.7 frequently lands inside budget. Polisher-class agents
+	// that operate on a near-full output budget should still treat truncation
+	// as abort (re-running the same prompt against the same ceiling cannot
+	// recover); writer-class per-act calls have headroom and benefit from
+	// the retry.
+	retryReasonTruncation retryReason = "truncation"
 	// retryReasonAbort signals "do not retry; surface the error verbatim".
-	// Used for transport errors and for hard-fail conditions like provider
-	// truncation where re-running the same prompt cannot recover.
+	// Used for transport errors that re-running cannot recover.
 	retryReasonAbort retryReason = "abort"
 )
 

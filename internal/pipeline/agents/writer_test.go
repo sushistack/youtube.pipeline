@@ -593,20 +593,51 @@ func TestWriter_Run_MetadataFilled(t *testing.T) {
 	testutil.AssertEqual(t, state.Narration.Metadata.SceneCount, len(state.Narration.Scenes))
 }
 
-// TestWriter_PerAct_FailsFastOnTruncatedFinishReason verifies the
-// finish_reason="length" early-fail guard ported from the dogfood-era
-// single-call writer. When the provider truncates the response, decoding
-// the half-written JSON would just produce a generic parse error and
-// burn the per-act retry budget on the same broken shape — better to
-// surface the truncation directly.
-func TestWriter_PerAct_FailsFastOnTruncatedFinishReason(t *testing.T) {
+// TestWriter_PerAct_RetriesOnTruncatedFinishReason verifies the
+// truncation-as-retryable policy: provider truncation
+// (finish_reason="length") is empirically intermittent on writer act
+// calls (model variance over-runs the per-scene rune cap, bloating the
+// JSON envelope past max_tokens), and a re-roll usually lands inside
+// budget. Truncation now consumes the per-act retry budget instead of
+// aborting the whole stage on a single stochastic miss.
+func TestWriter_PerAct_RetriesOnTruncatedFinishReason(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	perAct := perActFixturesFromMergedSample(t)
+	// Queue Act 1's clean response twice so the retry attempt has
+	// something to consume after the first call is marked truncated.
+	perAct[domain.ActIncident] = append(perAct[domain.ActIncident], perAct[domain.ActIncident][0])
 	gen := newActIndexedTextGenerator(perAct)
-	// Mark Act 1's response as truncated. The act's actual JSON is fine
-	// but the finish_reason guard must trip before decode.
-	gen.finishReason[domain.ActIncident] = []string{"length"}
+	// First call: finish_reason="length" → retry. Second call: empty
+	// finish_reason → clean completion.
+	gen.finishReason[domain.ActIncident] = []string{"length", ""}
+
+	state := sampleWriterState()
+	if err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state); err != nil {
+		t.Fatalf("Writer: expected retry to recover, got %v", err)
+	}
+	if gen.calls[domain.ActIncident] != 2 {
+		t.Fatalf("act incident call count = %d, want 2 (truncate once, retry once)", gen.calls[domain.ActIncident])
+	}
+	if state.Narration == nil {
+		t.Fatalf("state.Narration nil after successful retry")
+	}
+}
+
+// TestWriter_PerAct_TruncatedRetryExhausted verifies the failure mode
+// when truncation is genuinely persistent (e.g., max_tokens really is
+// too small for the act's worst case): the per-act retry budget is
+// burned cleanly, the truncation error is surfaced to the caller, and
+// state.Narration is left untouched.
+func TestWriter_PerAct_TruncatedRetryExhausted(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	perAct := perActFixturesFromMergedSample(t)
+	// Queue Act 1's response twice so both the original and retry
+	// attempts have content to "truncate".
+	perAct[domain.ActIncident] = append(perAct[domain.ActIncident], perAct[domain.ActIncident][0])
+	gen := newActIndexedTextGenerator(perAct)
+	gen.finishReason[domain.ActIncident] = []string{"length", "length"}
 
 	state := sampleWriterState()
 	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
@@ -616,8 +647,8 @@ func TestWriter_PerAct_FailsFastOnTruncatedFinishReason(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "provider truncated completion") {
 		t.Fatalf("expected truncation error, got %v", err)
 	}
-	if gen.calls[domain.ActIncident] != 1 {
-		t.Fatalf("act incident call count = %d, want 1 (no retry on truncation)", gen.calls[domain.ActIncident])
+	if gen.calls[domain.ActIncident] != 2 {
+		t.Fatalf("act incident call count = %d, want 2 (one attempt + one retry, both truncated)", gen.calls[domain.ActIncident])
 	}
 	if state.Narration != nil {
 		t.Fatalf("state mutated on truncation: %+v", state.Narration)

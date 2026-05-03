@@ -24,6 +24,16 @@ You will write the narration for **a SINGLE ACT** of an SCP video about {scp_id}
 > If the block above is empty, this is **Act 1 (Hook)** — apply the Hook rules below.
 > If the block above is non-empty, you are continuing from a prior act — match that tone, do NOT re-introduce the entity from scratch, and do NOT recap the hook.
 
+## Current Containment Protocol (canon constraints)
+
+{containment_constraints}
+
+> **이 문서는 현재 시점의 격리 프로토콜이며, 본 영상이 묘사하는 시점이기도 합니다.** 위에 명시적으로 금지·제한된 행위(예: "no longer permitted to interact with human subjects", "no longer allowed...", "must be denied")를 **현재진행형 씬으로 묘사하면 안 됩니다.** 시청자는 영상의 모든 씬을 "지금 일어나고 있는 일"로 인식합니다.
+> - **금지 행위를 보여주려면 반드시 과거 사건으로 명시 framing** — Addendum 스타일의 시간 표지(예: "Addendum 049.3 — 19██년 ███번째 시도", "프로토콜 049.S19.17.1 발효 이전", "이 명령이 내려지기 전까지는") 또는 한국어 시간 표지(예: "그 사건이 있고 나서", "이후 모든 인간 시술이 금지됐습니다", "마지막으로 허가된 시술 기록")로 명확히 과거임을 못박으세요.
+> - **시간 표지 없이 D-class·인간 대상 행위를 현재 씬으로 묘사하면 fail.** 그 행위가 dramatic_beats/key_points 에 들어 있어도 마찬가지 — 그 비트 자체를 과거 사건 framing 으로 바꿔서 표현하든가, scene 에서 빼고 다른 비트를 펼치세요.
+> - 정상 묘사가 가능한 것: 현재 protocol 안에서 허용된 행위(예: 동물 사체 시술이 과거에는 허용됐다는 사실 회고, 격리 절차 묘사, 라벤더 진정 등), 발견 시점 등 명백히 과거 사건인 컨텍스트.
+
+
 {forbidden_terms_section}
 
 {glossary_section}
@@ -235,5 +245,6 @@ Return JSON only. Do not wrap the JSON in markdown fences.
 - [ ] **`unresolved` act의 마지막 씬은 단정문으로 끝난다** — 수사 의문문(`"~일까요?"`)으로 닫지 말 것.
 - [ ] **`mystery`/`revelation`/`unresolved` 각 씬은 commentary 모드 (explainer / aside / speculation hook / numeric anchor) 중 1개 이상 포함** — `incident`는 예외 (commentary 금지).
 - [ ] **비-`incident` act 전체에 걸쳐 숫자/비율 fact 2회 이상 surface** — `act_key_points`에 있는 수치만 사용 (지어내기 금지).
+- [ ] **현재 격리 프로토콜에서 명시적으로 금지·제한된 행위를 현재진행형으로 묘사한 씬이 없다.** 그런 행위가 들어가야 한다면 시간 표지(Addendum 날짜, "프로토콜 발효 이전", "그 사건 이후로 금지됐습니다" 등)로 명확히 과거 사건임을 표시했다.
 
 If ANY check fails, fix the offending field before outputting.

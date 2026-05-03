@@ -278,12 +278,16 @@ func runWriterAct(
 			})
 		}
 
-		// Truncated completions usually mean the act would not fit in the
-		// configured max_tokens. Decoding the half-written JSON would fail
-		// with a generic parse error; surface a clearer message and abort
-		// without burning the retry budget on the same broken response shape.
+		// Truncated completions on writer act calls are intermittent and
+		// driven by model variance: at temperature 0.7 the LLM occasionally
+		// over-runs the per-scene rune cap, bloating the JSON envelope past
+		// max_tokens. Re-rolling lands inside budget on most attempts, so
+		// burn the retry budget here rather than aborting the whole stage
+		// on a single stochastic miss. Decoding the half-written JSON would
+		// still fail; surface the clearer truncation message via the retry
+		// reason instead.
 		if isTruncatedFinishReason(resp.FinishReason) {
-			return writerAttemptResult{}, retryReasonAbort, fmt.Errorf(
+			return writerAttemptResult{}, retryReasonTruncation, fmt.Errorf(
 				"writer: act %s: provider truncated completion (finish_reason=%q); raise max_tokens or shorten the prompt: %w",
 				spec.Act.ID, resp.FinishReason, domain.ErrValidation,
 			)
@@ -335,6 +339,35 @@ func validateWriterActResponse(spec writerActSpec, decoded writerActResponse) er
 		if n := utf8.RuneCountInString(scene.Narration); n > runeCap {
 			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d narration length=%d runes exceeds cap=%d (one-visual-beat rule, see docs/prompts/scenario/03_writing.md): %w",
 				spec.Act.ID, i, scene.SceneNum, n, runeCap, domain.ErrValidation)
+		}
+		// Surface schema-required metadata at the per-act level so the
+		// per-act retry budget can rescue an LLM that left
+		// characters_present/narration_beats empty or omitted a string
+		// metadata field. Without these checks the merged-script schema
+		// validator catches the same failures, but only after retries
+		// have already been spent — that path produces an unrecoverable
+		// writer failure on a typically transient LLM mistake (the
+		// prompt explicitly forbids these omissions, but the model
+		// occasionally drops them on environment-only or abstract scenes).
+		if len(scene.CharactersPresent) == 0 {
+			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d characters_present is empty (schema requires ≥1, prompt requires SCP or specific identifier even for environment-only scenes): %w",
+				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
+		}
+		if len(scene.NarrationBeats) == 0 {
+			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d narration_beats is empty (schema requires ≥1): %w",
+				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
+		}
+		if strings.TrimSpace(scene.Location) == "" {
+			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d location is empty: %w",
+				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
+		}
+		if strings.TrimSpace(scene.ColorPalette) == "" {
+			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d color_palette is empty: %w",
+				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
+		}
+		if strings.TrimSpace(scene.Atmosphere) == "" {
+			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d atmosphere is empty: %w",
+				spec.Act.ID, i, scene.SceneNum, domain.ErrValidation)
 		}
 		prev = scene.SceneNum
 	}
@@ -391,6 +424,10 @@ func renderWriterActPrompt(
 	if !ok || exemplar == "" {
 		return "", fmt.Errorf("writer: act %s: no exemplar narration available: %w", spec.Act.ID, domain.ErrValidation)
 	}
+	containment := strings.TrimSpace(state.Research.ContainmentProcedures)
+	if containment == "" {
+		containment = "(none specified — apply default Foundation containment conventions)"
+	}
 	replacer := strings.NewReplacer(
 		"{scp_id}", state.SCPID,
 		"{act_id}", spec.Act.ID,
@@ -400,6 +437,7 @@ func renderWriterActPrompt(
 		"{act_key_points}", keyPoints,
 		"{prior_act_summary}", priorSummary,
 		"{scp_visual_reference}", string(visualJSON),
+		"{containment_constraints}", containment,
 		"{format_guide}", prompts.FormatGuide,
 		"{forbidden_terms_section}", forbidden,
 		"{glossary_section}", "",

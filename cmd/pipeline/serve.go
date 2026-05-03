@@ -395,9 +395,14 @@ func buildPhaseARunner(
 	auditLogger := pipeline.NewFileAuditLogger(cfg.OutputDir)
 
 	writerCfg := agents.TextAgentConfig{
-		Model:       cfg.WriterModel,
-		Provider:    cfg.WriterProvider,
-		MaxTokens:   8192,
+		Model:    cfg.WriterModel,
+		Provider: cfg.WriterProvider,
+		// Per-act output budget. 8192 was borderline: at temperature 0.7
+		// the model occasionally over-runs per-scene rune caps, bloating
+		// JSON metadata past 8192 (finish_reason=length). 12288 leaves
+		// ~50% headroom; combined with the retry-on-truncation policy
+		// (writer.go), intermittent stage failures should drop sharply.
+		MaxTokens:   12288,
 		Temperature: 0.7,
 		AuditLogger: auditLogger,
 		Logger:      logger,
@@ -421,9 +426,14 @@ func buildPhaseARunner(
 		Logger:      logger,
 	}
 	polisherCfg := agents.TextAgentConfig{
-		Model:       cfg.WriterModel,
-		Provider:    cfg.WriterProvider,
-		MaxTokens:   12288, // full script in one shot; must be ≥ writer per-act max
+		Model:    cfg.WriterModel,
+		Provider: cfg.WriterProvider,
+		// Full script in one shot. 12288 was hit (finish_reason=length) on
+		// SCP-049 dogfood — JSON-wrapped polished script ran ~2× the input
+		// token count (~6.4K in → 12.3K+ out). 16384 leaves headroom; at
+		// observed ~85 tok/s on deepseek-v4-flash that's ~3min, well under
+		// the 5min HTTP timeout.
+		MaxTokens:   16384,
 		Temperature: 0.5,
 		AuditLogger: auditLogger,
 		Logger:      logger,
@@ -718,8 +728,12 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 		projectRoot:    projectRoot,
 		outputDir:      cfg.OutputDir,
 		limiterFactory: limiterFactory,
-		httpClient:     &http.Client{Timeout: 120 * time.Second},
-		logger:         logger,
+		// Polisher generates the full polished script in one shot (MaxTokens=12288).
+		// At ~50 tok/s that's ~4min, so 120s timed out the body-read and forced
+		// the silent-fallback regime. 5min gives headroom; writer/critic finish
+		// well under it, so the ceiling is only hit by polisher worst-case.
+		httpClient: &http.Client{Timeout: 5 * time.Minute},
+		logger:     logger,
 	})
 	// Build the real Critic-backed evaluator up front and fail-loud on
 	// construction error: the schema files and forbidden-terms loader are

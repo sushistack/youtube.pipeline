@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -177,6 +178,18 @@ func runVisualBreakdownerScene(
 					"duration_ms", time.Since(callStart).Milliseconds(),
 					"error", err.Error(),
 				)
+			}
+			// Context cancellation propagates verbatim — no retry.
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return visualBreakdownResponse{}, retryReasonAbort, err
+			}
+			// Transient upstream failures (provider returned empty content,
+			// 5xx, gateway timeout, …) are signaled with ErrStageFailed by
+			// the text clients. Make these retryable instead of aborting on
+			// the first attempt — a single empty-content blip would otherwise
+			// kill the whole stage despite the per-scene retry budget.
+			if errors.Is(err, domain.ErrStageFailed) {
+				return visualBreakdownResponse{}, "", err
 			}
 			return visualBreakdownResponse{}, retryReasonAbort, err
 		}
