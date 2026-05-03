@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -20,8 +21,9 @@ type visualBreakdownResponse struct {
 }
 
 type visualBreakdownResponseShot struct {
-	VisualDescriptor string `json:"visual_descriptor"`
-	Transition       string `json:"transition"`
+	VisualDescriptor   string `json:"visual_descriptor"`
+	Transition         string `json:"transition"`
+	NarrationBeatIndex int    `json:"narration_beat_index"`
 }
 
 const visualBreakdownerPerSceneRetryBudget = 1 // one retry per scene on json/schema failure
@@ -99,7 +101,7 @@ func NewVisualBreakdowner(
 				if err != nil {
 					return err
 				}
-				results[i] = buildVisualBreakdownScene(scene, frozen, sceneDuration, decoded)
+				results[i] = buildVisualBreakdownScene(scene, frozen, sceneDuration, decoded, cfg.Logger)
 				return nil
 			})
 		}
@@ -127,18 +129,29 @@ func runVisualBreakdownerScene(
 	estimator SceneDurationEstimator,
 ) (visualBreakdownResponse, float64, error) {
 	sceneDuration := estimator.Estimate(scene)
-	shotCount := ShotCountForDuration(sceneDuration)
+	shotCount := len(scene.NarrationBeats)
+	if shotCount < 1 {
+		return visualBreakdownResponse{}, 0, fmt.Errorf(
+			"visual breakdowner: scene %d has no narration_beats (min 1 required): %w",
+			scene.SceneNum, domain.ErrValidation,
+		)
+	}
 	prompt, err := renderVisualBreakdownPrompt(state, prompts, scene, frozen, sceneDuration, shotCount)
 	if err != nil {
 		return visualBreakdownResponse{}, 0, err
 	}
 
-	var lastErr error
-	for attempt := 0; attempt <= visualBreakdownerPerSceneRetryBudget; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return visualBreakdownResponse{}, 0, err
-		}
+	opts := retryOpts{
+		Stage:  "visual_breakdowner",
+		Budget: visualBreakdownerPerSceneRetryBudget,
+		Logger: cfg.Logger,
+		BaseAttrs: []slog.Attr{
+			slog.String("run_id", state.RunID),
+			slog.Int("scene_num", scene.SceneNum),
+		},
+	}
 
+	decoded, err := runWithRetry(ctx, opts, func(attempt int) (visualBreakdownResponse, retryReason, error) {
 		if cfg.Logger != nil {
 			cfg.Logger.Info("visual breakdowner attempt start",
 				"run_id", state.RunID,
@@ -165,7 +178,7 @@ func runVisualBreakdownerScene(
 					"error", err.Error(),
 				)
 			}
-			return visualBreakdownResponse{}, 0, err
+			return visualBreakdownResponse{}, retryReasonAbort, err
 		}
 		if cfg.Logger != nil {
 			cfg.Logger.Info("visual breakdowner attempt complete",
@@ -191,34 +204,17 @@ func runVisualBreakdownerScene(
 
 		var decoded visualBreakdownResponse
 		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
-			lastErr = fmt.Errorf("visual breakdowner: %w", err)
-			if cfg.Logger != nil {
-				cfg.Logger.Info("visual breakdowner retry",
-					"run_id", state.RunID,
-					"scene_num", scene.SceneNum,
-					"attempt", attempt,
-					"reason", "json_decode",
-					"error", err.Error(),
-				)
-			}
-			continue
+			return visualBreakdownResponse{}, retryReasonJSONDecode, fmt.Errorf("visual breakdowner: %w", err)
 		}
 		if err := validateVisualBreakdownResponse(scene.SceneNum, shotCount, decoded); err != nil {
-			lastErr = err
-			if cfg.Logger != nil {
-				cfg.Logger.Info("visual breakdowner retry",
-					"run_id", state.RunID,
-					"scene_num", scene.SceneNum,
-					"attempt", attempt,
-					"reason", "schema_validation",
-					"error", err.Error(),
-				)
-			}
-			continue
+			return visualBreakdownResponse{}, retryReasonSchemaValidation, err
 		}
-		return decoded, sceneDuration, nil
+		return decoded, "", nil
+	})
+	if err != nil {
+		return visualBreakdownResponse{}, 0, err
 	}
-	return visualBreakdownResponse{}, 0, lastErr
+	return decoded, sceneDuration, nil
 }
 
 func renderVisualBreakdownPrompt(
@@ -241,11 +237,23 @@ func renderVisualBreakdownPrompt(
 		"{atmosphere}", scene.Atmosphere,
 		"{scp_visual_reference}", string(visualJSON),
 		"{narration}", scene.Narration,
+		"{narration_beats}", renderNarrationBeats(scene.NarrationBeats),
 		"{frozen_descriptor}", frozen,
 		"{estimated_tts_duration_s}", strconv.FormatFloat(sceneDuration, 'f', 1, 64),
 		"{shot_count}", strconv.Itoa(shotCount),
 	)
 	return replacer.Replace(prompts.VisualBreakdownTemplate), nil
+}
+
+func renderNarrationBeats(beats []string) string {
+	if len(beats) == 0 {
+		return "(none)"
+	}
+	lines := make([]string, 0, len(beats))
+	for i, beat := range beats {
+		lines = append(lines, fmt.Sprintf("- [beat %d] %s", i, beat))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func validateVisualBreakdownResponse(sceneNum, shotCount int, decoded visualBreakdownResponse) error {
@@ -262,6 +270,12 @@ func validateVisualBreakdownResponse(sceneNum, shotCount int, decoded visualBrea
 		if !isAllowedTransition(shot.Transition) {
 			return fmt.Errorf("visual breakdowner: scene %d shot %d invalid transition %q: %w", sceneNum, i+1, shot.Transition, domain.ErrValidation)
 		}
+		if shot.NarrationBeatIndex != i {
+			return fmt.Errorf(
+				"visual breakdowner: scene %d shot %d narration_beat_index=%d (must equal shot order %d): %w",
+				sceneNum, i+1, shot.NarrationBeatIndex, i, domain.ErrValidation,
+			)
+		}
 	}
 	return nil
 }
@@ -271,15 +285,24 @@ func buildVisualBreakdownScene(
 	frozen string,
 	sceneDuration float64,
 	decoded visualBreakdownResponse,
+	logger *slog.Logger,
 ) domain.VisualBreakdownScene {
 	durations := NormalizeShotDurations(sceneDuration, len(decoded.Shots))
 	shots := make([]domain.VisualShot, 0, len(decoded.Shots))
 	for i, shot := range decoded.Shots {
+		descriptor := strings.TrimSpace(shot.VisualDescriptor)
+		beatIdx := shot.NarrationBeatIndex
+		var beatText string
+		if beatIdx >= 0 && beatIdx < len(scene.NarrationBeats) {
+			beatText = scene.NarrationBeats[beatIdx]
+		}
 		shots = append(shots, domain.VisualShot{
 			ShotIndex:          i + 1,
-			VisualDescriptor:   EnsureFrozenPrefix(frozen, shot.VisualDescriptor),
+			VisualDescriptor:   descriptor,
 			EstimatedDurationS: durations[i],
 			Transition:         shot.Transition,
+			NarrationBeatIndex: beatIdx,
+			NarrationBeatText:  beatText,
 		})
 	}
 	return domain.VisualBreakdownScene{

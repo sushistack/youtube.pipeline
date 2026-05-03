@@ -20,20 +20,22 @@
           "act_id": {"type": "string"},
           "narration": {"type": "string"},
           "estimated_tts_duration_s": {"type": "number", "minimum": 0},
-          "shot_count": {"type": "integer", "minimum": 1, "maximum": 5},
+          "shot_count": {"type": "integer", "minimum": 1, "maximum": 12},
           "shots": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 5,
+            "maxItems": 12,
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["shot_index", "visual_descriptor", "estimated_duration_s", "transition"],
+              "required": ["shot_index", "visual_descriptor", "estimated_duration_s", "transition", "narration_beat_index", "narration_beat_text"],
               "properties": {
                 "shot_index": {"type": "integer", "minimum": 1},
                 "visual_descriptor": {"type": "string"},
                 "estimated_duration_s": {"type": "number", "minimum": 0},
-                "transition": {"type": "string", "enum": ["ken_burns", "cross_dissolve", "hard_cut"]}
+                "transition": {"type": "string", "enum": ["ken_burns", "cross_dissolve", "hard_cut"]},
+                "narration_beat_index": {"type": "integer", "minimum": 0},
+                "narration_beat_text": {"type": "string"}
               }
             }
           }
@@ -46,7 +48,7 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "shot_count": {"type": "integer", "minimum": 1, "maximum": 5},
+          "shot_count": {"type": "integer", "minimum": 1, "maximum": 12},
           "transition": {"type": "string", "enum": ["ken_burns", "cross_dissolve", "hard_cut"]}
         }
       }

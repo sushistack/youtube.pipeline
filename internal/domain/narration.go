@@ -14,9 +14,18 @@ type NarrationScript struct {
 }
 
 type NarrationScene struct {
-	SceneNum          int       `json:"scene_num"`
-	ActID             string    `json:"act_id"`
-	Narration         string    `json:"narration"`
+	SceneNum int    `json:"scene_num"`
+	ActID    string `json:"act_id"`
+	// Narration is the full Korean narration text for this scene. It must
+	// stay rune-capped per ActNarrationRuneCap (one-visual-beat rule).
+	Narration string `json:"narration"`
+	// NarrationBeats is the writer's per-scene split into discrete visual
+	// beats. Each beat seeds exactly one downstream visual_breakdowner shot
+	// (1:1 mapping). Min length 1: even single-image incident hooks carry
+	// one beat. Order is rendering order. See Stage 3.5
+	// (docs/prompts/scenario/03_5_visual_breakdown.md) for the consumer
+	// contract.
+	NarrationBeats    []string  `json:"narration_beats"`
 	FactTags          []FactTag `json:"fact_tags"`
 	Mood              string    `json:"mood"`
 	EntityVisible     bool      `json:"entity_visible"`

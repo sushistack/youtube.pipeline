@@ -8,32 +8,6 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
-func TestShotCountForDuration_Boundaries(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	cases := []struct {
-		seconds float64
-		want    int
-	}{
-		{0, 1},
-		{8, 1},
-		{8.1, 2},
-		{15, 2},
-		{15.1, 3},
-		{25, 3},
-		{25.1, 4},
-		{40, 4},
-		{40.1, 5},
-		{math.NaN(), 1},
-		{math.Inf(1), 1},
-		{math.Inf(-1), 1},
-		{-5, 1},
-	}
-	for _, tc := range cases {
-		testutil.AssertEqual(t, ShotCountForDuration(tc.seconds), tc.want)
-	}
-}
-
 func TestNormalizeShotDurations_SumsToSceneDuration(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
@@ -88,11 +62,3 @@ func TestBuildFrozenDescriptor_Stable(t *testing.T) {
 	testutil.AssertEqual(t, got, want)
 }
 
-func TestEnsureFrozenPrefix_AddsExactlyOnce(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	frozen := "Appearance: Concrete sentinel"
-	got := EnsureFrozenPrefix(frozen, "wide shot in the chamber")
-	testutil.AssertEqual(t, got, "Appearance: Concrete sentinel; wide shot in the chamber")
-	testutil.AssertEqual(t, EnsureFrozenPrefix(frozen, got), got)
-}

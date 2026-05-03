@@ -7,14 +7,142 @@
     "scp_id": "SCP-RETRY",
     "title": "Shadow retry narration",
     "scenes": [
-      {"scene_num": 1, "act_id": "act_1", "narration": "일지는 이렇게 시작합니다.", "fact_tags": [], "mood": "neutral","entity_visible": false,"location": "문서보관실","characters_present": ["기록관"],"color_palette": "beige","atmosphere": "archival"},
-      {"scene_num": 2, "act_id": "act_1", "narration": "작은 수정이 있었습니다.","fact_tags": [], "mood": "neutral","entity_visible": false,"location": "사무실",    "characters_present": ["연구원"],"color_palette": "white","atmosphere": "routine"},
-      {"scene_num": 3, "act_id": "act_2", "narration": "수치가 안정됩니다.",     "fact_tags": [], "mood": "neutral","entity_visible": false,"location": "관측실",    "characters_present": ["연구원"],"color_palette": "blue", "atmosphere": "stabilizing"},
-      {"scene_num": 4, "act_id": "act_2", "narration": "보고가 제출됩니다.",     "fact_tags": [], "mood": "neutral","entity_visible": false,"location": "본부",      "characters_present": ["연구원"],"color_palette": "gray", "atmosphere": "formal"},
-      {"scene_num": 5, "act_id": "act_3", "narration": "외부 심사가 요청됩니다.", "fact_tags": [], "mood": "neutral","entity_visible": false,"location": "회의실",    "characters_present": ["연구원"],"color_palette": "gray", "atmosphere": "measured"},
-      {"scene_num": 6, "act_id": "act_3", "narration": "질문이 이어집니다.",     "fact_tags": [], "mood": "neutral","entity_visible": false,"location": "회의실",    "characters_present": ["연구원"],"color_palette": "gray", "atmosphere": "inquiring"},
-      {"scene_num": 7, "act_id": "act_4", "narration": "보완이 결정됩니다.",     "fact_tags": [], "mood": "neutral","entity_visible": false,"location": "본부",      "characters_present": ["연구원"],"color_palette": "gray", "atmosphere": "planning"},
-      {"scene_num": 8, "act_id": "act_4", "narration": "기록 종료.",             "fact_tags": [], "mood": "neutral","entity_visible": false,"location": "기록실",    "characters_present": ["연구원"],"color_palette": "white","atmosphere": "closing"}
+      {
+        "scene_num": 1,
+        "act_id": "act_1",
+        "narration": "일지는 이렇게 시작합니다.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "문서보관실",
+        "characters_present": [
+          "기록관"
+        ],
+        "color_palette": "beige",
+        "atmosphere": "archival",
+        "narration_beats": [
+          "일지는 이렇게 시작합니다."
+        ]
+      },
+      {
+        "scene_num": 2,
+        "act_id": "act_1",
+        "narration": "작은 수정이 있었습니다.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "사무실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "white",
+        "atmosphere": "routine",
+        "narration_beats": [
+          "작은 수정이 있었습니다."
+        ]
+      },
+      {
+        "scene_num": 3,
+        "act_id": "act_2",
+        "narration": "수치가 안정됩니다.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "관측실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "blue",
+        "atmosphere": "stabilizing",
+        "narration_beats": [
+          "수치가 안정됩니다."
+        ]
+      },
+      {
+        "scene_num": 4,
+        "act_id": "act_2",
+        "narration": "보고가 제출됩니다.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "본부",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gray",
+        "atmosphere": "formal",
+        "narration_beats": [
+          "보고가 제출됩니다."
+        ]
+      },
+      {
+        "scene_num": 5,
+        "act_id": "act_3",
+        "narration": "외부 심사가 요청됩니다.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "회의실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gray",
+        "atmosphere": "measured",
+        "narration_beats": [
+          "외부 심사가 요청됩니다."
+        ]
+      },
+      {
+        "scene_num": 6,
+        "act_id": "act_3",
+        "narration": "질문이 이어집니다.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "회의실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gray",
+        "atmosphere": "inquiring",
+        "narration_beats": [
+          "질문이 이어집니다."
+        ]
+      },
+      {
+        "scene_num": 7,
+        "act_id": "act_4",
+        "narration": "보완이 결정됩니다.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "본부",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gray",
+        "atmosphere": "planning",
+        "narration_beats": [
+          "보완이 결정됩니다."
+        ]
+      },
+      {
+        "scene_num": 8,
+        "act_id": "act_4",
+        "narration": "기록 종료.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "기록실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "white",
+        "atmosphere": "closing",
+        "narration_beats": [
+          "기록 종료."
+        ]
+      }
     ],
     "metadata": {
       "language": "ko",

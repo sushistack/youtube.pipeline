@@ -7,14 +7,142 @@
     "scp_id": "SCP-ACCEPT",
     "title": "Shadow accept narration",
     "scenes": [
-      {"scene_num": 1, "act_id": "act_1", "narration": "경보음이 울립니다.", "fact_tags": [], "mood": "tense",  "entity_visible": true,  "location": "통제실",  "characters_present": ["경비원"], "color_palette": "red",    "atmosphere": "alert"},
-      {"scene_num": 2, "act_id": "act_1", "narration": "문이 잠깁니다.",   "fact_tags": [], "mood": "shock",  "entity_visible": true,  "location": "격리문",  "characters_present": ["경비원"], "color_palette": "amber",  "atmosphere": "locking down"},
-      {"scene_num": 3, "act_id": "act_2", "narration": "창 밖의 그림자.", "fact_tags": [], "mood": "unease", "entity_visible": true,  "location": "복도",   "characters_present": ["연구원"], "color_palette": "black",  "atmosphere": "shifting"},
-      {"scene_num": 4, "act_id": "act_2", "narration": "소리가 멀어집니다.","fact_tags": [], "mood": "neutral","entity_visible": false, "location": "복도",   "characters_present": ["연구원"], "color_palette": "gray",   "atmosphere": "receding"},
-      {"scene_num": 5, "act_id": "act_3", "narration": "기록이 재개됩니다.","fact_tags": [], "mood": "neutral","entity_visible": false, "location": "본부",   "characters_present": ["연구원"], "color_palette": "blue",   "atmosphere": "resuming"},
-      {"scene_num": 6, "act_id": "act_3", "narration": "잠시의 정적.",     "fact_tags": [], "mood": "neutral","entity_visible": false, "location": "본부",   "characters_present": ["연구원"], "color_palette": "blue",   "atmosphere": "steady"},
-      {"scene_num": 7, "act_id": "act_4", "narration": "경보가 해제됩니다.","fact_tags": [], "mood": "calm",   "entity_visible": false, "location": "통제실", "characters_present": ["경비원"], "color_palette": "white",  "atmosphere": "cleared"},
-      {"scene_num": 8, "act_id": "act_4", "narration": "상황 종료.",       "fact_tags": [], "mood": "neutral","entity_visible": false, "location": "본부",   "characters_present": ["연구원"], "color_palette": "white",  "atmosphere": "closing"}
+      {
+        "scene_num": 1,
+        "act_id": "act_1",
+        "narration": "경보음이 울립니다.",
+        "fact_tags": [],
+        "mood": "tense",
+        "entity_visible": true,
+        "location": "통제실",
+        "characters_present": [
+          "경비원"
+        ],
+        "color_palette": "red",
+        "atmosphere": "alert",
+        "narration_beats": [
+          "경보음이 울립니다."
+        ]
+      },
+      {
+        "scene_num": 2,
+        "act_id": "act_1",
+        "narration": "문이 잠깁니다.",
+        "fact_tags": [],
+        "mood": "shock",
+        "entity_visible": true,
+        "location": "격리문",
+        "characters_present": [
+          "경비원"
+        ],
+        "color_palette": "amber",
+        "atmosphere": "locking down",
+        "narration_beats": [
+          "문이 잠깁니다."
+        ]
+      },
+      {
+        "scene_num": 3,
+        "act_id": "act_2",
+        "narration": "창 밖의 그림자.",
+        "fact_tags": [],
+        "mood": "unease",
+        "entity_visible": true,
+        "location": "복도",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "black",
+        "atmosphere": "shifting",
+        "narration_beats": [
+          "창 밖의 그림자."
+        ]
+      },
+      {
+        "scene_num": 4,
+        "act_id": "act_2",
+        "narration": "소리가 멀어집니다.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "복도",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gray",
+        "atmosphere": "receding",
+        "narration_beats": [
+          "소리가 멀어집니다."
+        ]
+      },
+      {
+        "scene_num": 5,
+        "act_id": "act_3",
+        "narration": "기록이 재개됩니다.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "본부",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "blue",
+        "atmosphere": "resuming",
+        "narration_beats": [
+          "기록이 재개됩니다."
+        ]
+      },
+      {
+        "scene_num": 6,
+        "act_id": "act_3",
+        "narration": "잠시의 정적.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "본부",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "blue",
+        "atmosphere": "steady",
+        "narration_beats": [
+          "잠시의 정적."
+        ]
+      },
+      {
+        "scene_num": 7,
+        "act_id": "act_4",
+        "narration": "경보가 해제됩니다.",
+        "fact_tags": [],
+        "mood": "calm",
+        "entity_visible": false,
+        "location": "통제실",
+        "characters_present": [
+          "경비원"
+        ],
+        "color_palette": "white",
+        "atmosphere": "cleared",
+        "narration_beats": [
+          "경보가 해제됩니다."
+        ]
+      },
+      {
+        "scene_num": 8,
+        "act_id": "act_4",
+        "narration": "상황 종료.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "본부",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "white",
+        "atmosphere": "closing",
+        "narration_beats": [
+          "상황 종료."
+        ]
+      }
     ],
     "metadata": {
       "language": "ko",

@@ -549,6 +549,36 @@ func TestWriter_PerAct_PriorCriticFeedbackInjected(t *testing.T) {
 	}
 }
 
+// TestWriter_Run_PropagatesNarrationBeats pins the writer→narration
+// beats wiring: the LLM response's `narration_beats` per scene must land
+// on every NarrationScene.NarrationBeats slice (1:1, in order).
+// Visual_breakdowner depends on this for its 1-shot-per-beat contract;
+// dropping the wiring would silently make every scene incident-shaped.
+func TestWriter_Run_PropagatesNarrationBeats(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	perAct := perActFixturesFromMergedSample(t)
+	gen := newActIndexedTextGenerator(perAct)
+	state := sampleWriterState()
+	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err != nil {
+		t.Fatalf("Writer: %v", err)
+	}
+	if state.Narration == nil {
+		t.Fatal("expected narration output")
+	}
+	for _, scene := range state.Narration.Scenes {
+		if len(scene.NarrationBeats) < 1 {
+			t.Fatalf("scene_num=%d: NarrationBeats empty (writer must emit ≥1 beat per scene)", scene.SceneNum)
+		}
+		for i, beat := range scene.NarrationBeats {
+			if strings.TrimSpace(beat) == "" {
+				t.Fatalf("scene_num=%d beat[%d]: blank string", scene.SceneNum, i)
+			}
+		}
+	}
+}
+
 func TestWriter_Run_DoesNotMutateStateOnFailure(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
@@ -574,7 +604,13 @@ func TestWriter_Run_DoesNotMutateStateOnFailure(t *testing.T) {
 // routing isn't relevant (e.g. nil-state guards). The resps/reqs slices
 // support tests that need to drive multi-call sequences with distinct
 // responses; resp is the fallback for single-shot callers.
+//
+// Mutex gates Generate() so the visual_breakdowner errgroup fan-out does
+// not race on `calls`/`last`/`reqs`. Direct field reads from the test
+// goroutine remain valid only AFTER the agent's Run returns (no
+// concurrent writers at that point).
 type fakeTextGenerator struct {
+	mu    sync.Mutex
 	resp  domain.TextResponse
 	resps []domain.TextResponse
 	err   error
@@ -584,6 +620,8 @@ type fakeTextGenerator struct {
 }
 
 func (f *fakeTextGenerator) Generate(_ context.Context, req domain.TextRequest) (domain.TextResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls++
 	f.last = req
 	f.reqs = append(f.reqs, req)

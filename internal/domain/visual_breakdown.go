@@ -33,6 +33,14 @@ type VisualShot struct {
 	VisualDescriptor   string  `json:"visual_descriptor"`
 	EstimatedDurationS float64 `json:"estimated_duration_s"`
 	Transition         string  `json:"transition"`
+	// NarrationBeatIndex is the zero-based index into the parent
+	// NarrationScene.NarrationBeats slice that this shot renders.
+	// Shot ordering must follow beat ordering (i.e. shots[i].NarrationBeatIndex == i).
+	NarrationBeatIndex int `json:"narration_beat_index"`
+	// NarrationBeatText is the verbatim beat string the shot is rendering,
+	// echoed for downstream image-prompt assembly so it does not need to
+	// re-resolve the index against the upstream NarrationScene.
+	NarrationBeatText string `json:"narration_beat_text"`
 }
 
 type ShotOverride struct {

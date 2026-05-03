@@ -138,6 +138,7 @@ Output a **single JSON object** for this act only:
       "scene_num": 1,
       "act_id": "{act_id}",
       "narration": "Korean narration text here (split into short sentences)",
+      "narration_beats": ["하나의 시각적 비트를 한 줄로 (씬당 1개 이상)"],
       "fact_tags": [{"key": "fact_key", "content": "relevant fact text"}],
       "mood": "tense",
       "entity_visible": true,
@@ -165,6 +166,7 @@ Output a **single JSON object** for this act only:
 - `color_palette`: **REQUIRED** — Dominant colors and visual tone for this scene's imagery. NEVER leave empty.
 - `atmosphere`: **REQUIRED** — One-line mood/atmosphere description. NEVER leave empty.
 - `entity_visible`: `true` if the SCP is referenced/visible this scene, `false` for environment-only scenes.
+- `narration_beats`: **REQUIRED** — Array of 1+ visual beats that decompose this scene's `narration` into ordered, image-renderable moments. Each beat is a short Korean sentence describing one visual moment. Single-image hooks (e.g. `incident` cold-opens) emit exactly 1 beat; richer scenes typically emit 2-4 beats. The visual_breakdowner stage emits one shot per beat in the same order — keep beats faithful to the narration's actual visual progression and avoid inventing facts.
 
 Return JSON only. Do not wrap the JSON in markdown fences.
 

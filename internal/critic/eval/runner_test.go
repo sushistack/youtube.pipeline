@@ -203,6 +203,7 @@ func minimalNarrationInput() json.RawMessage {
 			"scene_num":          i + 1,
 			"act_id":             fmt.Sprintf("act_%d", i+1),
 			"narration":          "테스트 나레이션입니다.",
+			"narration_beats":    []string{"테스트 나레이션입니다."},
 			"fact_tags":          []interface{}{},
 			"mood":               "neutral",
 			"entity_visible":     false,

@@ -7,14 +7,142 @@
     "scp_id": "SCP-PASS",
     "title": "Shadow pass narration",
     "scenes": [
-      {"scene_num": 1, "act_id": "act_1", "narration": "평온한 격리실.", "fact_tags": [], "mood": "calm",        "entity_visible": false, "location": "격리실",     "characters_present": ["연구원"], "color_palette": "gray",   "atmosphere": "clinical calm"},
-      {"scene_num": 2, "act_id": "act_1", "narration": "복도의 정적.", "fact_tags": [], "mood": "neutral",     "entity_visible": false, "location": "복도",       "characters_present": ["연구원"], "color_palette": "white",  "atmosphere": "sterile"},
-      {"scene_num": 3, "act_id": "act_2", "narration": "관찰 기록.", "fact_tags": [], "mood": "neutral",     "entity_visible": false, "location": "관찰실",     "characters_present": ["연구원"], "color_palette": "beige",  "atmosphere": "studious"},
-      {"scene_num": 4, "act_id": "act_2", "narration": "평범한 보고.", "fact_tags": [], "mood": "neutral",     "entity_visible": false, "location": "본부",       "characters_present": ["연구원"], "color_palette": "blue",   "atmosphere": "routine"},
-      {"scene_num": 5, "act_id": "act_3", "narration": "미세한 흔들림.", "fact_tags": [], "mood": "unease",      "entity_visible": false, "location": "격리실",     "characters_present": ["연구원"], "color_palette": "gray",   "atmosphere": "slight tension"},
-      {"scene_num": 6, "act_id": "act_3", "narration": "잠시의 정적.", "fact_tags": [], "mood": "neutral",     "entity_visible": false, "location": "통제실",     "characters_present": ["연구원"], "color_palette": "black",  "atmosphere": "steady"},
-      {"scene_num": 7, "act_id": "act_4", "narration": "마무리 점검.", "fact_tags": [], "mood": "calm",        "entity_visible": false, "location": "격리실",     "characters_present": ["연구원"], "color_palette": "gray",   "atmosphere": "settled"},
-      {"scene_num": 8, "act_id": "act_4", "narration": "기록 종료.",  "fact_tags": [], "mood": "neutral",     "entity_visible": false, "location": "기록실",     "characters_present": ["연구원"], "color_palette": "white",  "atmosphere": "closing"}
+      {
+        "scene_num": 1,
+        "act_id": "act_1",
+        "narration": "평온한 격리실.",
+        "fact_tags": [],
+        "mood": "calm",
+        "entity_visible": false,
+        "location": "격리실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gray",
+        "atmosphere": "clinical calm",
+        "narration_beats": [
+          "평온한 격리실."
+        ]
+      },
+      {
+        "scene_num": 2,
+        "act_id": "act_1",
+        "narration": "복도의 정적.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "복도",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "white",
+        "atmosphere": "sterile",
+        "narration_beats": [
+          "복도의 정적."
+        ]
+      },
+      {
+        "scene_num": 3,
+        "act_id": "act_2",
+        "narration": "관찰 기록.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "관찰실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "beige",
+        "atmosphere": "studious",
+        "narration_beats": [
+          "관찰 기록."
+        ]
+      },
+      {
+        "scene_num": 4,
+        "act_id": "act_2",
+        "narration": "평범한 보고.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "본부",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "blue",
+        "atmosphere": "routine",
+        "narration_beats": [
+          "평범한 보고."
+        ]
+      },
+      {
+        "scene_num": 5,
+        "act_id": "act_3",
+        "narration": "미세한 흔들림.",
+        "fact_tags": [],
+        "mood": "unease",
+        "entity_visible": false,
+        "location": "격리실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gray",
+        "atmosphere": "slight tension",
+        "narration_beats": [
+          "미세한 흔들림."
+        ]
+      },
+      {
+        "scene_num": 6,
+        "act_id": "act_3",
+        "narration": "잠시의 정적.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "통제실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "black",
+        "atmosphere": "steady",
+        "narration_beats": [
+          "잠시의 정적."
+        ]
+      },
+      {
+        "scene_num": 7,
+        "act_id": "act_4",
+        "narration": "마무리 점검.",
+        "fact_tags": [],
+        "mood": "calm",
+        "entity_visible": false,
+        "location": "격리실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gray",
+        "atmosphere": "settled",
+        "narration_beats": [
+          "마무리 점검."
+        ]
+      },
+      {
+        "scene_num": 8,
+        "act_id": "act_4",
+        "narration": "기록 종료.",
+        "fact_tags": [],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "기록실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "white",
+        "atmosphere": "closing",
+        "narration_beats": [
+          "기록 종료."
+        ]
+      }
     ],
     "metadata": {
       "language": "ko",

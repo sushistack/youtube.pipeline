@@ -230,12 +230,22 @@ func runWriterAct(
 		return writerActResponse{}, actCallMeta{}, err
 	}
 
-	var lastErr error
-	for attempt := 0; attempt <= writerPerActRetryBudget; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return writerActResponse{}, actCallMeta{}, err
-		}
+	type writerAttemptResult struct {
+		decoded writerActResponse
+		meta    actCallMeta
+	}
 
+	opts := retryOpts{
+		Stage:  "writer",
+		Budget: writerPerActRetryBudget,
+		Logger: cfg.Logger,
+		BaseAttrs: []slog.Attr{
+			slog.String("run_id", state.RunID),
+			slog.String("act_id", spec.Act.ID),
+		},
+	}
+
+	out, err := runWithRetry(ctx, opts, func(attempt int) (writerAttemptResult, retryReason, error) {
 		if cfg.Logger != nil {
 			cfg.Logger.Info("writer attempt start",
 				"run_id", state.RunID,
@@ -264,7 +274,11 @@ func runWriterAct(
 					"error", err.Error(),
 				)
 			}
-			return writerActResponse{}, actCallMeta{}, err
+			// Transport error: propagate immediately. Returning a sentinel
+			// retry-aborting reason isn't enough because runWithRetry would
+			// still loop; instead, package the error and surface it via the
+			// retryAbort signal.
+			return writerAttemptResult{}, retryReasonAbort, err
 		}
 		if cfg.Logger != nil {
 			cfg.Logger.Info("writer attempt complete",
@@ -296,7 +310,7 @@ func runWriterAct(
 		// with a generic parse error; surface a clearer message and abort
 		// without burning the retry budget on the same broken response shape.
 		if isTruncatedFinishReason(resp.FinishReason) {
-			return writerActResponse{}, actCallMeta{}, fmt.Errorf(
+			return writerAttemptResult{}, retryReasonAbort, fmt.Errorf(
 				"writer: act %s: provider truncated completion (finish_reason=%q); raise max_tokens or shorten the prompt: %w",
 				spec.Act.ID, resp.FinishReason, domain.ErrValidation,
 			)
@@ -304,34 +318,17 @@ func runWriterAct(
 
 		var decoded writerActResponse
 		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
-			lastErr = fmt.Errorf("writer: act %s: %w", spec.Act.ID, err)
-			if cfg.Logger != nil {
-				cfg.Logger.Info("writer retry",
-					"run_id", state.RunID,
-					"act_id", spec.Act.ID,
-					"attempt", attempt,
-					"reason", "json_decode",
-					"error", err.Error(),
-				)
-			}
-			continue
+			return writerAttemptResult{}, retryReasonJSONDecode, fmt.Errorf("writer: act %s: %w", spec.Act.ID, err)
 		}
 		if err := validateWriterActResponse(spec, decoded); err != nil {
-			lastErr = err
-			if cfg.Logger != nil {
-				cfg.Logger.Info("writer retry",
-					"run_id", state.RunID,
-					"act_id", spec.Act.ID,
-					"attempt", attempt,
-					"reason", "schema_validation",
-					"error", err.Error(),
-				)
-			}
-			continue
+			return writerAttemptResult{}, retryReasonSchemaValidation, err
 		}
-		return decoded, actCallMeta{resp: resp}, nil
+		return writerAttemptResult{decoded: decoded, meta: actCallMeta{resp: resp}}, "", nil
+	})
+	if err != nil {
+		return writerActResponse{}, actCallMeta{}, err
 	}
-	return writerActResponse{}, actCallMeta{}, lastErr
+	return out.decoded, out.meta, nil
 }
 
 func validateWriterActResponse(spec writerActSpec, decoded writerActResponse) error {

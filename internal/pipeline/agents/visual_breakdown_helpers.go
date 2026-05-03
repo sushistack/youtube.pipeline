@@ -30,24 +30,11 @@ func (heuristicDurationEstimator) Estimate(scene domain.NarrationScene) float64 
 	return roundToTenth(seconds)
 }
 
-func ShotCountForDuration(seconds float64) int {
-	if math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 0 {
-		return 1
-	}
-	switch {
-	case seconds <= 8:
-		return 1
-	case seconds <= 15:
-		return 2
-	case seconds <= 25:
-		return 3
-	case seconds <= 40:
-		return 4
-	default:
-		return 5
-	}
-}
-
+// NormalizeShotDurations splits a scene's total duration evenly across
+// shotCount visual shots. Shot count is now driven by len(scene.NarrationBeats)
+// (1:1 narration↔shot alignment) rather than by the deprecated duration-tier
+// formula — see docs/prompts/scenario/03_5_visual_breakdown.md and
+// internal/pipeline/agents/visual_breakdowner.go for the wiring.
 func NormalizeShotDurations(totalSeconds float64, shotCount int) []float64 {
 	if shotCount <= 0 {
 		return nil
@@ -78,21 +65,6 @@ func BuildFrozenDescriptor(v domain.VisualIdentity) string {
 		v.EnvironmentSetting,
 		strings.Join(v.KeyVisualMoments, ", "),
 	)
-}
-
-func EnsureFrozenPrefix(frozen, descriptor string) string {
-	frozen = strings.TrimSpace(frozen)
-	trimmed := strings.TrimSpace(descriptor)
-	if frozen == "" {
-		return trimmed
-	}
-	if trimmed == "" {
-		return frozen
-	}
-	if strings.HasPrefix(trimmed, frozen) {
-		return trimmed
-	}
-	return frozen + "; " + trimmed
 }
 
 func roundToTenth(v float64) float64 {

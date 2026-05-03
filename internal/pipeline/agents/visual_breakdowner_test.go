@@ -34,8 +34,17 @@ func uniformEstimator(duration float64) fakeSceneDurationEstimator {
 
 func shotResponse(sceneNum int, shots ...visualBreakdownResponseShot) string {
 	fragments := make([]string, 0, len(shots))
-	for _, s := range shots {
-		fragments = append(fragments, fmt.Sprintf(`{"visual_descriptor":%q,"transition":%q}`, s.VisualDescriptor, s.Transition))
+	for i, s := range shots {
+		// Auto-fill narration_beat_index when the test caller leaves it as
+		// the zero value: shots[0]→0, shots[1]→1, ... so the validator's
+		// "shot order must equal beat index" check passes by default.
+		idx := s.NarrationBeatIndex
+		if i > 0 && idx == 0 {
+			idx = i
+		}
+		fragments = append(fragments,
+			fmt.Sprintf(`{"visual_descriptor":%q,"transition":%q,"narration_beat_index":%d}`,
+				s.VisualDescriptor, s.Transition, idx))
 	}
 	return fmt.Sprintf(`{"scene_num":%d,"shots":[%s]}`, sceneNum, strings.Join(fragments, ","))
 }
@@ -97,78 +106,77 @@ func TestVisualBreakdowner_Run_CallsGeneratorPerScene(t *testing.T) {
 	testutil.AssertEqual(t, gen.calls, 8)
 }
 
-func TestVisualBreakdowner_Run_UsesShotCountFormula(t *testing.T) {
+func TestVisualBreakdowner_Run_ShotCountMatchesNarrationBeats(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	// Each boundary tier: scene N has duration dᴺ which maps to shot count cᴺ.
-	tiers := []struct {
-		sceneNum int
-		duration float64
-		shots    int
-	}{
-		{1, 7.5, 1},
-		{2, 12.0, 2},
-		{3, 20.0, 3},
-		{4, 35.0, 4},
-		{5, 50.0, 5},
-		{6, 7.5, 1},
-		{7, 12.0, 2},
-		{8, 20.0, 3},
-	}
+	// Beat-driven: shot count is now len(scene.NarrationBeats), not a
+	// duration tier. Mix single- and multi-beat scenes.
+	beats := map[int]int{1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 1, 7: 2, 8: 3}
 
-	responses := make([]string, 0, len(tiers))
-	for _, tier := range tiers {
-		shots := make([]visualBreakdownResponseShot, 0, tier.shots)
-		for i := 0; i < tier.shots; i++ {
+	responses := make([]string, 0, len(beats))
+	for sceneNum := 1; sceneNum <= 8; sceneNum++ {
+		count := beats[sceneNum]
+		shots := make([]visualBreakdownResponseShot, 0, count)
+		for i := 0; i < count; i++ {
 			shots = append(shots, visualBreakdownResponseShot{
-				VisualDescriptor: fmt.Sprintf("scene %d shot %d", tier.sceneNum, i+1),
-				Transition:       domain.TransitionKenBurns,
+				VisualDescriptor:   fmt.Sprintf("scene %d shot %d", sceneNum, i+1),
+				Transition:         domain.TransitionKenBurns,
+				NarrationBeatIndex: i,
 			})
 		}
-		responses = append(responses, shotResponse(tier.sceneNum, shots...))
-	}
-
-	estimator := fakeSceneDurationEstimator{values: map[int]float64{}}
-	for _, tier := range tiers {
-		estimator.values[tier.sceneNum] = tier.duration
+		responses = append(responses, shotResponse(sceneNum, shots...))
 	}
 
 	gen := &sequenceTextGenerator{responses: responses}
 	state := sampleVisualBreakdownState(8)
-	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), estimator)(context.Background(), state)
+	state.Narration = sampleNarrationScenesWithBeats(8, beats)
+	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
 	if err != nil {
 		t.Fatalf("VisualBreakdowner: %v", err)
 	}
-	for i, tier := range tiers {
-		got := state.VisualBreakdown.Scenes[i].ShotCount
-		if got != tier.shots {
-			t.Fatalf("scene %d duration=%v want shot count=%d got=%d", tier.sceneNum, tier.duration, tier.shots, got)
+	for sceneNum := 1; sceneNum <= 8; sceneNum++ {
+		want := beats[sceneNum]
+		got := state.VisualBreakdown.Scenes[sceneNum-1].ShotCount
+		if got != want {
+			t.Fatalf("scene %d: shot count=%d, want=%d (== len(NarrationBeats))", sceneNum, got, want)
 		}
-		if len(state.VisualBreakdown.Scenes[i].Shots) != tier.shots {
-			t.Fatalf("scene %d shots len=%d want=%d", tier.sceneNum, len(state.VisualBreakdown.Scenes[i].Shots), tier.shots)
+		if len(state.VisualBreakdown.Scenes[sceneNum-1].Shots) != want {
+			t.Fatalf("scene %d: shots len=%d, want=%d", sceneNum, len(state.VisualBreakdown.Scenes[sceneNum-1].Shots), want)
+		}
+		for i, shot := range state.VisualBreakdown.Scenes[sceneNum-1].Shots {
+			if shot.NarrationBeatIndex != i {
+				t.Fatalf("scene %d shot %d narration_beat_index=%d want=%d", sceneNum, i+1, shot.NarrationBeatIndex, i)
+			}
+			if shot.NarrationBeatText == "" {
+				t.Fatalf("scene %d shot %d: narration_beat_text empty", sceneNum, i+1)
+			}
 		}
 	}
 }
 
-func TestVisualBreakdowner_Run_PrefixesFrozenDescriptor_EveryShot(t *testing.T) {
+func TestVisualBreakdowner_Run_PassesDescriptorsThroughVerbatim(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	// Mix of single-shot and multi-shot scenes to prove every shot is prefixed.
-	durations := map[int]float64{1: 7, 2: 7, 3: 20, 4: 7, 5: 35, 6: 7, 7: 7, 8: 7}
+	// Beat-driven multi-shot mix: scene 3 → 3 beats, scene 5 → 4 beats, rest 1.
+	// Descriptors emitted by the LLM flow through unchanged — visual identity
+	// is anchored downstream by image_track.ComposeImagePrompt, not by an agent-
+	// layer prepend. The new prompt invites focal-subject variation per beat,
+	// so any agent-side prepend would corrupt that intent.
+	beats := map[int]int{1: 1, 2: 1, 3: 3, 4: 1, 5: 4, 6: 1, 7: 1, 8: 1}
 	responses := []string{
 		shotResponse(1, visualBreakdownResponseShot{VisualDescriptor: "alpha", Transition: domain.TransitionKenBurns}),
 		shotResponse(2, visualBreakdownResponseShot{VisualDescriptor: "beta", Transition: domain.TransitionKenBurns}),
 		shotResponse(3,
-			visualBreakdownResponseShot{VisualDescriptor: "gamma-a", Transition: domain.TransitionKenBurns},
-			visualBreakdownResponseShot{VisualDescriptor: "gamma-b", Transition: domain.TransitionCrossDissolve},
-			visualBreakdownResponseShot{VisualDescriptor: "gamma-c", Transition: domain.TransitionHardCut},
+			visualBreakdownResponseShot{VisualDescriptor: "gamma-a", Transition: domain.TransitionKenBurns, NarrationBeatIndex: 0},
+			visualBreakdownResponseShot{VisualDescriptor: "gamma-b", Transition: domain.TransitionCrossDissolve, NarrationBeatIndex: 1},
+			visualBreakdownResponseShot{VisualDescriptor: "gamma-c", Transition: domain.TransitionHardCut, NarrationBeatIndex: 2},
 		),
 		shotResponse(4, visualBreakdownResponseShot{VisualDescriptor: "delta", Transition: domain.TransitionKenBurns}),
 		shotResponse(5,
-			visualBreakdownResponseShot{VisualDescriptor: "epsilon-a", Transition: domain.TransitionKenBurns},
-			visualBreakdownResponseShot{VisualDescriptor: "epsilon-b", Transition: domain.TransitionKenBurns},
-			visualBreakdownResponseShot{VisualDescriptor: "epsilon-c", Transition: domain.TransitionKenBurns},
-			visualBreakdownResponseShot{VisualDescriptor: "epsilon-d", Transition: domain.TransitionKenBurns},
+			visualBreakdownResponseShot{VisualDescriptor: "epsilon-a", Transition: domain.TransitionKenBurns, NarrationBeatIndex: 0},
+			visualBreakdownResponseShot{VisualDescriptor: "epsilon-b", Transition: domain.TransitionKenBurns, NarrationBeatIndex: 1},
+			visualBreakdownResponseShot{VisualDescriptor: "epsilon-c", Transition: domain.TransitionKenBurns, NarrationBeatIndex: 2},
+			visualBreakdownResponseShot{VisualDescriptor: "epsilon-d", Transition: domain.TransitionKenBurns, NarrationBeatIndex: 3},
 		),
 		shotResponse(6, visualBreakdownResponseShot{VisualDescriptor: "zeta", Transition: domain.TransitionKenBurns}),
 		shotResponse(7, visualBreakdownResponseShot{VisualDescriptor: "eta", Transition: domain.TransitionKenBurns}),
@@ -177,21 +185,23 @@ func TestVisualBreakdowner_Run_PrefixesFrozenDescriptor_EveryShot(t *testing.T) 
 
 	gen := &sequenceTextGenerator{responses: responses}
 	state := sampleVisualBreakdownState(8)
-	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), fakeSceneDurationEstimator{values: durations})(context.Background(), state)
+	state.Narration = sampleNarrationScenesWithBeats(8, beats)
+	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
 	if err != nil {
 		t.Fatalf("VisualBreakdowner: %v", err)
 	}
 	totalShots := 0
+	frozen := state.VisualBreakdown.FrozenDescriptor
 	for _, scene := range state.VisualBreakdown.Scenes {
 		for _, shot := range scene.Shots {
 			totalShots++
-			if !strings.HasPrefix(shot.VisualDescriptor, state.VisualBreakdown.FrozenDescriptor) {
-				t.Fatalf("scene %d shot %d missing frozen prefix: %s", scene.SceneNum, shot.ShotIndex, shot.VisualDescriptor)
+			if frozen != "" && strings.HasPrefix(shot.VisualDescriptor, frozen) {
+				t.Fatalf("scene %d shot %d unexpectedly prepended with frozen descriptor: %q", scene.SceneNum, shot.ShotIndex, shot.VisualDescriptor)
 			}
 		}
 	}
-	if totalShots != 13 { // 1+1+3+1+4+1+1+1 under the current duration→shot formula
-		t.Fatalf("expected 13 total shots across 8 scenes, got %d", totalShots)
+	if totalShots != 13 { // 1+1+3+1+4+1+1+1 = 13 total beats across 8 scenes
+		t.Fatalf("expected 13 total shots across 8 scenes (matching beat counts), got %d", totalShots)
 	}
 }
 
@@ -199,10 +209,13 @@ func TestVisualBreakdowner_Run_RejectsWrongShotCount(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	gen := &fakeTextGenerator{resp: domain.TextResponse{NormalizedResponse: domain.NormalizedResponse{
-		Content: `{"scene_num":1,"shots":[{"visual_descriptor":"only one","transition":"ken_burns"}]}`,
+		Content: `{"scene_num":1,"shots":[{"visual_descriptor":"only one","transition":"ken_burns","narration_beat_index":0}]}`,
 	}}}
 	state := sampleVisualBreakdownState(8)
-	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), fakeSceneDurationEstimator{values: map[int]float64{1: 20}, fallback: 7})(context.Background(), state)
+	// Scene 1 carries 3 beats; LLM returning 1 shot must be rejected as
+	// shot count mismatch (beat-driven contract).
+	state.Narration = sampleNarrationScenesWithBeats(8, map[int]int{1: 3})
+	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("expected ErrValidation, got %v", err)
 	}
@@ -302,6 +315,109 @@ func TestVisualBreakdowner_Run_PropagatesTransportErrorWithoutRetry(t *testing.T
 	}
 }
 
+// retryQueueWithSceneNFailures builds a 4-scene per-scene queue where
+// targetScene receives the supplied failure-then-recovery sequence and
+// every other scene gets a single valid response.
+func retryQueueWithSceneNFailures(targetScene int, queue ...string) map[int][]string {
+	out := map[int][]string{targetScene: queue}
+	for i := 1; i <= 4; i++ {
+		if i == targetScene {
+			continue
+		}
+		out[i] = []string{shotResponse(i, visualBreakdownResponseShot{
+			VisualDescriptor: fmt.Sprintf("scene %d descriptor", i),
+			Transition:       domain.TransitionKenBurns,
+		})}
+	}
+	return out
+}
+
+// TestVisualBreakdowner_Run_RetriesOnSceneN_WhenNGreaterThanOne pins the
+// retry-loop's per-scene routing: scene N>1 must get exactly the same
+// retry treatment as scene 1. The earlier coverage only exercised scene 1
+// failing-then-recovering, which would not catch a regression that
+// hard-codes the loop to scene 1.
+func TestVisualBreakdowner_Run_RetriesOnSceneN_WhenNGreaterThanOne(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	invalid := `{"scene_num":3,"shots":[{"visual_descriptor":"shot","transition":""}]}`
+	valid := shotResponse(3, visualBreakdownResponseShot{
+		VisualDescriptor: "scene 3 descriptor",
+		Transition:       domain.TransitionKenBurns,
+	})
+	gen := &queueTextGenerator{responsesByScene: retryQueueWithSceneNFailures(3, invalid, valid)}
+	state := sampleVisualBreakdownState(4)
+	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
+	if err != nil {
+		t.Fatalf("VisualBreakdowner: %v", err)
+	}
+	testutil.AssertEqual(t, gen.callsByScene[3], 2)
+	for sceneNum := 1; sceneNum <= 4; sceneNum++ {
+		if sceneNum == 3 {
+			continue
+		}
+		testutil.AssertEqual(t, gen.callsByScene[sceneNum], 1)
+	}
+	if state.VisualBreakdown == nil || len(state.VisualBreakdown.Scenes) != 4 {
+		t.Fatalf("expected 4 scenes built, got %#v", state.VisualBreakdown)
+	}
+	for i, scene := range state.VisualBreakdown.Scenes {
+		if scene.SceneNum != i+1 {
+			t.Fatalf("ordering broken: scenes[%d].scene_num=%d, want=%d", i, scene.SceneNum, i+1)
+		}
+	}
+}
+
+// TestVisualBreakdowner_Run_HandlesMultipleConcurrentRetries proves the
+// errgroup fan-out doesn't serialize retries: scenes 1 AND 3 fail-then-
+// recover concurrently and final ordering is still preserved.
+func TestVisualBreakdowner_Run_HandlesMultipleConcurrentRetries(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	invalid1 := `{"scene_num":1,"shots":[{"visual_descriptor":"shot","transition":""}]}`
+	valid1 := shotResponse(1, visualBreakdownResponseShot{
+		VisualDescriptor: "scene 1 descriptor",
+		Transition:       domain.TransitionKenBurns,
+	})
+	invalid3 := `{"scene_num":3,"shots":[{"visual_descriptor":"shot","transition":"zoom"}]}`
+	valid3 := shotResponse(3, visualBreakdownResponseShot{
+		VisualDescriptor: "scene 3 descriptor",
+		Transition:       domain.TransitionCrossDissolve,
+	})
+	queue := map[int][]string{
+		1: {invalid1, valid1},
+		2: {shotResponse(2, visualBreakdownResponseShot{VisualDescriptor: "scene 2 descriptor", Transition: domain.TransitionKenBurns})},
+		3: {invalid3, valid3},
+		4: {shotResponse(4, visualBreakdownResponseShot{VisualDescriptor: "scene 4 descriptor", Transition: domain.TransitionKenBurns})},
+	}
+	gen := &queueTextGenerator{responsesByScene: queue}
+	state := sampleVisualBreakdownState(4)
+	err := NewVisualBreakdowner(gen, sampleWriterConfig(), sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), uniformEstimator(7.0))(context.Background(), state)
+	if err != nil {
+		t.Fatalf("VisualBreakdowner: %v", err)
+	}
+	testutil.AssertEqual(t, gen.callsByScene[1], 2)
+	testutil.AssertEqual(t, gen.callsByScene[2], 1)
+	testutil.AssertEqual(t, gen.callsByScene[3], 2)
+	testutil.AssertEqual(t, gen.callsByScene[4], 1)
+	if state.VisualBreakdown == nil || len(state.VisualBreakdown.Scenes) != 4 {
+		t.Fatalf("expected 4 scenes built, got %#v", state.VisualBreakdown)
+	}
+	for i, scene := range state.VisualBreakdown.Scenes {
+		if scene.SceneNum != i+1 {
+			t.Fatalf("ordering broken: scenes[%d].scene_num=%d, want=%d", i, scene.SceneNum, i+1)
+		}
+	}
+	// Scene 3 recovered with cross_dissolve to prove its specific retry
+	// produced its specific response — not a cross-scene mix-up.
+	testutil.AssertEqual(t, state.VisualBreakdown.Scenes[2].Shots[0].Transition, domain.TransitionCrossDissolve)
+}
+
+// TestVisualBreakdowner_Run_GivesUpAfterOneRetry was kept verbatim — the
+// negative-budget guarantee is exercised separately at the runWithRetry
+// helper level (see retry_test.go) because the production budget is
+// const-pinned to 1. A future config-driven seam can reuse the same fn
+// shape against the helper.
 func TestVisualBreakdowner_Run_GivesUpAfterOneRetry(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
@@ -537,6 +653,7 @@ func sampleNarrationScenes(sceneCount int) *domain.NarrationScript {
 			SceneNum:          i,
 			ActID:             actForScene(i),
 			Narration:         fmt.Sprintf("scene %d narration", i),
+			NarrationBeats:    []string{fmt.Sprintf("scene %d beat 0", i)},
 			Location:          "transit platform",
 			CharactersPresent: []string{"SCP-TEST"},
 			ColorPalette:      "gray",
@@ -544,6 +661,26 @@ func sampleNarrationScenes(sceneCount int) *domain.NarrationScript {
 		})
 	}
 	return &script
+}
+
+// sampleNarrationScenesWithBeats builds a multi-beat scene script for tests
+// that exercise multi-shot scene shapes. beatsByScene maps scene_num →
+// number of beats. Scenes not present in the map default to 1 beat.
+func sampleNarrationScenesWithBeats(sceneCount int, beatsByScene map[int]int) *domain.NarrationScript {
+	script := sampleNarrationScenes(sceneCount)
+	for i := range script.Scenes {
+		sceneNum := script.Scenes[i].SceneNum
+		count, ok := beatsByScene[sceneNum]
+		if !ok || count <= 0 {
+			count = 1
+		}
+		beats := make([]string, count)
+		for b := 0; b < count; b++ {
+			beats[b] = fmt.Sprintf("scene %d beat %d", sceneNum, b)
+		}
+		script.Scenes[i].NarrationBeats = beats
+	}
+	return script
 }
 
 func sampleVisualAssets() PromptAssets {
