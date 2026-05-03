@@ -3,7 +3,7 @@
 // A HITL session is the durable pause state of a human-in-the-loop review:
 // it records where the operator left off so the system can replay the exact
 // decision point on re-entry. Persistence: one row per run in the
-// hitl_sessions table (migration 004); the row is upserted on every decision
+// hitl_sessions table (migration 018); the row is upserted on every decision
 // or pause event and deleted when the run exits HITL state (status moves
 // away from "waiting" or the run is cancelled).
 package domain

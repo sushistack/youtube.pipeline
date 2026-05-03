@@ -1,4 +1,10 @@
--- Migration 004: HITL session pause state (Story 2.6, FR49 + FR50).
+-- Migration 018: HITL session pause state (Story 2.6, FR49 + FR50).
+-- Originally authored as 004 alongside 004_anti_progress_index.sql; the
+-- duplicate version number caused the migrate runner (which records progress
+-- via PRAGMA user_version) to apply only the first 004 alphabetically and
+-- silently skip this one on every fresh install. Renumbered to 018; the
+-- CREATE TABLE below uses IF NOT EXISTS so re-running on any environment
+-- that already managed to apply the original file is a no-op.
 --
 -- One row per run that is currently paused at a HITL checkpoint
 -- (scenario_review, character_pick, batch_review, metadata_ack with
@@ -18,7 +24,7 @@
 -- captured at the operator's last interaction (T1) and is compared
 -- against the current live state to produce before/after entries.
 
-CREATE TABLE hitl_sessions (
+CREATE TABLE IF NOT EXISTS hitl_sessions (
     run_id                     TEXT    PRIMARY KEY REFERENCES runs(id),
     stage                      TEXT    NOT NULL,
     scene_index                INTEGER NOT NULL,

@@ -28,6 +28,27 @@ func Migrate(db *sql.DB) error {
 		return entries[i].Name() < entries[j].Name()
 	})
 
+	// Reject duplicate version prefixes up front: the runner records progress
+	// in PRAGMA user_version, so two files sharing a number means whichever
+	// sorts second is silently skipped on every install (the bug that left
+	// 004_hitl_sessions.sql un-applied while 004_anti_progress_index.sql
+	// stamped user_version=4). Failing loud here is cheap and prevents the
+	// next contributor from re-introducing the same hazard.
+	seen := map[int]string{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		ver, err := parseMigrationVersion(e.Name())
+		if err != nil {
+			return fmt.Errorf("parse migration %s: %w", e.Name(), err)
+		}
+		if prev, ok := seen[ver]; ok {
+			return fmt.Errorf("duplicate migration version %d: %s and %s", ver, prev, e.Name())
+		}
+		seen[ver] = e.Name()
+	}
+
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
 			continue
