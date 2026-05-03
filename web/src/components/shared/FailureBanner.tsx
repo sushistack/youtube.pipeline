@@ -27,7 +27,10 @@ export function FailureBanner({ on_dismiss, run }: FailureBannerProps) {
   const resume_mutation = useMutation({
     mutationFn: () => resumeRun(run.id),
     onSuccess: () => {
-      on_dismiss()
+      // status가 cancelled/failed → running/waiting 으로 바뀌면 부모 셸에서 배너 조건이
+      // 자연스럽게 false가 되어 사라진다. on_dismiss를 같이 호출하면 부모의
+      // dismissed_run_id에 run.id가 박혀, 같은 run이 다시 cancelled 됐을 때
+      // 배너가 다시 뜨지 않는 cycle 버그가 발생.
       void query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
       void query_client.invalidateQueries({
         queryKey: queryKeys.runs.status(run.id),

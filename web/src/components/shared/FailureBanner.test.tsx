@@ -125,15 +125,18 @@ describe('FailureBanner', () => {
     })
 
     await waitFor(() => {
-      expect(on_dismiss).toHaveBeenCalledTimes(1)
-    })
-
-    expect(invalidate_spy).toHaveBeenCalledWith({
-      queryKey: queryKeys.runs.list(),
+      expect(invalidate_spy).toHaveBeenCalledWith({
+        queryKey: queryKeys.runs.list(),
+      })
     })
     expect(invalidate_spy).toHaveBeenCalledWith({
       queryKey: queryKeys.runs.status('scp-173-run-9'),
     })
+    // onSuccess는 더 이상 on_dismiss를 호출하지 않는다 — query invalidation으로
+    // 셸이 status를 다시 받아 banner 조건이 false가 되며 자연스럽게 사라진다.
+    // dismissed_run_id에 sticky하게 박지 않는 게 cancel→restart→cancel cycle에서
+    // banner가 다시 뜨도록 보장하는 핵심.
+    expect(on_dismiss).not.toHaveBeenCalled()
   })
 
   it('fires resume on Enter when the banner is mounted', async () => {

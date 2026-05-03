@@ -156,6 +156,19 @@ export function ProductionShell() {
       : null
   const is_failure_banner_dismissed =
     current_run?.id != null && dismissed_run_id === current_run.id
+  // dismissed_run_id 안전망: status가 failed/cancelled를 떠나면 dismissal을 만료시킨다.
+  // 같은 run이 cancel→restart→cancel 사이클을 돌 때 직전 dismissal이 sticky하게
+  // 남아 새 cancellation에서 배너가 안 뜨는 버그를 막기 위함.
+  useEffect(() => {
+    if (
+      dismissed_run_id != null &&
+      current_run?.id === dismissed_run_id &&
+      current_run.status !== 'failed' &&
+      current_run.status !== 'cancelled'
+    ) {
+      set_dismissed_run_id(null)
+    }
+  }, [current_run?.id, current_run?.status, dismissed_run_id])
   const show_continuity_banner =
     continuity_message != null &&
     continuity_key != null &&
