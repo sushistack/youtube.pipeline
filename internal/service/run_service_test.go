@@ -88,6 +88,98 @@ func TestRunService_Cancel_Conflict(t *testing.T) {
 	}
 }
 
+// stubCanceller records calls so tests can assert that RunService.Cancel
+// drains workers in addition to marking the DB row.
+type stubCanceller struct {
+	calls   []string
+	returns error
+}
+
+func (s *stubCanceller) Cancel(_ context.Context, runID string) error {
+	s.calls = append(s.calls, runID)
+	return s.returns
+}
+
+func TestRunService_Cancel_DelegatesToCancellerAfterStoreMark(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	canceller := &stubCanceller{}
+	svc.SetCanceller(canceller)
+
+	outDir := t.TempDir()
+	ctx := context.Background()
+	run, err := svc.Create(ctx, "049", outDir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Move to a cancellable status. Cancel rejects pending — stage it to
+	// running directly via the store.
+	if err := store.SetStatus(ctx, run.ID, domain.StatusRunning, nil); err != nil {
+		t.Fatalf("SetStatus: %v", err)
+	}
+
+	if err := svc.Cancel(ctx, run.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	if len(canceller.calls) != 1 || canceller.calls[0] != run.ID {
+		t.Errorf("canceller.Cancel calls = %v, want [%s]", canceller.calls, run.ID)
+	}
+
+	got, err := store.Get(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Status != domain.StatusCancelled {
+		t.Errorf("status = %s, want cancelled", got.Status)
+	}
+}
+
+func TestRunService_Cancel_SkipsCancellerWhenStoreFails(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	svc := newTestService(t)
+	canceller := &stubCanceller{}
+	svc.SetCanceller(canceller)
+
+	outDir := t.TempDir()
+	ctx := context.Background()
+	run, _ := svc.Create(ctx, "049", outDir)
+
+	// Pending → store.Cancel returns ErrConflict; canceller must NOT be
+	// invoked (no workers exist for a never-started run, and dispatching a
+	// drain on a status that wasn't actually marked is misleading).
+	err := svc.Cancel(ctx, run.ID)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("expected ErrConflict, got %v", err)
+	}
+	if len(canceller.calls) != 0 {
+		t.Errorf("canceller.Cancel should not be called when store.Cancel fails, got %v", canceller.calls)
+	}
+}
+
+func TestRunService_Cancel_SurfacesCancellerError(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database := testutil.NewTestDB(t)
+	store := db.NewRunStore(database)
+	svc := service.NewRunService(store, nil)
+	sentinel := errors.New("worker drain blew up")
+	svc.SetCanceller(&stubCanceller{returns: sentinel})
+
+	outDir := t.TempDir()
+	ctx := context.Background()
+	run, _ := svc.Create(ctx, "049", outDir)
+	if err := store.SetStatus(ctx, run.ID, domain.StatusRunning, nil); err != nil {
+		t.Fatalf("SetStatus: %v", err)
+	}
+
+	err := svc.Cancel(ctx, run.ID)
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected sentinel error, got %v", err)
+	}
+}
+
 func TestRunService_List_Empty(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	svc := newTestService(t)

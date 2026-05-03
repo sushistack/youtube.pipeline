@@ -66,12 +66,25 @@ type Rewinder interface {
 	Rewind(ctx context.Context, runID string, node pipeline.StageNodeKey) (*domain.Run, error)
 }
 
+// Canceller is the engine surface that drains in-flight workers when a run
+// is cancelled. *pipeline.Engine satisfies it via its CancelRegistry. The
+// status='cancelled' DB mark is the service's responsibility (store.Cancel);
+// the canceller is the worker-stop half — pairing the two at the service
+// layer keeps DB feedback immediate while the registry drain runs after.
+// Nil canceller is tolerated for CLI/test paths that do not run workers
+// in-process; in that case Cancel degrades to a status-only mark, which is
+// harmless because no workers exist to overwrite anything.
+type Canceller interface {
+	Cancel(ctx context.Context, runID string) error
+}
+
 // RunService implements pipeline run lifecycle management.
 type RunService struct {
 	store        RunStore
 	resumer      Resumer
 	advancer     Advancer
 	rewinder     Rewinder
+	canceller    Canceller
 	prompt       PromptVersionProvider
 	dryRun       DryRunProvider
 	hitlSessions pipeline.HITLSessionStore // optional; needed by ApproveScenarioReview to maintain hitl_sessions invariant
@@ -97,6 +110,15 @@ func (s *RunService) SetAdvancer(advancer Advancer) {
 // nil disables the path with ErrValidation.
 func (s *RunService) SetRewinder(rewinder Rewinder) {
 	s.rewinder = rewinder
+}
+
+// SetCanceller wires the engine surface used by Cancel to drain in-flight
+// workers after the status='cancelled' DB mark. Nil leaves Cancel as a
+// status-only mark — acceptable for CLI/tools that do not own running
+// workers, but the in-process server MUST wire this or Cancel becomes
+// cosmetic and worker goroutines keep producing stale writes.
+func (s *RunService) SetCanceller(canceller Canceller) {
+	s.canceller = canceller
 }
 
 // SetHITLSessionStore wires the hitl_sessions writer used by
@@ -183,9 +205,20 @@ func (s *RunService) List(ctx context.Context) ([]*domain.Run, error) {
 // Cancel cancels the run with the given ID.
 // Returns ErrNotFound if the run does not exist.
 // Returns ErrConflict if the run is not in a cancellable state.
+//
+// Two-phase: store.Cancel marks the DB row 'cancelled' (immediately visible
+// to the operator) → canceller.Cancel drains in-flight worker goroutines so
+// they cannot continue producing stage writes that would race with a
+// subsequent Resume. The canceller is best-effort: if it cannot drain in
+// time, PrepareResume's stage cleanup is the safety net.
 func (s *RunService) Cancel(ctx context.Context, id string) error {
 	if err := s.store.Cancel(ctx, id); err != nil {
 		return fmt.Errorf("cancel run: %w", err)
+	}
+	if s.canceller != nil {
+		if err := s.canceller.Cancel(ctx, id); err != nil {
+			return fmt.Errorf("cancel run: drain workers: %w", err)
+		}
 	}
 	return nil
 }

@@ -229,11 +229,13 @@ func (h *RunHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
 func (h *RunHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.svc.Cancel(r.Context(), id); err != nil {
+		h.logger.Error("cancel run", "run_id", id, "error", err)
 		writeDomainError(w, err)
 		return
 	}
 	run, err := h.svc.Get(r.Context(), id)
 	if err != nil {
+		h.logger.Error("cancel run: refetch", "run_id", id, "error", err)
 		writeDomainError(w, err)
 		return
 	}
