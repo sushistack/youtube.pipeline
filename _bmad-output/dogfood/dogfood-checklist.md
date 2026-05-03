@@ -24,8 +24,8 @@
 ### 사전 빌드 / 의존성
 
 - [x] `cd web && npm install` — 의존성 설치 (최초 1회 또는 package.json 변경 시)
-- [x] `~/.youtube-pipeline/config.yaml` 존재 — 없으면 `go run ./cmd/pipeline init` 으로 생성
-- [x] `~/.youtube-pipeline/.env` 에 필수 키 (DashScope, OpenAI 등) 채워져 있음
+- [x] `./config.yaml` 존재 (project-root 레이아웃) — 없으면 `go run ./cmd/pipeline init` 으로 생성. git 추적되므로 보통은 clone 한 시점부터 있음.
+- [x] `./.env` 에 필수 키 (DashScope, OpenAI 등) 채워져 있음 (.gitignored)
 - [ ] (prod 모드 검증 시에만) `make build` 또는 `go build -o bin/pipeline ./cmd/pipeline` 으로 바이너리 빌드
 
 ### 서버 기동 — `./startup.sh` 로 통일

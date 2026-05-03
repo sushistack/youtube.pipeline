@@ -415,7 +415,7 @@ friction that compounds over months of use.
 
 5. **Output and asset management across 30+ runs (prevents: "where
    is that video I made two months ago?").** Deterministic per-run
-   directory layout (`~/.youtube-pipeline/output/<run-id>/`)
+   directory layout (`./output/<run-id>/` in the project-root layout)
    containing all stage artifacts. The run inventory view in
    Production tab provides searchable, state-aware cards. The
    operator never needs to navigate the filesystem manually for

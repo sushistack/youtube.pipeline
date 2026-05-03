@@ -147,9 +147,9 @@ NFR-L4: When a YouTube / platform policy change alters required disclosure field
 - V1 undo scope: exactly 5 action types — (1) scene approve, (2) scene reject, (3) scene skip, (4) batch "approve all remaining" (undoes entire batch as one action), (5) Vision Descriptor text edit. Out of scope for V1 undo: pipeline stage transitions (resume/cancel/create), configuration changes. Undo stack depth >= 10 actions; mechanics: reversal row in `decisions` table with `superseded_by` FK; undo available until scene enters Phase C rendering; undo includes focus restoration. Full 10-type undo is V1.5.
 - GitHub Actions CI: 4 jobs (test-go, test-web parallel, then test-e2e + build); <= 10 min total
 - External API isolation: 3-layer defense (constructor injection, blocking transport, no CI keys)
-- Configuration: .env (secrets) + ~/.youtube-pipeline/config.yaml (model IDs, paths, cost caps) + CLI flags
+- Configuration (project-root layout): ./.env (secrets, gitignored) + ./config.yaml (model IDs, paths, cost caps; git-tracked) + CLI flags
 - `pipeline serve --dev` proxies to Vite dev server; cosmtrek/air for Go hot-reload
-- Per-run directory tree: ~/.youtube-pipeline/output/{run-id}/ with defined subdirectories
+- Per-run directory tree: ./output/{run-id}/ with defined subdirectories
 - Filesystem state and DB state consistency verified at resume entry
 - slog (stdlib) via constructor injection; no external logging library
 - Domain sentinel errors in internal/domain/errors.go
@@ -799,12 +799,12 @@ So that I can set up a fresh project and verify all prerequisites are met before
 
 **Acceptance Criteria:**
 
-**Given** no `~/.youtube-pipeline/` directory exists
+**Given** a fresh project root with no `./config.yaml`, `./pipeline.db`, or `./output/`
 **When** `pipeline init` is executed
-**Then** config files are created (`~/.youtube-pipeline/config.yaml` with model IDs, paths, cost caps)
-**And** `.env` template is generated listing required secrets: DASHSCOPE_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY
+**Then** config files are created (`./config.yaml` with model IDs, paths, cost caps; project-root layout)
+**And** `./.env` template is generated listing required secrets: DASHSCOPE_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY
 **And** SQLite database is initialized with schema (calls migration runner from Story 1.2)
-**And** output directory layout is created (`~/.youtube-pipeline/output/`)
+**And** output directory layout is created (`./output/`)
 
 **Given** `config/loader.go` (Viper configuration) is implemented
 **When** config is loaded
@@ -946,7 +946,7 @@ So that I can manage the lifecycle of video production.
 **When** the command completes
 **Then** a new row is created in `runs` table with id=`scp-049-run-1`, scp_id=`049`, stage=`pending`, status=`pending`
 **And** the run ID follows the format `scp-{scp_id}-run-{sequential_number}` (FR1)
-**And** a per-run output directory is created at `~/.youtube-pipeline/output/scp-049-run-1/`
+**And** a per-run output directory is created at `./output/scp-049-run-1/`
 
 **Given** run `scp-049-run-2` already exists
 **When** the operator creates another run for scp-049

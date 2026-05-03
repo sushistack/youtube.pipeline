@@ -16,4 +16,4 @@
 2. starts the Go server with `go run ./cmd/pipeline serve`
 3. serves the embedded SPA contract on `http://127.0.0.1:4173`
 
-The command sets isolated `DB_PATH`, `OUTPUT_DIR`, and `DATA_DIR` values under `.tmp/playwright/` so the smoke test does not depend on a developer's personal `~/.youtube-pipeline` state.
+The command sets isolated `DB_PATH`, `OUTPUT_DIR`, and `DATA_DIR` values under `.tmp/playwright/` so the smoke test does not depend on the developer's live `./pipeline.db` and `./output` (the project-root layout's run state).

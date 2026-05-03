@@ -201,7 +201,7 @@ uniform investment across concerns of unequal urgency.
 | **Cost tracking & circuit breaker** | Every external API call | Accumulator per stage; hard stop on cap with operator escalation; `cost_usd` column in pipeline_runs. This is a circuit breaker pattern, not passive logging. |
 | **Observability** | Every stage | 8-column pipeline_runs row: duration_ms, token_in/out, retry_count, retry_reason, critic_score, cost_usd, human_override |
 | **Decision history** | Every HITL touchpoint | `decisions` table; passive capture; Command Pattern for undo. Undo scope in V1: approve, reject, skip, batch-approve, Vision Descriptor edit (5 action types). Full 10-type undo is V1.5. |
-| **Artifact lifecycle management** | Phase A outputs, Phase B files, Phase C segments | Per-run directory tree (`~/.youtube-pipeline/output/<run-id>/`). Naming convention is a contract. Partial artifacts on stage failure must be cleaned before resume. Filesystem state ↔ DB state consistency verified at resume entry. Rejected assets → `rejected/` subdirectory. |
+| **Artifact lifecycle management** | Phase A outputs, Phase B files, Phase C segments | Per-run directory tree (`./output/<run-id>/` in the project-root layout). Naming convention is a contract. Partial artifacts on stage failure must be cleaned before resume. Filesystem state ↔ DB state consistency verified at resume entry. Rejected assets → `rejected/` subdirectory. |
 | **Time abstraction** | Backoff logic, anti-progress detection, telemetry | Clock interface (`internal/clock/`) injected into services. Tests use fake clock. Required for testable 429 backoff and anti-progress cosine-similarity timing without real delays in CI. |
 
 **Tier 3 — V1 Minimal, V1.5 Full:**
@@ -253,7 +253,7 @@ integrated via Makefile and Go embed.FS.
 |---|---|---|
 | Go | **1.25.7** (PRD-specified) | Go 1.26.2 available but not adopted. PRD-specified version = verified version. Boring technology principle: no version upgrade without a problem to solve. |
 | Cobra | **v2.5.1** | Stable, well-maintained CLI framework. |
-| Viper | **v1.11.0** | Config management. Hierarchy: .env (secrets) → config.yaml (non-secret) → CLI flags. |
+| Viper | **v1.11.0** | Config management. Hierarchy: `./.env` (secrets, gitignored) → `./config.yaml` (non-secret, git-tracked) → CLI flags. Project-root layout (not `~/.youtube-pipeline/`). |
 | ncruces/go-sqlite3 | **latest (pure Go)** | Replaces mattn/go-sqlite3. No CGO dependency — eliminates gcc requirement in CI, simplifies cross-compilation, enables `CGO_ENABLED=0` clean builds. WAL mode supported. mattn v1.14.33 had a WAL deadlock bug (fixed in v1.14.34); ncruces avoids this entire class of CGO-related issues. Performance difference negligible for this project's DB workload (metadata + state management, not bulk data). |
 | Vite | **7.3** (not 8.x) | Vite 8 uses Rolldown (Rust-based bundler) — a major engine swap with insufficient production track record. Vite 7.3 is maintained, stable, and has deep community troubleshooting coverage. Build speed difference irrelevant for a Go embed.FS SPA (2s vs 4s build is not meaningful). Boring technology wins. |
 | React | **19.x** (via Vite template) | PRD and UX spec confirm React. Jay has React experience — zero framework learning curve. |
@@ -793,7 +793,7 @@ func NextStage(current Stage, event Event) (Stage, error) {
 **Artifact File Structure Convention:**
 
 ```
-~/.youtube-pipeline/output/{run-id}/
+./output/{run-id}/
 ├── scenario.json          # Phase A output (includes shot breakdowns per scene)
 ├── characters/
 │   ├── references/        # DDG search result images (cached)
@@ -921,11 +921,11 @@ run after both pass. No API keys injected in CI (Layer 3 defense).
 **Caching:** Go module cache via `actions/setup-go`, npm cache via
 `actions/setup-node`, Playwright Chromium binary cached.
 
-**Environment Configuration (Viper hierarchy):**
-1. `.env` — secrets only (API keys). Not version-controlled.
-2. `~/.youtube-pipeline/config.yaml` — model IDs, DashScope region,
-   data paths, cost caps.
-3. CLI flags — per-invocation overrides.
+**Environment Configuration (Viper hierarchy, project-root layout):**
+1. `./.env` — secrets only (API keys). Gitignored.
+2. `./config.yaml` — model IDs, DashScope region, data paths, cost
+   caps. Tracked in git so config changes flow through review.
+3. CLI flags — per-invocation overrides (`--config` to retarget).
 
 ### Decision Impact Analysis
 

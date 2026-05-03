@@ -368,10 +368,10 @@ func TestJSONRenderer_RoundTrip_DoctorOutput(t *testing.T) {
 
 func TestJSONRenderer_RoundTrip_InitOutput(t *testing.T) {
 	original := &InitOutput{
-		Config:   "/home/user/.youtube-pipeline/config.yaml",
-		Env:      "/home/user/.youtube-pipeline/.env",
-		Database: "/home/user/.youtube-pipeline/pipeline.db",
-		Output:   "/home/user/.youtube-pipeline/output",
+		Config:   "./config.yaml",
+		Env:      "./.env",
+		Database: "./pipeline.db",
+		Output:   "./output",
 	}
 
 	var buf bytes.Buffer

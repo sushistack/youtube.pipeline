@@ -290,8 +290,10 @@ func apiKeyForProvider(provider string, env map[string]string) string {
 
 // mergeProjectEnv supplements the loaded env map with values from
 // <projectRoot>/.env for any key that is empty in the loaded map.
-// This allows developers to keep secrets in the repo .env without
-// copying them to ~/.youtube-pipeline/.env.
+// Now that the project-root layout puts the canonical .env at
+// <projectRoot>/.env this is largely redundant in normal use, but it
+// stays as a safety net for legacy operators who pointed --config at a
+// custom directory whose .env is sparse.
 func mergeProjectEnv(loaded map[string]string, projectRoot string) map[string]string {
 	projectEnvPath := filepath.Join(projectRoot, ".env")
 	raw, err := os.ReadFile(projectEnvPath)
@@ -447,8 +449,9 @@ func (e *dynamicPhaseAExecutor) Run(ctx context.Context, state *agents.PipelineS
 		files.Config.OutputDir = e.outputDir
 	}
 	// Merge project-root .env as a fallback for any key missing from the
-	// user-config .env (~/.youtube-pipeline/.env). This lets developers keep
-	// secrets in <repo>/.env without having to copy them manually.
+	// loaded .env. With the project-root layout the loaded .env IS the
+	// project-root .env, so this is a no-op in normal use; it still fires
+	// when --config points at a custom directory whose .env lacks keys.
 	env := mergeProjectEnv(files.Env, e.projectRoot)
 	runner, err := buildPhaseARunner(
 		files.Config,
@@ -621,6 +624,7 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	svc := service.NewRunService(store, engine)
 	svc.SetAdvancer(engine)
 	svc.SetRewinder(engine)
+	svc.SetCanceller(engine)
 	svc.SetHITLSessionStore(newHITLSessionStoreAdapter(decisionStore), clock.RealClock{})
 
 	limiterFactory, err := llmclient.NewProviderLimiterFactory(llmclient.ProviderLimiterConfig{

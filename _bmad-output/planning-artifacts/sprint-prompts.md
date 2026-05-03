@@ -120,7 +120,7 @@ Story 1.4 구현 결과를 검토한다.
 ### Epic 1 - Story 1.5 개발
 `/bmad-create-story`
 `pipeline init`과 `pipeline doctor` CLI 명령을 구현한다.
-- `pipeline init`: `~/.youtube-pipeline/config.yaml`(모델 ID, 경로, 비용 캡), `.env` 템플릿(3개 API 키), SQLite 스키마 초기화, 출력 디렉토리 생성
+- `pipeline init`: `./config.yaml`(모델 ID, 경로, 비용 캡, project-root 레이아웃), `.env` 템플릿(3개 API 키), SQLite 스키마 초기화, 출력 디렉토리 생성
 - Viper 설정 계층: `.env`(시크릿) → `config.yaml`(비시크릿) → CLI 플래그
 - `pipeline doctor`: 4개 검사 — API 키 존재, FS 경로 쓰기 가능, FFmpeg 바이너리(`ffmpeg -version`), Writer ≠ Critic 프로바이더(FR46)
 - 각 검사는 `Check` 인터페이스 구현 + 레지스트리 등록으로 확장 가능

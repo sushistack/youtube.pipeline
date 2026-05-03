@@ -1,6 +1,6 @@
 # SQLite CLI 진단 쿼리 (NFR-O3 / NFR-O4)
 
-오퍼레이터용 기본 진단 세트. 외부 도구 없이 `sqlite3 ~/.youtube-pipeline/pipeline.db` 한 줄이면 끝납니다.
+오퍼레이터용 기본 진단 세트. 외부 도구 없이 `sqlite3 ./pipeline.db` (project-root 레이아웃) 한 줄이면 끝납니다.
 
 쿼리는 모두 `runs` 테이블 단일 스캔 또는 `idx_runs_*` 인덱스를 사용합니다 (NFR-O4).
 Migration 003에서 추가된 인덱스:
@@ -83,7 +83,7 @@ V1은 측정만 — `≤5%` FP 게이트는 V1.5부터 적용됩니다.
 
 ## 관련 설정
 
-- `cost_cap_per_run` (`~/.youtube-pipeline/config.yaml`) — 런 전체 비용 서킷 브레이커 (NFR-C2).
+- `cost_cap_per_run` (`./config.yaml`) — 런 전체 비용 서킷 브레이커 (NFR-C2).
 - 스테이지별 캡: `cost_cap_research`, `cost_cap_write`, `cost_cap_image`, `cost_cap_tts`, `cost_cap_assemble` (NFR-C1).
 - `anti_progress_threshold` — 연속 재시도 출력 간 코사인 유사도 상한 (기본 0.92, FR8 / NFR-R2). 1.0이면 탐지기 비활성화.
 

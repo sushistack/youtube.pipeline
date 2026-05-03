@@ -640,7 +640,7 @@ and "evaluation criteria change" in versioning.
 
 ### Mode 7: Operator — First-Time Setup (onboarding)
 
-**Scene.** A new machine. Empty `~/.youtube-pipeline/` directory.
+**Scene.** A new machine. Fresh `git clone` of the repo, no `./pipeline.db` or `./output/` yet.
 
 **Rising action.** `go install` builds the binary.
 `youtube-pipeline init` creates the SQLite database, the
@@ -964,15 +964,17 @@ production cadence (Mode 1).
   truth (SSOT). Operators can export a run's decisions to JSON via
   `pipeline status <run-id> --export decisions` if needed.
 
-**Config method**: Viper hierarchy:
+**Config method**: Viper hierarchy (project-root layout):
 
-1. `.env` — secrets only (`DASHSCOPE_API_KEY`, writer key, critic
-   key). Not version-controlled.
-2. `~/.youtube-pipeline/config.yaml` — non-secret configuration:
-   model identifiers (e.g. `qwen3-tts-flash-2025-09-18`), DashScope
-   region, `/mnt/data/raw` path, output directory, per-stage cost
-   caps.
-3. CLI flags — per-invocation overrides where appropriate.
+1. `./.env` — secrets only (`DASHSCOPE_API_KEY`, writer key, critic
+   key). Not version-controlled (.gitignored).
+2. `./config.yaml` — non-secret configuration: model identifiers
+   (e.g. `qwen3-tts-flash-2025-09-18`), DashScope region,
+   `/mnt/data/raw` corpus path, `./output` directory,
+   `./pipeline.db`, per-stage cost caps. **Tracked in git** so model
+   and cost-cap changes flow through review.
+3. CLI flags — per-invocation overrides where appropriate
+   (`--config /elsewhere/config.yaml`).
 
 **Shell completion**: deferred to V1.5 (Cobra provides this out of
 the box; deferring only because V1 has higher-leverage work).
@@ -1066,9 +1068,10 @@ import-direction rule applies regardless of the framework choice.
 ### Implementation Considerations
 
 - **Output asset directory layout**: a deterministic, per-run
-  directory tree (e.g. `~/.youtube-pipeline/output/<run-id>/`)
-  containing all stage artifacts. Predictability lets the operator
-  inspect / recover artifacts manually without needing the tool.
+  directory tree (e.g. `./output/<run-id>/` under the project-root
+  layout) containing all stage artifacts. Predictability lets the
+  operator inspect / recover artifacts manually without needing the
+  tool.
 - **CLI/Web parity contract — enforced by tests**: a
   table-driven contract test asserts that for every state mutation
   performed by a web handler, an equivalent CLI command produces

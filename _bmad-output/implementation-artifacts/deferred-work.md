@@ -189,7 +189,7 @@
 ## Deferred from: code review of 1-5-cli-foundation-init-doctor-commands (2026-04-17)
 
 - `BindFlags` exported but dead code — `Load()` creates an internal viper instance so external pflags can't be bound. Redesign when CLI flag overrides for individual config values are needed (Story 1.6+ scope).
-- `DefaultConfig()` and `DefaultConfigDir()` both compute `~/.youtube-pipeline` independently, both silently ignore `os.UserHomeDir()` error. Single-user desktop tool mitigates; revisit if containerized deployment is ever considered.
+- ~~`DefaultConfig()` and `DefaultConfigDir()` both compute `~/.youtube-pipeline` independently, both silently ignore `os.UserHomeDir()` error.~~ **Resolved 2026-05-03** by the project-root layout migration (commit 286278c): both helpers are now home-dir-free and return relative paths.
 - `WriterCriticCheck` returns "must use different providers" when both providers are empty string — technically correct but misleading. Improve when Epic 2 adds full provider validation.
 - `godotenv.Load()` permanently mutates process-level environment variables. Acceptable for single-process CLI but may cause env leak in tests calling `Load()` multiple times.
 
@@ -230,7 +230,7 @@
 - **Cost accumulator priming on process restart.** When Story 3.1 wires the engine, `CostAccumulator` should be seeded with `runs.cost_usd` so the per-run cap survives a crash/restart. Not implemented here because there is no caller yet — dead code deferred.
 - **Jitter seed via clock interface.** `WithRetry`'s jitter uses a package-level `math/rand` seeded from `time.Now().UnixNano()` — cannot be made fully deterministic in tests without a package-level seed swap. Tests assert elapsed-time *bounds* instead. Thread jitter through `clock.Clock` when it gains a `Rand()` surface.
 - **Per-stage cost history for a single run.** V1 aggregates cost into one column per run; "cost by stage for one run" requires a separate observability history table. Story 2.7's metrics CLI may surface this gap.
-- **Emergency cap override.** No `--ignore-cost-cap` CLI flag. Operators who want to push past `CostCapPerRun` for a critical run must edit `~/.youtube-pipeline/config.yaml`. Deferred to Epic 10.
+- **Emergency cap override.** No `--ignore-cost-cap` CLI flag. Operators who want to push past `CostCapPerRun` for a critical run must edit `./config.yaml` (project-root layout). Deferred to Epic 10.
 - **Per-shot cost attribution in Phase B.** Image track records one `StageObservation` per shot → all sums collapse onto `StageImage`. Fine for cost totals, useless for per-shot forensics. V1.5 may add `shot_index` to observability when Story 5.4 ships.
 - **`retry_reason` nil-preservation via COALESCE is opinionated.** Passing `nil` means "leave retry_reason alone". A `Recorder.ClearRetryReason(runID)` would be additive; add only if the engine ever needs to clear outside the Resume path (which already clears via `ResetForResume`).
 - **Linter consolidation carried forward from Story 2.3.** `SetStatus` + `IncrementRetryCount` were merged into `ResetForResume`; `SetStage` was deleted as dead code; `Engine.Resume` now returns `(*InconsistencyReport, error)`; `ClearClipPathsByRunID` was added for assemble-stage resume. Callers in `service`, `cmd/pipeline/resume.go`, and `internal/api/handler_run.go` were threaded to carry the report through as `warnings`. `docs/contracts/run.resume.response.json` was not touched — verify the contract test still matches the threaded shape in the next code review.
