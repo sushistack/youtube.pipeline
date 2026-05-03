@@ -8,35 +8,111 @@ Schema bump from v1 to v2. Every downstream agent affected.
 
 ---
 
-## Dequeue trigger (read this first)
+## 2026-05-04 Pre-fire context — what the C cycle dogfood proved (read before firing)
 
-Fire when **all** hold after the P+B+E and C cycles ship:
+The C cycle (Lever C polisher) shipped on 2026-05-03 (commit `c8aea99`).
+A dogfood pass on SCP-049 with the polisher in line produced 6 example
+runs (`docs/scenarios/SCP-049.example3.md` through `example8.md`).
+Comparing those runs against `docs/exemplars/scp-049-hada.txt` proved
+that **the gap between our output and the golden monologue is
+architectural, not prompt-level**, which is exactly the trigger this
+plan was queued for. The dequeue trigger (below) is satisfied.
 
-1. Lever P (`spec-writer-continuity-commentary-volume-bridge.md`),
-   Lever B (within same spec), and Lever C
-   (`next-session-whole-scenario-polish-pass.md`) have all shipped
-   and merged on `main`.
-2. A clean SCP-049 dogfood after C has been HITL-evaluated against
-   the golden dataset (`docs/exemplars/scp-049-hada.txt` and siblings).
-3. The HITL evaluation concludes that the **product identity gap**
-   — not just the volume or transition gap — is still blocking. Specific
-   signals:
-   - Scenario reads as well-stitched scene-bounded narration but
-     still NOT as continuous monologue. Each scene boundary is
-     audible at TTS time as a hard cut even when the prose flows.
-   - Information density per minute remains visibly below golden
-     even after P-cap tuning, because scene-bounded narration
-     enforces an "image-driven" rhythm rather than a "voice-driven"
-     rhythm.
-   - Channel positioning has been confirmed (by Jay) to require the
-     hada-style monologue identity. If the channel ships fine as
-     "cinematic SCP shorts," **do not fire D** — it is the wrong
-     product fix.
+**What the comparison showed:**
 
-If the channel has stabilized as a different (cinematic-shorts)
-product, **delete this prompt** rather than firing it. Do not let
-"because we wrote a prompt for it" be the reason to take on schema
-v2 churn.
+| Dimension | Golden (hada) | Cycle C output (ex8) |
+|---|---|---|
+| Form | Continuous voice-over, no scene breaks | 17 scene-bounded narrations, hard cuts |
+| Opening | Origin/discovery as info ("프랑스 남부의 한 마을…") | Cold-open visual hook |
+| Pacing | Information-led, every line a fact | Visual-led, scene padding (location/mood/characters) |
+| D-class | Generalized ("연구원들") | Named (D-9982 / D-9341) |
+| Closer | 의문문 + 댓글 호명 + "다음 영상에서 만나도록 하죠. 안녕!" | 단정문, no CTA |
+| Length | ~5500 chars continuous | ~4250 chars across 17 scenes |
+
+**Three patches in the C cycle were actively *anti-hada*** and must be
+reverted as part of the D writer rework — the schema-bound v1 prompt
+was forcing rules that golden itself violates:
+
+1. **No-CTA closer rule** (added 2026-05-03 to `03_writing.md` after
+   ex4-ex6 all leaked CTA on the closer). Golden ends with
+   *"공사구에 대한 여러분들의 재미난 추측과 상상력을 댓글을 통해
+   남겨주시면 감사하겠습니다…우리는 다음 영상에서 또 만나도록 하죠.
+   안녕!"* — full CTA + viewer address + sign-off. Our patch
+   forbade exactly this. **Drop the rule in v2.**
+2. **Closer-must-be-단정문 rule** (existed pre-C). Golden closes
+   with two consecutive 의문문: *"역병이란 무엇일까요?"* and
+   *"좀비가 되어버리는 것일까요?"*. **Drop or invert in v2.**
+3. **One-scene-one-visual-beat rule** (the entire architecture of
+   `03_writing.md`). Schema disappears in v2 — beats become
+   `BeatAnchor` slices into a single act monologue, not narration
+   units. Rule moves with the schema.
+
+**What survives the v1→v2 cut (do *not* re-derive from scratch):**
+
+- **Lever B canon enforcement** — the `{containment_constraints}`
+  template variable + "current-protocol forbidden actions must be
+  past-framed" rule worked well across all 6 runs (only ex4 went
+  implicit; ex5/ex6/ex7/ex8 all carried explicit time markers).
+  Re-apply this rule to the v2 monologue prompt, scoped to
+  monologue-level rather than per-scene.
+- **Resume bug fix in `internal/pipeline/resume.go`** (post_writer
+  retry was misclassified as "post_reviewer missing"). Lives in the
+  engine, schema-agnostic — keep as is.
+- **`visual_breakdowner` empty-content retry** (transient
+  `domain.ErrStageFailed` is now retryable, was wrongly aborting on
+  first miss). Visual_breakdowner survives in v2 with a different
+  input shape but same retry policy — keep.
+- **Writer per-act metadata gate** in `validateWriterActResponse`
+  (forbids empty `characters_present`/`narration_beats` so per-act
+  retry catches the LLM omission instead of the merged schema
+  validator catching it too late). v2's stage-1 writer no longer has
+  per-scene metadata, but the retry-budget-utilization principle
+  carries — apply the same per-attempt validation pattern to v2's
+  beat segmenter.
+- **Polisher fallback-not-fail regime + read-only invariance + edit
+  budget**. Concept survives. Re-implement against `ActScript[]`
+  with per-act monologue rune-delta budget instead of per-scene.
+  The 0.40 calibration data (see `narration.go` PolisherMaxEditRatio
+  comment) is v1-specific — recalibrate for v2's larger units.
+
+**What was wasted churn:**
+
+- The CTA prompt patch and the existing closer-단정문 rule. ~30%
+  of cycle C touch surface. Both were reactive to dogfood symptoms
+  rather than to the underlying architectural mismatch.
+- Per-scene rune cap tuning, multi-beat-compression policing,
+  per-scene metadata expansion. v2 deletes the unit.
+
+**The key process lesson:** the golden vs. dogfood comparison should
+have been done **before** any reactive prompt patches in cycle C, not
+after. A 2-minute side-by-side of `docs/exemplars/scp-049-hada.txt`
+against the first dogfood output would have surfaced the architectural
+gap directly. Subsequent prompt-level fixes were chasing symptoms of
+the v1-vs-monologue schema mismatch, not closing real quality gaps.
+**At D plan time and going forward: golden comparison is step 0 of
+any quality-cycle, before agent-level patching.**
+
+---
+
+## Dequeue trigger — SATISFIED 2026-05-04
+
+All three conditions hold:
+
+1. ✅ Lever P / Lever B / Lever C all shipped and merged on `main`.
+   C cycle commit: `c8aea99` (2026-05-03).
+2. ✅ SCP-049 dogfood (ex3-ex8 in `docs/scenarios/`) compared
+   against `docs/exemplars/scp-049-hada.txt`. The architectural
+   gap is structural, not a quality-tuning gap — see the
+   pre-fire context block above for the side-by-side.
+3. ✅ Channel positioning confirmed by Jay (2026-05-04): the
+   target identity is hada-style monologue, not cinematic SCP
+   shorts. The cycle-C product (scene-bounded narration with
+   visual breaks) is **not** what the channel ships.
+
+**This plan is fire-ready.** Run `/bmad-quick-dev` against this
+artifact at the next session start. Do NOT re-evaluate the trigger;
+that work was completed in the cycle-C dogfood and is captured in
+the pre-fire context block above.
 
 ---
 
@@ -72,6 +148,104 @@ TTS: synth ActMonologue as one block per act; scene boundaries become
 The schema bump separates **what is said** (monologue) from **what
 is shown** (beats), which the v1 schema conflates by giving each
 scene its own `narration` field.
+
+---
+
+## Cycle-C dogfood corrections — apply at plan time
+
+These are concrete updates to the original plan based on side-by-side
+study of `docs/exemplars/scp-049-hada.txt` (golden) vs. ex3-ex8
+(cycle-C dogfood). Surface them when the plan step refines this
+sketch.
+
+### v1 writer prompt rules to **delete** in v2 (anti-hada)
+
+`docs/prompts/scenario/03_writing.md` accumulated rules during
+P/B/C cycles that fight the hada style. v2's writer prompt
+(`docs/prompts/scenario/03_writing.md` rewrite, plus new
+`03_segmenting.md`) must NOT carry these forward:
+
+- **No-CTA closer rule** (added 2026-05-03). Golden ends with
+  full CTA: *"댓글을 통해 남겨주시면 감사하겠습니다…우리는 다음
+  영상에서 또 만나도록 하죠. 안녕!"* Drop the rule.
+- **Closer-단정문 rule** (pre-existing). Golden closes with
+  consecutive 의문문. Drop the rule, or invert it ("closer SHOULD
+  pose 1-2 reflective questions about the SCP and address the
+  viewer directly with a short sign-off").
+- **One-scene-one-visual-beat rule + per-scene rune caps + scene
+  count budgeting**. Schema disappears. The unit becomes the
+  monologue (per-act or whole-script — see below) plus
+  `BeatAnchor[]` segmentation. No per-scene narration budget.
+
+### v1 writer prompt rules to **keep** (carry into v2)
+
+- **Lever B canon enforcement** (`{containment_constraints}` block,
+  past-tense framing for forbidden actions). 4 of 6 cycle-C runs
+  hit explicit canon framing on the first try; the rule worked.
+  Re-apply at the monologue prompt level — the constraint operates
+  on text content, not on schema shape.
+- **Korean 공포 유튜버 톤 guidance** (살리의방 / TheVolgun /
+  TheRubber reference, ~합니다·~입니다 + 구어체 mix, 위키조 금지).
+  Schema-agnostic. Keep verbatim.
+- **Forbidden terms infrastructure** (`{forbidden_terms_section}`,
+  `terms.MatchNarration`). Operates on text. Keep — but the v2
+  forbidden-terms file (`docs/policy/forbidden_terms.ko.txt`) does
+  NOT need the closer-CTA pseudo-block we considered earlier; that
+  pattern is allowed now.
+
+### Open architectural questions surfaced by golden study
+
+These were **not** in the original plan and must be resolved before
+spec-writing in the plan step:
+
+1. **Per-act vs. whole-script monologue.** The original plan said
+   `Act → ActMonologue × 4`. But hada golden reads as ONE continuous
+   monologue with no internal act boundaries audible to the viewer.
+   It has a structural arc (origin → ability → 049-2 → containment
+   → closer) but the 4-act
+   `incident/mystery/revelation/unresolved` taxonomy is a v1
+   artifact that doesn't map to golden.
+
+   Resolve at plan time:
+   - **Option 1 (preserve 4-act internally):** structurer keeps
+     producing 4 acts as planning units; writer concatenates
+     them into a single monologue with explicit transition
+     phrasing; TTS synthesizes the whole script as one block (or
+     chunked under provider limits, but with no act-boundary
+     audible cut). Acts become **internal-only** scaffolding.
+   - **Option 2 (drop acts at the output level):** structurer
+     produces a single ordered list of `key_points` + `mood_arc`
+     with no act boundaries; writer treats it as one
+     monologue plan; v2 schema has no `Acts[]`.
+   - Recommend Option 1 for migration ease (structurer survives
+     unchanged) and as defensive scaffolding against the writer
+     producing structureless prose.
+
+2. **TTS audio continuity.** Original plan said per-act TTS with
+   concatenation only at act boundaries. In Option 1 above, the
+   audio MUST be a single continuous voice-over — act-boundary
+   pauses would re-introduce exactly the cut artifact this whole
+   plan exists to remove. Either:
+   - Synthesize the whole script in one TTS call (verify provider
+     limit; DashScope CosyVoice is the current path).
+   - If chunking is required, chunk on **sentence boundaries
+     internal to acts**, not on act boundaries, and use the same
+     voice continuity parameters across chunks so the seam is
+     inaudible.
+
+3. **Beat segmenter scope.** Original plan had per-act beat
+   segmentation. If Option 1 above holds, the beat segmenter still
+   operates per-act (4 calls, parallel-able), since each act's
+   monologue text is the natural unit. If Option 2, the segmenter
+   operates on the whole script (single call). Resolve with (1).
+
+4. **Opening discipline.** Hada golden opens with origin/discovery
+   info (*"프랑스 남부의 한 마을에서…"*) — NOT with a cold-open
+   visual hook. v1's `incident` act forced cold-open hooks
+   (*"눈을 감는 순간, 당신은 죽습니다"* style). v2 prompt should
+   **not** force a cold-open — let the writer choose between
+   origin-first and incident-first based on which fits the SCP.
+   Probably most SCPs read better origin-first per hada style.
 
 ---
 

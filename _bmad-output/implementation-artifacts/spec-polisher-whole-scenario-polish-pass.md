@@ -157,3 +157,24 @@ context:
 - Keep the `OnSubStageStart` skip for `StagePolisher` (it is a write-phase sub-step and surfacing it would jump the UI off "write" and back).
 
 **Re-implementation scope:** Apply targeted edits to `polisher.go`, `polisher_test.go`, and `agent_test.go`; do not regenerate the whole file. The structural wiring (constructor, prompt, snapshot, audit helper) stays.
+
+### 2026-05-03 — `PolisherMaxEditRatio` recalibration: 0.25 → 0.40 (post-dogfood)
+
+**Triggering data (SCP-049 dogfood, 3 runs):**
+- Run 1 (truncation-fix attempt): scene[16] rune-delta ratio 0.49 → fallback.
+- Run 2 (post-truncation): polisher fell back; ratio not surfaced (preceded by upstream visual_breakdowner empty-content failure).
+- Run 3 (full Phase A pass): scene[5] rune-delta ratio 0.32 → fallback. End-to-end Phase A still completed (post_writer 75 / post_reviewer 78 / reviewer 0 issues), but **polisher contribution = 0 across all three dogfood runs.**
+
+**Conclusion:** the original 0.25 ceiling was set conservatively before any dogfood data existed. Empirically, the polisher's mandated structural seam fixes (cross-act transition rewrites, closer rhetoric flip from interrogative→declarative, within-act bridge softening) routinely change ~30-40% of a scene's rune count when applied legitimately. A 0.25 ceiling rejects valid seam fixes and reduces the polisher to dead code that occasionally runs and is always discarded.
+
+**Amendment:**
+- `PolisherMaxEditRatio = 0.40` (was `0.25`).
+- Calibration rationale recorded as a doc-comment block on the constant (see `internal/domain/narration.go`).
+- All historical references to "0.25" / "25%" elsewhere in this spec remain as audit trail of the original calibration; only the constant moves.
+- The strictly-greater-than semantic (`> PolisherMaxEditRatio` triggers fallback; `==` is accepted) is **unchanged** — only the threshold value moves.
+
+**What was *not* changed:** the wholesale-rewrite circuit-breaker stays. A polisher run with any scene exceeding **0.40** still fully fails over to the writer's output. The intent is to admit legitimate seam fixes, not to license content rewrites.
+
+**Re-implementation scope:** single-line constant change in `internal/domain/narration.go` plus one comment refresh in `polisher_test.go`'s `budgetBustingScriptJSON` helper. The 50%-extra-runes test fixture remains valid (50% > 40%, so the budget-violation test still triggers fallback as intended).
+
+**Future tuning trigger:** if subsequent dogfood runs across ≥3 distinct SCPs show polisher passing on every run with no observed quality degradation in post_writer_critic verdicts, consider holding 0.40. If polisher continues to fall back on legitimate seam fixes (>0.40 ratio observed on scenes that the prompt explicitly targets — closer scene, cross-act first scenes), revisit again. Do not move past 0.50 without revisiting whether the polisher prompt itself is over-mandating rewrites.
