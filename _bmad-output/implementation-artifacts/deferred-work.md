@@ -586,3 +586,23 @@ Spec: `_bmad-output/implementation-artifacts/spec-polisher-whole-scenario-polish
 - **Polisher operational knobs are hardcoded.** `polisherRetryBudget = 1` is a package-level constant; `MaxTokens: 12288` and `Temperature: 0.5` are hardcoded in `cmd/pipeline/serve.go`. An operator who finds that the polisher's edits are too creative (higher fallback rate from budget violations) cannot tune Temperature without a code change. Per the project memory rule "운영 토글은 config.yaml, env는 path/secret 전용", these belong in config.yaml when they need tuning. Defer until first SCP-049 dogfood produces fallback-rate telemetry — premature exposure adds dead config layers.
 - **Per-script aggregate edit-budget cap.** The current per-scene 25% rune-delta budget allows a polisher to nudge every scene by 24% in alternating directions, leaving the script substantially rewritten while every individual scene squeaks under the cap. In practice the writer-continuity-commentary spec's structural seams are localized, so a polisher edit pattern that hits this corner is unlikely. Defer until a real run produces a near-cap-but-massively-rewritten polished script; if observed, add an aggregate cap (e.g., total rune delta ≤ 10% of script length) to `checkPolisherEditBudget`.
 - **Truncated finish_reason wraps `ErrValidation` but routes through fallback.** A truncated completion is a configuration problem ("MaxTokens too low for full script"), not a runtime quality issue. Currently it surfaces as a warn-level fallback log + `polisher_failed` audit. An operator who sees the polisher fall back every run will dig through logs to find the truncation message. When the audit `Reason` field above is added, surface truncation as a distinct reason value (e.g., `truncated_completion`) so dashboards can highlight "polisher MaxTokens needs raising" without log archaeology.
+
+---
+
+## D7 — polisher v2 (gated; dequeue after D6 ship + v2 baseline measured)
+
+**What.** v2 polisher operating on `[]ActScript` with per-act monologue rune-delta budget (replacing the v1 per-scene budget). Read-only invariance + edit-budget regime carries from cycle-C polisher. Calibration of the rune-delta ratio against v2 unit (per-act monologue ≈ 4× v1 per-scene scale).
+
+**Why deferred (not in D1–D6).** Per D plan resolution P5 (2026-05-04): polisher first cycle is **skipped**. D1–D6 ship without polisher in line. The v1 polisher's 0.40 calibration (cycle-C reactive patch, reverted in commit `f71565c`) is v1-shaped data and cannot be lifted to v2 without remeasurement on the v2 baseline.
+
+**Dequeue trigger (all must hold).**
+1. D1–D6 all merged on `main` and dogfood-passed (acceptance criteria green for each).
+2. v2 baseline golden eval score recorded (per `spec-d5-golden-eval-v2.md`) without polisher in line.
+3. v2 dogfood inspection identifies act-seam smoothing or cross-act bridge insertion as a recurring quality gap that prompt-level fixes cannot close.
+4. Jay confirms the seam gap is real and worth a polisher v2 cycle (HITL listening test, not just rubric numbers).
+
+**Anti-dequeue trigger (do NOT pay the cost).** If the v2 baseline already meets plan acceptance signal #5 (HITL time-to-distinguish ≥20s vs golden hada) and signal #6 (golden eval ≥ v1 + 15 absolute), the polisher v2 cycle is unnecessary — dequeue is canceled. The cycle-C polisher contributed ~zero quality lift in v1 dogfood (every run hit the cap and fell back); a v2 polisher is justified only if it has a measurable seam gap to close.
+
+**Scope sketch (refine at dequeue time).** Inputs: `[]ActScript`. Outputs: same shape with `Acts[].Monologue` minimally edited under per-act rune-delta budget. Read-only invariance for `BeatAnchor` rune offsets (offset shifts allowed only if the polisher rewrites edges of monologue text and recomputes anchor positions atomically, OR is forbidden — to be decided at dequeue). Calibration: ≥3 dogfood runs to fit the rune-delta cap to the actual seam-fix distribution.
+
+**Files (touch surface preview).** `internal/pipeline/agents/polisher.go`, `polisher_test.go`, `internal/domain/narration.go` (`PolisherMaxEditRatio` reintroduced with v2 calibration), `cmd/pipeline/serve.go` (polisherCfg readded), `docs/prompts/scenario/polisher.md` (rewrite for monologue input).
