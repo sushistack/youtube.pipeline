@@ -7,7 +7,16 @@ const (
 	// any single scene's narration during the polisher smooth-pass. Exceeding
 	// this threshold means the polisher overstepped its smoothing mandate and
 	// the full polished script is rejected (fallback to writer output).
-	PolisherMaxEditRatio = 0.25
+	//
+	// Calibration history (SCP-049 dogfood, 3 runs):
+	//   - 0.25 was the original conservative ceiling. Every dogfood run hit it
+	//     on at least one scene (0.32 ~ 0.49) and fell back, so the polisher
+	//     contributed zero quality lift in practice.
+	//   - 0.40 admits legitimate seam fixes (closer rhetoric flip, cross-act
+	//     bridge insertion, tight transition rewrites) that routinely change
+	//     ~30-40% of the rune count, while still rejecting wholesale rewrites
+	//     (>0.40 → model is replacing the scene's content, not smoothing it).
+	PolisherMaxEditRatio = 0.40
 )
 
 type NarrationScript struct {

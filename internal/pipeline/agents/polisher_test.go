@@ -132,11 +132,13 @@ func polishedScriptJSON(t *testing.T, base domain.NarrationScript) string {
 }
 
 // budgetBustingScriptJSON returns a NarrationScript JSON where scene 0's
-// narration is expanded well beyond 25% of the original.
+// narration is expanded well beyond domain.PolisherMaxEditRatio (currently
+// 0.40 — see narration.go calibration history).
 func budgetBustingScriptJSON(t *testing.T, base domain.NarrationScript) string {
 	t.Helper()
 	origRunes := utf8.RuneCountInString(base.Scenes[0].Narration)
-	// Add 50% more runes — guaranteed to exceed the 25% cap.
+	// Add 50% more runes — guaranteed to exceed the cap regardless of
+	// reasonable future tuning (0.25 ~ 0.50).
 	extra := origRunes/2 + 1
 	for i := 0; i < extra; i++ {
 		base.Scenes[0].Narration += "X"
