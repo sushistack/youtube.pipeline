@@ -116,6 +116,29 @@ the pre-fire context block above.
 
 ---
 
+## 2026-05-04 Open Question Resolutions (v1.1)
+
+The 4 architectural questions surfaced by golden study and the 6
+"Open questions for plan step" are resolved below. **These resolutions
+are owned by Jay 2026-05-04 and supersede the open framings further
+down the document; story specs implement them as-is.** Story
+decomposition (see "Story Decomposition" section near the end) follows
+from these resolutions.
+
+| # | Question | Resolution |
+|---|---|---|
+| A1 | per-act vs whole-script monologue | **Option 1** — structurer keeps producing 4 acts as planning units; writer concatenates into a single monologue with explicit transition phrasing; no audible act-boundary cuts. Acts are internal-only scaffolding. |
+| A2 | TTS audio continuity | **Try whole-script single TTS call first** (DashScope CosyVoice). If provider rejects ~5500-rune input, fall back to sentence-internal chunking with shared voice continuity params; act boundaries must NOT introduce audible cuts. |
+| A3 | Beat segmenter scope | **Per-act, 4 calls, parallel-able** — direct corollary of A1. |
+| A4 | Opening discipline | **No cold-open enforcement.** Writer picks origin-first or incident-first per SCP fit. v2 prompt explicitly drops the v1 incident-act cold-open hook rule. |
+| P1 | v1→v2 migration | **Clean cut, no compat read path.** No production data; only fixtures + golden samples to rewrite. Compat shim = dead layer. |
+| P2 | Beat count per act | **8–10 beats per act × 4 acts = 32–40 total.** First dogfood drives fine-tuning; treated as creative pacing tunable, not architectural. |
+| P3 | Image-gen budget | **Defer until first dogfood measurement.** P2 sets the upper bound; cost is observed-then-adjusted, not pre-budgeted. |
+| P4 | fact_tags propagation | **Direct per-beat mapping.** Researcher output unchanged; structurer attaches fact_tags per beat at segmentation time. Lever E (researcher fact density) NOT bundled into D. |
+| P5 | Polisher v2 timing | **Skip first cycle.** D1–D6 ship without polisher in line. After v2 dogfood baseline measurements, polisher v2 lands as a separate cycle (D7) with calibration against v2 unit, not the v1 0.40 calibration which is being reverted in commit `f71565c`. |
+
+---
+
 ## What "monologue-mode" means
 
 Today's pipeline:
@@ -466,6 +489,28 @@ This is illustrative — real touch surface is broader.
 6. Golden eval rubric refit and rerun. Score on v2 should improve
    over v1 final-cycle score by ≥15 absolute points (whatever the
    rubric's scale is). If <5, D was wasted churn.
+
+---
+
+## Story Decomposition (v1.1)
+
+D is treated as an epic. Each story below is a separate
+`/bmad-quick-dev` session against its own spec file under
+`_bmad-output/implementation-artifacts/`. Stories are sequential —
+D2/D4 may fan-out after D1's schema lands, but no story can start
+before D1.
+
+| Story | Scope | Spec file |
+|---|---|---|
+| **D1 — domain types v2 + writer 2-stage** | NarrationScript v2 (`ActScript` / `BeatAnchor`), `NarrationScene` deletion, `writer.go` two-stage rewrite (monologue write → beat segment), `03_writing.md` rewrite + new `03_segmenting.md`, all `writer_test.go` per-act fan-out tests rewritten, contract fixtures rewritten, downstream stage shims so `go build ./...` and `go test ./...` stay green and a first end-to-end dogfood is reachable. | `spec-d1-domain-types-and-writer-v2.md` (this epic's first spec) |
+| **D2 — visual_breakdowner v2** | Consume `ActScript` / `BeatAnchor`; emit `VisualAct` with rune-offset narration anchor per shot. `03_5_visual_breakdown.md` rewrite, contract fixtures rewrite. | `spec-d2-visual-breakdowner-v2.md` (created when D1 ships) |
+| **D3 — TTS per-act/whole-script synthesis** | Spike CosyVoice ~2.5min limit. Single-call vs intra-act sentence-chunking decision documented. Audio assembler updates: act boundaries no longer add audible pauses. | `spec-d3-tts-monologue-synthesis.md` |
+| **D4 — critic v2** | Consume `ActScript[]`. Per-scene checks become per-beat / per-act-paragraph. Forbidden-term scan unchanged. | `spec-d4-critic-v2.md` |
+| **D5 — golden eval rubric refit** | Per-act monologue scoring. Golden sample reshape to v2. Verify v1 → v2 score comparability before claiming improvement. | `spec-d5-golden-eval-v2.md` |
+| **D6 — state machine + resume** | Writer atomic (stage1+stage2 must both complete or neither persists). Resume cannot restart mid-writer. `phase_a` wiring updates. | `spec-d6-state-machine-resume-v2.md` |
+| **D7 — polisher v2 (separate cycle)** | Operates on `ActScript[]` with per-act monologue rune-delta budget. Recalibrate ratio against v2 baseline. Read-only invariance + edit budget retained. | NOT in this epic — queued in `deferred-work.md` after D1–D6 dogfood per resolution P5. |
+
+D7 is gated behind v2 baseline dogfood measurement.
 
 ---
 
