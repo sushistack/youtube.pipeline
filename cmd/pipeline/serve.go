@@ -343,7 +343,7 @@ func buildPhaseARunner(
 		return nil, fmt.Errorf("build phase a runner: critic generator (%s): %w", cfg.CriticProvider, err)
 	}
 
-	prompts, err := agents.LoadPromptAssets(projectRoot)
+	prompts, err := agents.LoadPromptAssets(projectRoot, cfg.UseTemplatePrompts)
 	if err != nil {
 		return nil, fmt.Errorf("build phase a runner: load prompts: %w", err)
 	}

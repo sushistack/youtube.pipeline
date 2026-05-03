@@ -12,7 +12,7 @@ import (
 func TestLoadPromptAssets_Happy(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	assets, err := LoadPromptAssets(testutil.ProjectRoot(t))
+	assets, err := LoadPromptAssets(testutil.ProjectRoot(t), false)
 	if err != nil {
 		t.Fatalf("LoadPromptAssets: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestLoadPromptAssets_MissingFile(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "docs", "prompts", "scenario"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if _, err := LoadPromptAssets(root); err == nil {
+	if _, err := LoadPromptAssets(root, false); err == nil {
 		t.Fatal("expected error for missing files")
 	}
 }

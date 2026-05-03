@@ -8,18 +8,10 @@ import (
 	contractv2 "github.com/sushistack/youtube.pipeline/internal/contract/v2"
 )
 
-func TestEnabledRespectsEnv(t *testing.T) {
-	t.Setenv(contractv2.EnvFlag, "")
-	if contractv2.Enabled() {
-		t.Fatal("Enabled should be false when env unset")
-	}
-	t.Setenv(contractv2.EnvFlag, contractv2.Version)
-	if !contractv2.Enabled() {
-		t.Fatal("Enabled should be true when env=v2")
-	}
-	t.Setenv(contractv2.EnvFlag, "v3")
-	if contractv2.Enabled() {
-		t.Fatal("Enabled should be false for unknown version")
+func TestVersionConstant(t *testing.T) {
+	t.Parallel()
+	if contractv2.Version != "v2" {
+		t.Fatalf("Version = %q, want v2", contractv2.Version)
 	}
 }
 

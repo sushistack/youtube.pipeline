@@ -21,17 +21,14 @@ import (
 //go:embed agents/*.tmpl
 var agentTemplates embed.FS
 
-// EnvFlag is the env variable that toggles the new templates on for a
-// given agent run. Read by callers (writer, future agents) to decide
-// whether to load the embedded template instead of the legacy markdown.
-const EnvFlag = "USE_TEMPLATE_PROMPTS"
-
-// EnvOn is the literal value EnvFlag must hold to opt in.
-const EnvOn = "true"
-
 // AgentScriptWriter is the canonical name for the script-writing agent
 // template. Constants live here so that callers don't sprinkle string
 // literals; renaming a template file becomes a single-source change.
+//
+// The toggle for using the embedded v2 template lives in
+// domain.PipelineConfig.UseTemplatePrompts (config.yaml), not in env —
+// 1-operator pipeline avoids env-only toggles per
+// memory/feedback_config_not_env.md.
 const AgentScriptWriter = "script_writer"
 
 // ReadAgent returns the embedded template body for the given agent name.

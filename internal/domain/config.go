@@ -130,6 +130,14 @@ type PipelineConfig struct {
 	// (Phase D / StageAssemble) is blocked for runs created in this mode so a
 	// placeholder asset never composes into a publishable artifact.
 	DryRun bool `yaml:"dry_run" mapstructure:"dry_run"`
+
+	// UseTemplatePrompts toggles the v2 SCP-Explained-aligned writer
+	// template at prompts/agents/script_writer.tmpl. False (default)
+	// keeps the legacy docs/prompts/scenario/03_writing.md path.
+	// Toggled per-deploy in config.yaml; not snapshotted on a run, so
+	// flipping this only affects subsequently created runs (matching
+	// the spirit of DryRun).
+	UseTemplatePrompts bool `yaml:"use_template_prompts" mapstructure:"use_template_prompts"`
 }
 
 // DefaultConfig returns a PipelineConfig with sensible defaults.

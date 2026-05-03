@@ -103,7 +103,7 @@ func (e *RuntimeEvaluator) Evaluate(ctx context.Context, fixture Fixture) (Verdi
 	if err != nil {
 		return VerdictResult{}, fmt.Errorf("runtime evaluator: build deepseek client: %w", err)
 	}
-	prompts, err := agents.LoadPromptAssets(e.projectRoot)
+	prompts, err := agents.LoadPromptAssets(e.projectRoot, files.Config.UseTemplatePrompts)
 	if err != nil {
 		return VerdictResult{}, fmt.Errorf("runtime evaluator: load prompt assets: %w", err)
 	}

@@ -3,30 +3,22 @@
 // section 4 calls for.
 //
 // All types are net-new and additive. v1 (`internal/domain/...`) keeps
-// working unchanged. Whether v2 is in effect at runtime is decided by
-// the `PIPELINE_CONTRACT_VERSION` environment variable, read once via
-// Enabled().
+// working unchanged.
+//
+// Selection between v1 and v2 is the caller's job: compare a config
+// value against the Version constant below
+// (e.g. `cfg.ContractVersion == contractv2.Version`). The toggle is
+// expected to live in domain.PipelineConfig (config.yaml) when wired
+// in — env-only flags are avoided per
+// memory/feedback_config_not_env.md.
 //
 // Adapter helpers in adapter.go convert between v1 and v2 best-effort.
 // Fields that v1 does not carry (KoreanTerms, RelatedSCPs, NarrativeArc,
 // HookAngle, TwistPoint, etc.) are zero-valued when adapting v1→v2.
 package contractv2
 
-import "os"
-
-// EnvFlag is the environment variable that opts callers into the v2 schema.
-const EnvFlag = "PIPELINE_CONTRACT_VERSION"
-
-// Version is the literal value EnvFlag must hold to enable v2.
+// Version is the canonical v2 schema identifier callers compare against.
 const Version = "v2"
-
-// Enabled reports whether the process should route through the v2 schema.
-// Reads the env on every call by design — tests use t.Setenv to flip the
-// flag without restarting the process. The cost is a single getenv per
-// agent boundary, which is negligible.
-func Enabled() bool {
-	return os.Getenv(EnvFlag) == Version
-}
 
 // ResearchOutput is the spec section 4.1 schema. Compared to
 // domain.ResearcherOutput the new shape adds KoreanTerms,

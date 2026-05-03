@@ -60,6 +60,7 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("shadow_eval_window", cfg.ShadowEvalWindow)
 	v.SetDefault("auto_approval_threshold", cfg.AutoApprovalThreshold)
 	v.SetDefault("artifact_retention_days", cfg.ArtifactRetentionDays)
+	v.SetDefault("use_template_prompts", cfg.UseTemplatePrompts)
 
 	// Read config.yaml if it exists.
 	if cfgPath != "" {

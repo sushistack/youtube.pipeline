@@ -11,7 +11,7 @@ Maps every change in this cycle to: files touched, public API surface, backward-
 | Contract v2 types + adapter | `internal/contract/v2/*` | new package only | none | delete `internal/contract/v2/` |
 | Critic rubric v2 (10 criteria) | `internal/critic/rubricv2/*` | new package only | none | delete `internal/critic/rubricv2/` |
 | Embedded prompt templates | `prompts/agents/*.tmpl`, `prompts/embed.go` | new package only | none | delete `prompts/` |
-| Writer prompt-source flag | `internal/pipeline/agents/writer.go` (one helper edit) | none — function signatures unchanged | low | env flag `USE_TEMPLATE_PROMPTS` defaults off; remove flag-branch |
+| Writer prompt-source toggle (config.yaml) | `internal/pipeline/agents/assets.go`, `internal/domain/config.go`, `internal/config/loader.go`, two `LoadPromptAssets` callers | `LoadPromptAssets` gains `useTemplatePrompts bool` arg | low | `use_template_prompts: false` in config.yaml (default) |
 
 ## Detail
 
@@ -57,13 +57,21 @@ Maps every change in this cycle to: files touched, public API surface, backward-
 
 ### F. Writer prompt source switch
 
-- Files: `internal/pipeline/agents/writer.go` (single edit inside `runWriterAct`'s prompt template selection — replaces `prompts.WriterTemplate` with a helper that consults env). Optionally adds an `assets_v2.go` helper.
-- Public API: `NewWriter(...)` signature unchanged. `PromptAssets` struct unchanged.
+- Files: `internal/pipeline/agents/assets.go` (env-free flag branch in `loadWriterTemplate`), `internal/domain/config.go` (new `UseTemplatePrompts bool`), `internal/config/loader.go` (Viper SetDefault), `cmd/pipeline/serve.go` + `internal/critic/eval/runtime_evaluator.go` (pass `cfg.UseTemplatePrompts` into `LoadPromptAssets`).
+- Public API: `agents.LoadPromptAssets` gains a `useTemplatePrompts bool` parameter (only two callers, both updated). `NewWriter(...)` and `PromptAssets` unchanged.
 - Behavior:
-  - Default (env unset / not "true"): identical to today, byte-for-byte.
-  - When `USE_TEMPLATE_PROMPTS=true`: writer template string read from `prompts/agents/script_writer.tmpl` instead of `docs/prompts/scenario/03_writing.md`.
-- BC risk: low. The flag defaults off everywhere (CI, prod, dev). Existing writer tests run with the flag off and assert byte-for-byte parity with today.
-- Rollback: revert the writer.go edit, or simply leave `USE_TEMPLATE_PROMPTS` unset.
+  - Default (`use_template_prompts: false` in config.yaml — also Go zero value): identical to today, byte-for-byte.
+  - When `use_template_prompts: true`: writer template string read from `prompts/agents/script_writer.tmpl` instead of `docs/prompts/scenario/03_writing.md`.
+- **Why config.yaml, not env**: this is a 1-operator pipeline (memory: feedback_config_not_env.md). Operating toggles that the operator decides per deploy belong in config.yaml, not in env. Spec section 7 prescribed `USE_TEMPLATE_PROMPTS=true`; we deliberately deviate to honor the project's existing Viper-backed config convention. env stays reserved for path overrides (`STYLE_GUIDE_PATH`) and secrets (`*_API_KEY`).
+- BC risk: low. The toggle defaults off; existing tests pass with the new boolean parameter set to false. Two call sites updated atomically.
+- Rollback: set `use_template_prompts: false` in config.yaml (or omit — that is the default).
+
+### G. Contract version selection
+
+- Files: `internal/contract/v2/types.go` exposes only `Version = "v2"`.
+- Public API: callers compare a config value (e.g. `cfg.ContractVersion == contractv2.Version`) when v2 wire-in lands. No env-only `Enabled()` helper.
+- BC risk: none. v2 is not wired into the live pipeline this cycle.
+- Rollback: trivial — no live consumer.
 
 ## Out of scope (per spec section 1)
 
