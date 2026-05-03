@@ -24,13 +24,14 @@ import (
 // FinishedAt call clock.Advance manually between the two stamps.
 var fixedTime = time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
 
-// newRunnerForTest wires seven NoopAgents by default and returns a runner
+// newRunnerForTest wires eight NoopAgents by default and returns a runner
 // with FakeClock + temp output dir. Callers override individual agents
 // as needed via the returned builder.
 type runnerBuilder struct {
 	researcher        agents.AgentFunc
 	structurer        agents.AgentFunc
 	writer            agents.AgentFunc
+	polisher          agents.AgentFunc
 	postWriterCritic  agents.AgentFunc
 	visualBreakdowner agents.AgentFunc
 	reviewer          agents.AgentFunc
@@ -50,6 +51,7 @@ func defaultRunnerBuilder(t *testing.T) *runnerBuilder {
 		researcher:        agents.NoopAgent(),
 		structurer:        agents.NoopAgent(),
 		writer:            agents.NoopAgent(),
+		polisher:          agents.NoopAgent(),
 		postWriterCritic:  agents.NoopAgent(),
 		visualBreakdowner: agents.NoopAgent(),
 		reviewer:          agents.NoopAgent(),
@@ -65,7 +67,7 @@ func defaultRunnerBuilder(t *testing.T) *runnerBuilder {
 func (b *runnerBuilder) build(t *testing.T) *PhaseARunner {
 	t.Helper()
 	r, err := NewPhaseARunner(
-		b.researcher, b.structurer, b.writer,
+		b.researcher, b.structurer, b.writer, b.polisher,
 		b.postWriterCritic, b.visualBreakdowner, b.reviewer, b.critic,
 		b.writerProvider, b.criticProvider,
 		b.outputDir, b.clock, b.logger,
@@ -94,6 +96,7 @@ func TestNewPhaseARunner_NilAgent_ReturnsValidation(t *testing.T) {
 		{"nil researcher", func(b *runnerBuilder) { b.researcher = nil }, "researcher"},
 		{"nil structurer", func(b *runnerBuilder) { b.structurer = nil }, "structurer"},
 		{"nil writer", func(b *runnerBuilder) { b.writer = nil }, "writer"},
+		{"nil polisher", func(b *runnerBuilder) { b.polisher = nil }, "polisher"},
 		{"nil post_writer_critic", func(b *runnerBuilder) { b.postWriterCritic = nil }, "post_writer_critic"},
 		{"nil visual_breakdowner", func(b *runnerBuilder) { b.visualBreakdowner = nil }, "visual_breakdowner"},
 		{"nil reviewer", func(b *runnerBuilder) { b.reviewer = nil }, "reviewer"},
@@ -105,7 +108,7 @@ func TestNewPhaseARunner_NilAgent_ReturnsValidation(t *testing.T) {
 			b := defaultRunnerBuilder(t)
 			tc.mutate(b)
 			_, err := NewPhaseARunner(
-				b.researcher, b.structurer, b.writer,
+				b.researcher, b.structurer, b.writer, b.polisher,
 				b.postWriterCritic, b.visualBreakdowner, b.reviewer, b.critic,
 				b.writerProvider, b.criticProvider,
 				b.outputDir, b.clock, b.logger,
@@ -128,7 +131,7 @@ func TestNewPhaseARunner_NilClock_ReturnsValidation(t *testing.T) {
 	b := defaultRunnerBuilder(t)
 	b.clock = nil
 	_, err := NewPhaseARunner(
-		b.researcher, b.structurer, b.writer,
+		b.researcher, b.structurer, b.writer, b.polisher,
 		b.postWriterCritic, b.visualBreakdowner, b.reviewer, b.critic,
 		b.writerProvider, b.criticProvider,
 		b.outputDir, b.clock, b.logger,
@@ -146,7 +149,7 @@ func TestNewPhaseARunner_EmptyOutputDir_ReturnsValidation(t *testing.T) {
 	b := defaultRunnerBuilder(t)
 	b.outputDir = ""
 	_, err := NewPhaseARunner(
-		b.researcher, b.structurer, b.writer,
+		b.researcher, b.structurer, b.writer, b.polisher,
 		b.postWriterCritic, b.visualBreakdowner, b.reviewer, b.critic,
 		b.writerProvider, b.criticProvider,
 		b.outputDir, b.clock, b.logger,
@@ -164,7 +167,7 @@ func TestNewPhaseARunner_EmptyWriterProvider_ReturnsValidation(t *testing.T) {
 	b := defaultRunnerBuilder(t)
 	b.writerProvider = ""
 	_, err := NewPhaseARunner(
-		b.researcher, b.structurer, b.writer,
+		b.researcher, b.structurer, b.writer, b.polisher,
 		b.postWriterCritic, b.visualBreakdowner, b.reviewer, b.critic,
 		b.writerProvider, b.criticProvider,
 		b.outputDir, b.clock, b.logger,
@@ -182,7 +185,7 @@ func TestNewPhaseARunner_EmptyCriticProvider_ReturnsValidation(t *testing.T) {
 	b := defaultRunnerBuilder(t)
 	b.criticProvider = ""
 	_, err := NewPhaseARunner(
-		b.researcher, b.structurer, b.writer,
+		b.researcher, b.structurer, b.writer, b.polisher,
 		b.postWriterCritic, b.visualBreakdowner, b.reviewer, b.critic,
 		b.writerProvider, b.criticProvider,
 		b.outputDir, b.clock, b.logger,
@@ -200,7 +203,7 @@ func TestNewPhaseARunner_NilLogger_DefaultsToSlogDefault(t *testing.T) {
 	b := defaultRunnerBuilder(t)
 	b.logger = nil
 	r, err := NewPhaseARunner(
-		b.researcher, b.structurer, b.writer,
+		b.researcher, b.structurer, b.writer, b.polisher,
 		b.postWriterCritic, b.visualBreakdowner, b.reviewer, b.critic,
 		b.writerProvider, b.criticProvider,
 		b.outputDir, b.clock, b.logger,
@@ -319,6 +322,7 @@ func TestPhaseARunner_ExecutionOrder(t *testing.T) {
 	b.researcher = spy(agents.StageResearcher)
 	b.structurer = spy(agents.StageStructurer)
 	b.writer = spy(agents.StageWriter)
+	b.polisher = spy(agents.StagePolisher)
 	b.visualBreakdowner = spy(agents.StageVisualBreakdowner)
 	b.reviewer = spy(agents.StageReviewer)
 	b.critic = spy(agents.StageCritic)
@@ -332,6 +336,7 @@ func TestPhaseARunner_ExecutionOrder(t *testing.T) {
 		agents.StageResearcher,
 		agents.StageStructurer,
 		agents.StageWriter,
+		agents.StagePolisher,
 		agents.StageVisualBreakdowner,
 		agents.StageReviewer,
 		agents.StageCritic,
@@ -346,15 +351,16 @@ func TestPhaseARunner_ExecutionOrder(t *testing.T) {
 	}
 }
 
-func TestPhaseARunner_StageCountIs6(t *testing.T) {
+func TestPhaseARunner_StageCountIs7(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	// Direct behavioral guard against a future refactor silently adding
-	// or removing an agent: wire six tallying spies and assert the
-	// aggregate invocation count is exactly 6 after a successful Run.
+	// or removing an agent: wire seven tallying spies and assert the
+	// aggregate invocation count is exactly 7 after a successful Run.
 	// The per-agent identity check lives in TestPhaseARunner_ExecutionOrder;
-	// this test pins the *count* specifically so the "len(chain)==6"
-	// invariant inside Run is load-bearing.
+	// this test pins the *count* specifically so the "len(chain)==7"
+	// invariant inside Run is load-bearing (postWriterCritic is not tallied
+	// here because it short-circuits via the NoopAgent default path).
 	var calls int
 	tally := func(ctx context.Context, state *agents.PipelineState) error {
 		calls++
@@ -365,6 +371,7 @@ func TestPhaseARunner_StageCountIs6(t *testing.T) {
 	b.researcher = tally
 	b.structurer = tally
 	b.writer = tally
+	b.polisher = tally
 	b.visualBreakdowner = tally
 	b.reviewer = tally
 	b.critic = tally
@@ -373,7 +380,7 @@ func TestPhaseARunner_StageCountIs6(t *testing.T) {
 	if err := r.Run(context.Background(), newState()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	testutil.AssertEqual(t, calls, 6)
+	testutil.AssertEqual(t, calls, 7)
 }
 
 // --- Fail-fast wrapping (AC-FAIL-FAST-WRAPPING) --------------------------

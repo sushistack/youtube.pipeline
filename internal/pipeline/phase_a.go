@@ -26,19 +26,20 @@ import (
 // specific for those common mistakes.
 var runIDAllowedRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
-// PhaseARunner executes the seven Phase A agents sequentially over a
+// PhaseARunner executes the eight Phase A agents sequentially over a
 // PipelineState. One instance per run is fine — it holds no per-run
 // state between Run() calls.
 //
-// Construction injects the seven agents in fixed positional order; the
+// Construction injects the eight agents in fixed positional order; the
 // runner does NOT discover or reorder them. This is deliberate: the
 // ordering is a domain invariant (research → structure → write →
-// post_writer_critic → visual → review → critic) and the compiler
-// enforces completeness via the struct field names.
+// polish → post_writer_critic → visual → review → critic) and the
+// compiler enforces completeness via the struct field names.
 type PhaseARunner struct {
 	researcher        agents.AgentFunc
 	structurer        agents.AgentFunc
 	writer            agents.AgentFunc
+	polisher          agents.AgentFunc
 	postWriterCritic  agents.AgentFunc
 	visualBreakdowner agents.AgentFunc
 	reviewer          agents.AgentFunc
@@ -51,7 +52,7 @@ type PhaseARunner struct {
 	logger         *slog.Logger
 }
 
-// NewPhaseARunner constructs a runner. All seven AgentFunc arguments are
+// NewPhaseARunner constructs a runner. All eight AgentFunc arguments are
 // required and MUST be non-nil; passing a nil agent returns
 // domain.ErrValidation. This is the fail-fast guard against
 // "forgot to wire an agent" — the concrete Stories 3.2–3.5 each
@@ -67,7 +68,7 @@ type PhaseARunner struct {
 // ValidateDistinctProviders, but failing fast here prevents a runner
 // from ever being held by callers in an unrunnable state.
 func NewPhaseARunner(
-	researcher, structurer, writer, postWriterCritic, visualBreakdowner, reviewer, critic agents.AgentFunc,
+	researcher, structurer, writer, polisher, postWriterCritic, visualBreakdowner, reviewer, critic agents.AgentFunc,
 	writerProvider, criticProvider string,
 	outputDir string,
 	clk clock.Clock,
@@ -80,6 +81,8 @@ func NewPhaseARunner(
 		return nil, fmt.Errorf("new phase a runner: %w: structurer agent is nil", domain.ErrValidation)
 	case writer == nil:
 		return nil, fmt.Errorf("new phase a runner: %w: writer agent is nil", domain.ErrValidation)
+	case polisher == nil:
+		return nil, fmt.Errorf("new phase a runner: %w: polisher agent is nil", domain.ErrValidation)
 	case postWriterCritic == nil:
 		return nil, fmt.Errorf("new phase a runner: %w: post_writer_critic agent is nil", domain.ErrValidation)
 	case visualBreakdowner == nil:
@@ -106,6 +109,7 @@ func NewPhaseARunner(
 		researcher:        researcher,
 		structurer:        structurer,
 		writer:            writer,
+		polisher:          polisher,
 		postWriterCritic:  postWriterCritic,
 		visualBreakdowner: visualBreakdowner,
 		reviewer:          reviewer,
@@ -204,6 +208,7 @@ func (r *PhaseARunner) Run(ctx context.Context, state *agents.PipelineState) err
 		{agents.StageResearcher, r.researcher},
 		{agents.StageStructurer, r.structurer},
 		{agents.StageWriter, r.writer},
+		{agents.StagePolisher, r.polisher},
 		{agents.StagePostWriterCritic, r.postWriterCritic},
 		{agents.StageVisualBreakdowner, r.visualBreakdowner},
 		{agents.StageReviewer, r.reviewer},
@@ -223,12 +228,12 @@ func (r *PhaseARunner) Run(ctx context.Context, state *agents.PipelineState) err
 		// Notify the engine that this sub-stage is starting so it can persist
 		// run.stage to the DB and surface progress via the SSE status stream.
 		// StageResearcher is skipped (engine already wrote research/running
-		// before calling Run). StagePostWriterCritic is skipped because it
-		// shares domain.StageCritic with the final critic, which would make
-		// the UI jump to "Critic pass" and back — staying on "write" is less
-		// confusing.
+		// before calling Run). StagePolisher and StagePostWriterCritic are
+		// skipped because they are write-phase sub-steps; surfacing them would
+		// cause the UI to jump away from "write" and back unexpectedly.
 		if state.OnSubStageStart != nil &&
 			entry.ps != agents.StageResearcher &&
+			entry.ps != agents.StagePolisher &&
 			entry.ps != agents.StagePostWriterCritic {
 			if err := state.OnSubStageStart(ctx, entry.ps); err != nil {
 				r.logger.Warn("substage progress update failed",

@@ -99,6 +99,7 @@ func TestPhaseARunner_Integration_EndToEnd(t *testing.T) {
 		spy(agents.StageResearcher),
 		spy(agents.StageStructurer),
 		spy(agents.StageWriter),
+		agents.NoopAgent(),
 		spy(agents.StagePostWriterCritic),
 		spy(agents.StageVisualBreakdowner),
 		spy(agents.StageReviewer),
@@ -201,12 +202,12 @@ func TestPhaseARunner_Integration_EndToEnd(t *testing.T) {
 			}
 		}
 	}
-	if len(starts) != 7 {
-		t.Fatalf("expected 7 'agent start' log entries, got %d: %v", len(starts), starts)
+	if len(starts) != 8 {
+		t.Fatalf("expected 8 'agent start' log entries, got %d: %v", len(starts), starts)
 	}
 	wantStarts := []string{
 		"researcher", "structurer", "writer",
-		"post_writer_critic", "visual_breakdowner", "reviewer", "critic",
+		"polisher", "post_writer_critic", "visual_breakdowner", "reviewer", "critic",
 	}
 	for i, ps := range wantStarts {
 		if starts[i] != ps {
@@ -233,6 +234,7 @@ func TestPhaseAIntegration_TwoCriticCheckpointsAndScenarioJSONIntegrity(t *testi
 			state.Narration = samplePhaseANarration()
 			return nil
 		},
+		agents.NoopAgent(),
 		func(ctx context.Context, state *agents.PipelineState) error {
 			// post-writer Critic checkpoint: populates only PostWriter
 			state.Critic = &domain.CriticOutput{
@@ -326,6 +328,7 @@ func TestPhaseAIntegration_FinalRetryLeavesNoScenarioJSON(t *testing.T) {
 			return nil
 		},
 		func(ctx context.Context, state *agents.PipelineState) error { state.Narration = samplePhaseANarration(); return nil },
+		agents.NoopAgent(),
 		func(ctx context.Context, state *agents.PipelineState) error {
 			state.Critic = &domain.CriticOutput{PostWriter: &domain.CriticCheckpointReport{Checkpoint: domain.CriticCheckpointPostWriter, Verdict: domain.CriticVerdictPass, OverallScore: 80, Feedback: "좋습니다."}}
 			return nil
@@ -478,6 +481,7 @@ func TestPhaseARunner_ReviewOutputValidatedBeforeCritic(t *testing.T) {
 			state.Narration = samplePhaseANarration()
 			return nil
 		},
+		agents.NoopAgent(),
 		func(ctx context.Context, state *agents.PipelineState) error {
 			// post-writer Critic noop for this test — error under test is in reviewer
 			state.Critic = &domain.CriticOutput{PostWriter: &domain.CriticCheckpointReport{Checkpoint: domain.CriticCheckpointPostWriter, Verdict: domain.CriticVerdictPass, OverallScore: 80, Feedback: "좋습니다."}}

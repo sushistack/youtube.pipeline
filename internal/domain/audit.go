@@ -13,6 +13,7 @@ const (
 	AuditEventImageGeneration AuditEventType = "image_generation"
 	AuditEventTTSSynthesis    AuditEventType = "tts_synthesis"
 	AuditEventVoiceBlocked    AuditEventType = "voice_blocked"
+	AuditEventPolisherFailed  AuditEventType = "polisher_failed"
 )
 
 // AuditEntry is a single NDJSON line written to audit.log.

@@ -3,6 +3,11 @@ package domain
 const (
 	NarrationSourceVersionV1 = "v1-llm-writer"
 	LanguageKorean           = "ko"
+	// PolisherMaxEditRatio is the maximum allowed rune-length delta ratio for
+	// any single scene's narration during the polisher smooth-pass. Exceeding
+	// this threshold means the polisher overstepped its smoothing mandate and
+	// the full polished script is rejected (fallback to writer output).
+	PolisherMaxEditRatio = 0.25
 )
 
 type NarrationScript struct {

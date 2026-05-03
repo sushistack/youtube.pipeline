@@ -86,7 +86,8 @@ const (
 	StageResearcher PipelineStage = iota
 	StageStructurer
 	StageWriter
-	StagePostWriterCritic  // post-writer Critic checkpoint (3.3); runs between Writer and VisualBreakdowner
+	StagePolisher         // whole-scenario smooth-pass (Lever C); fallback-not-fail — never aborts the run
+	StagePostWriterCritic // post-writer Critic checkpoint (3.3); runs between Polisher and VisualBreakdowner
 	StageVisualBreakdowner
 	StageReviewer
 	StageCritic
@@ -103,6 +104,8 @@ func (ps PipelineStage) String() string {
 		return "structurer"
 	case StageWriter:
 		return "writer"
+	case StagePolisher:
+		return "polisher"
 	case StagePostWriterCritic:
 		return "post_writer_critic"
 	case StageVisualBreakdowner:
@@ -127,6 +130,8 @@ func (ps PipelineStage) DomainStage() domain.Stage {
 		return domain.StageStructure
 	case StageWriter:
 		return domain.StageWrite
+	case StagePolisher:
+		return domain.StageWrite // polisher is a write-phase sub-step; no new domain stage
 	case StagePostWriterCritic:
 		return domain.StageCritic
 	case StageVisualBreakdowner:

@@ -11,6 +11,7 @@ import (
 
 type PromptAssets struct {
 	WriterTemplate          string
+	PolisherTemplate        string
 	CriticTemplate          string
 	VisualBreakdownTemplate string
 	ReviewerTemplate        string
@@ -25,6 +26,7 @@ type PromptAssets struct {
 
 const (
 	writerPromptPath          = "docs/prompts/scenario/03_writing.md"
+	polisherPromptPath        = "docs/prompts/scenario/03_5_polish.md"
 	criticPromptPath          = "docs/prompts/scenario/critic_agent.md"
 	visualBreakdownPromptPath = "docs/prompts/scenario/03_5_visual_breakdown.md"
 	reviewerPromptPath        = "docs/prompts/scenario/04_review.md"
@@ -59,6 +61,10 @@ func LoadPromptAssets(projectRoot string, useTemplatePrompts bool) (PromptAssets
 	if err != nil {
 		return PromptAssets{}, err
 	}
+	polisherTemplate, err := readAsset(projectRoot, polisherPromptPath)
+	if err != nil {
+		return PromptAssets{}, err
+	}
 	criticTemplate, err := readAsset(projectRoot, criticPromptPath)
 	if err != nil {
 		return PromptAssets{}, err
@@ -87,6 +93,7 @@ func LoadPromptAssets(projectRoot string, useTemplatePrompts bool) (PromptAssets
 
 	return PromptAssets{
 		WriterTemplate:          writerTemplate,
+		PolisherTemplate:        polisherTemplate,
 		CriticTemplate:          criticTemplate,
 		VisualBreakdownTemplate: visualBreakdownTemplate,
 		ReviewerTemplate:        reviewerTemplate,

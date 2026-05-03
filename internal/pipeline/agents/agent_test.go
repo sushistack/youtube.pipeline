@@ -210,6 +210,7 @@ func TestPipelineStage_String(t *testing.T) {
 		{StageResearcher, "researcher"},
 		{StageStructurer, "structurer"},
 		{StageWriter, "writer"},
+		{StagePolisher, "polisher"},
 		{StagePostWriterCritic, "post_writer_critic"},
 		{StageVisualBreakdowner, "visual_breakdowner"},
 		{StageReviewer, "reviewer"},
@@ -224,7 +225,7 @@ func TestPipelineStage_String(t *testing.T) {
 
 func TestPipelineStage_Count(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
-	testutil.AssertEqual(t, int(phaseAStageCount), 7)
+	testutil.AssertEqual(t, int(phaseAStageCount), 8)
 }
 
 func TestPipelineStage_DomainStage(t *testing.T) {
@@ -237,6 +238,7 @@ func TestPipelineStage_DomainStage(t *testing.T) {
 		{StageResearcher, domain.StageResearch},
 		{StageStructurer, domain.StageStructure},
 		{StageWriter, domain.StageWrite},
+		{StagePolisher, domain.StageWrite},
 		{StagePostWriterCritic, domain.StageCritic},
 		{StageVisualBreakdowner, domain.StageVisualBreak},
 		{StageReviewer, domain.StageReview},

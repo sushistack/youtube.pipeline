@@ -420,16 +420,26 @@ func buildPhaseARunner(
 		AuditLogger: auditLogger,
 		Logger:      logger,
 	}
+	polisherCfg := agents.TextAgentConfig{
+		Model:       cfg.WriterModel,
+		Provider:    cfg.WriterProvider,
+		MaxTokens:   12288, // full script in one shot; must be ≥ writer per-act max
+		Temperature: 0.5,
+		AuditLogger: auditLogger,
+		Logger:      logger,
+	}
+
 	researcher := agents.NewResearcher(corpus, researchV, writerGen, roleClassifierCfg, prompts)
 	structurer := agents.NewStructurer(structureV)
 	writer := agents.NewWriter(writerGen, writerCfg, prompts, writerV, terms)
+	polisher := agents.NewPolisher(writerGen, polisherCfg, prompts, writerV, terms)
 	postWriterCritic := agents.NewPostWriterCritic(criticGen, criticCfg, prompts, writerV, criticPostWriterV, terms, cfg.WriterProvider)
 	visualBreakdowner := agents.NewVisualBreakdowner(writerGen, writerCfg, prompts, visualV, agents.NewHeuristicDurationEstimator())
 	reviewer := agents.NewReviewer(criticGen, criticCfg, prompts, visualV, reviewV)
 	postReviewerCritic := agents.NewPostReviewerCritic(criticGen, criticCfg, prompts, writerV, visualV, reviewV, criticPostReviewerV, terms, cfg.WriterProvider)
 
 	return pipeline.NewPhaseARunner(
-		researcher, structurer, writer, postWriterCritic,
+		researcher, structurer, writer, polisher, postWriterCritic,
 		visualBreakdowner, reviewer, postReviewerCritic,
 		cfg.WriterProvider, cfg.CriticProvider,
 		cfg.OutputDir, clock.RealClock{}, logger,
