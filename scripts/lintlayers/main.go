@@ -38,6 +38,11 @@ var allowedImports = map[string][]string{
 	// domain and clock; db/service/api are explicitly excluded.
 	"internal/critic":      {"internal/domain", "internal/clock"},
 	"internal/critic/eval": {"internal/domain", "internal/clock"},
+	// SCP-Explained quality-uplift packages (next-session-enhance-prompts).
+	// All three are additive — no live agent imports them in this cycle.
+	"internal/style":            {},
+	"internal/contract":         {"internal/domain"},
+	"internal/critic/rubricv2":  {"internal/domain", "internal/contract", "internal/style"},
 }
 
 // nestedTrackedPackages lists internal/ subpackages that have their
@@ -46,6 +51,7 @@ var allowedImports = map[string][]string{
 var nestedTrackedPackages = []string{
 	"internal/pipeline/agents",
 	"internal/critic/eval",
+	"internal/critic/rubricv2",
 }
 
 func main() {

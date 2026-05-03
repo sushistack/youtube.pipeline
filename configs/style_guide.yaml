@@ -1,0 +1,36 @@
+narration:
+  avg_sentence_length_tense: 18
+  avg_sentence_length_calm: 28
+  rhetorical_question_per_minute: 1
+  forbidden_openings:
+    - "안녕하세요"
+    - "오늘 소개할"
+    - "이번 영상에서는"
+  preferred_endings:
+    - "...죠."
+    - "...니다."
+    - "...어요."
+  forbidden_endings:
+    - "...했다."
+  abstract_emotion_words:
+    - "끔찍"
+    - "무서운"
+    - "두려운"
+    - "공포스러운"
+  max_abstract_emotion_words_per_script: 1
+
+korean_scp_terms:
+  Foundation: 재단
+  MTF: 기동특무대
+  D-class: D계급
+  Keter: 케테르
+  Euclid: 유클리드
+  Safe: 안전
+  Thaumiel: 타우미엘
+  Site: 기지
+  Containment Breach: 격리 실패
+
+attribution_template_ko: |
+  본 영상은 SCP 재단 위키 {scp_number}({author})를 각색했습니다.
+  원문: {wiki_url}
+  CC BY-SA 3.0 라이선스에 따라 제작되었습니다.
