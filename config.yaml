@@ -10,8 +10,8 @@ image_provider: comfyui
 tts_provider: dashscope
 dashscope_region: intl
 data_dir: /mnt/data/raw
-output_dir: /home/jay/.youtube-pipeline/output
-db_path: /home/jay/.youtube-pipeline/pipeline.db
+output_dir: ./output
+db_path: ./pipeline.db
 cost_cap_research: 0.5
 cost_cap_write: 0.5
 cost_cap_image: 2
