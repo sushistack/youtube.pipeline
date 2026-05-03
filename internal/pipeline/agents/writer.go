@@ -62,15 +62,13 @@ const (
 	writerMaxConcurrency     = 3
 	writerPerActRetryBudget  = 1   // one retry per act on schema violation
 	priorActBeatRuneCap      = 240 // bound on the Act-1-tail snippet repeated into Acts 2/3/4 prompts
-	// narrationRuneCap enforces the writer prompt's "씬당 narration 220자
-	// 초과 절대 금지" contract (docs/prompts/scenario/03_writing.md, Scene
-	// Granularity rule). The cap encodes the one-visual-beat-per-scene
-	// principle from format_guide.md Section E: a scene maps to a single
-	// image, so narration that needs >220 runes is almost always cramming
-	// multiple visual beats into one frame. Schema-violation retries
-	// re-render the same prompt; persistent overruns fail fast rather
-	// than dragging cap drift downstream into TTS/image stages.
-	narrationRuneCap = 220
+	// Per-act narration rune caps live in domain.ActNarrationRuneCap (see
+	// scenario.go). validateWriterActResponse looks up the cap for the
+	// current act so cold-open scenes stay tight (incident=100 enforces
+	// the ≤15s rule from docs/prompts/scenario/03_writing.md) while the
+	// climax has room to breathe (revelation=320). Schema-violation
+	// retries re-render the same prompt; persistent overruns fail fast
+	// rather than dragging cap drift downstream into TTS/image stages.
 )
 
 // defaultAgentConcurrency is the fan-out cap when TextAgentConfig.Concurrency
@@ -343,6 +341,13 @@ func validateWriterActResponse(spec writerActSpec, decoded writerActResponse) er
 	if len(decoded.Scenes) != spec.Act.SceneBudget {
 		return fmt.Errorf("writer: act %s: scene count=%d want=%d: %w", spec.Act.ID, len(decoded.Scenes), spec.Act.SceneBudget, domain.ErrValidation)
 	}
+	// Look up the per-act cap once before iterating so unrecognized act IDs
+	// fail even when the LLM emits zero scenes (a zero-scene response would
+	// otherwise skip the loop and silently pass this validator).
+	runeCap, ok := domain.ActNarrationRuneCap[spec.Act.ID]
+	if !ok {
+		return fmt.Errorf("writer: act %s: no narration cap configured: %w", spec.Act.ID, domain.ErrValidation)
+	}
 	prev := spec.SceneNumLo - 1
 	for i, scene := range decoded.Scenes {
 		if scene.SceneNum < spec.SceneNumLo || scene.SceneNum > spec.SceneNumHi {
@@ -357,9 +362,9 @@ func validateWriterActResponse(spec writerActSpec, decoded writerActResponse) er
 			return fmt.Errorf("writer: act %s: scene[%d] act_id=%q: %w",
 				spec.Act.ID, i, scene.ActID, domain.ErrValidation)
 		}
-		if n := utf8.RuneCountInString(scene.Narration); n > narrationRuneCap {
+		if n := utf8.RuneCountInString(scene.Narration); n > runeCap {
 			return fmt.Errorf("writer: act %s: scene[%d] scene_num=%d narration length=%d runes exceeds cap=%d (one-visual-beat rule, see docs/prompts/scenario/03_writing.md): %w",
-				spec.Act.ID, i, scene.SceneNum, n, narrationRuneCap, domain.ErrValidation)
+				spec.Act.ID, i, scene.SceneNum, n, runeCap, domain.ErrValidation)
 		}
 		prev = scene.SceneNum
 	}

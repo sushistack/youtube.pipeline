@@ -3,7 +3,6 @@ package agents
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,24 +10,11 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
 
-// V1: This agent is deterministic - no LLM call. docs/prompts/scenario/
-// 02_structure.md is the reference prompt template that a V1.5 upgrade
-// will wire through a domain.TextGenerator. The deterministic derivation
-// here is the scaffolding and schema contract that the LLM path must honor.
-
-// scenesPerBeat fans each dramatic beat out to roughly N writer scenes.
-// Background: scenes were originally one-beat-per-scene with rich
-// 60-75s narration that crammed multiple visual moments. Tightening
-// per-scene narration to a single visual beat (~25-40s) cut content
-// per scene by ~half, so total scene count must roughly double to keep
-// runtime constant. The writer prompt expands each beat into multiple
-// scenes, each capturing a distinct visual moment of that beat.
-//
-// 2 is the conservative pick: it tracks the narration shrink ratio and
-// keeps Act 2/3 fan-out (typically 1-2 beats per act) within a range the
-// writer can cover without inventing content. Higher values risk
-// repetitive scenes; lower values produce videos that are too short.
-const scenesPerBeat = 2
+// V1.2: Beats are placed into acts by their RoleSuggestion (set by the
+// researcher's role-classifier LLM call). Each act's scene budget is
+// `len(beats_in_act) * domain.ActScenesPerBeat[actID]` — no global
+// constant, no ratio-based distribution. The classifier guarantees
+// every role appears at least once, so every act receives ≥1 beat.
 
 func NewStructurer(validator *Validator) AgentFunc {
 	return func(ctx context.Context, state *PipelineState) error {
@@ -42,34 +28,52 @@ func NewStructurer(validator *Validator) AgentFunc {
 			return fmt.Errorf("structurer: insufficient beats: %d < 4: %w", len(state.Research.DramaticBeats), domain.ErrValidation)
 		}
 
-		target := len(state.Research.DramaticBeats) * scenesPerBeat
-		budgets := distributeSceneBudget(target)
+		beatsByAct, err := groupBeatsByAct(state.Research.DramaticBeats)
+		if err != nil {
+			return fmt.Errorf("structurer: %w", err)
+		}
+
 		acts := make([]domain.Act, 0, len(domain.ActOrder))
+		totalScenes := 0
 		for idx, actID := range domain.ActOrder {
-			beatIDs := assignedBeatIDs(state.Research.DramaticBeats, idx)
+			beatIDs := beatsByAct[actID]
+			role := domain.RoleForAct[actID]
+			label := domain.RoleKoreanLabel[role]
+			multiplier := domain.ActScenesPerBeat[actID]
+			budget := len(beatIDs) * multiplier
+			totalScenes += budget
+
 			keyPoints := make([]string, 0, len(beatIDs))
 			for _, beatID := range beatIDs {
-				keyPoints = append(keyPoints, state.Research.DramaticBeats[beatID].Description)
+				keyPoints = append(keyPoints, fmt.Sprintf("[ROLE: %s] %s", label, state.Research.DramaticBeats[beatID].Description))
 			}
-			synopsis := "No dramatic beats assigned to this act (V1 deterministic placeholder)."
-			if len(keyPoints) > 0 {
-				synopsis = "Act " + strconv.Itoa(idx+1) + " opens with " + keyPoints[0] + ". (" + strconv.Itoa(len(keyPoints)) + " beats; " + strconv.Itoa(int(domain.ActDurationRatio[actID]*100)) + "% of runtime.)"
-			}
+			synopsis := fmt.Sprintf(
+				"[ROLE: %s] Act %d opens with %s. (%d beats × %d scenes/beat = %d scenes; %d%% of runtime.)",
+				label,
+				idx+1,
+				state.Research.DramaticBeats[beatIDs[0]].Description,
+				len(beatIDs),
+				multiplier,
+				budget,
+				int(domain.ActDurationRatio[actID]*100),
+			)
+
 			acts = append(acts, domain.Act{
 				ID:              actID,
 				Name:            "Act " + strconv.Itoa(idx+1) + " — " + titleCase(actID),
 				Synopsis:        synopsis,
-				SceneBudget:     budgets[idx],
+				SceneBudget:     budget,
 				DurationRatio:   domain.ActDurationRatio[actID],
 				DramaticBeatIDs: beatIDs,
 				KeyPoints:       keyPoints,
+				Role:            role,
 			})
 		}
 
 		output := domain.StructurerOutput{
 			SCPID:            state.Research.SCPID,
 			Acts:             acts,
-			TargetSceneCount: target,
+			TargetSceneCount: totalScenes,
 			SourceVersion:    state.Research.SourceVersion,
 		}
 		if err := validator.Validate(output); err != nil {
@@ -80,60 +84,34 @@ func NewStructurer(validator *Validator) AgentFunc {
 	}
 }
 
-func distributeSceneBudget(target int) [4]int {
-	var floors [4]int
-	var fracs [4]float64
-	var sum int
-	for i, actID := range domain.ActOrder {
-		quota := float64(target) * domain.ActDurationRatio[actID]
-		floors[i] = int(math.Floor(quota))
-		fracs[i] = quota - float64(floors[i])
-		sum += floors[i]
+// groupBeatsByAct partitions beats into the 4-act buckets keyed by act ID.
+// Returns ErrValidation if any beat has an empty or unknown RoleSuggestion
+// (researcher contract violation — the classifier should have rejected
+// these or the run should have already failed) or if any role is missing
+// (which the classifier validator also rejects, so reaching here means
+// something upstream lied).
+func groupBeatsByAct(beats []domain.DramaticBeat) (map[string][]int, error) {
+	byAct := make(map[string][]int, len(domain.ActOrder))
+	for _, actID := range domain.ActOrder {
+		byAct[actID] = []int{}
 	}
-
-	remaining := target - sum
-	order := []int{0, 1, 2, 3}
-	sort.Slice(order, func(i, j int) bool {
-		left, right := order[i], order[j]
-		if fracs[left] == fracs[right] {
-			return left < right
-		}
-		return fracs[left] > fracs[right]
-	})
-	for i := 0; i < remaining; i++ {
-		floors[order[i]]++
-	}
-
-	for i := range floors {
-		if floors[i] >= 1 {
-			continue
-		}
-		donor := maxAllocationIndex(floors)
-		floors[donor]--
-		floors[i]++
-	}
-	return floors
-}
-
-func maxAllocationIndex(values [4]int) int {
-	best := 0
-	for i := 1; i < len(values); i++ {
-		if values[i] > values[best] || (values[i] == values[best] && i > best) {
-			best = i
-		}
-	}
-	return best
-}
-
-func assignedBeatIDs(beats []domain.DramaticBeat, actIndex int) []int {
-	ids := make([]int, 0, len(beats)/4+1)
 	for _, beat := range beats {
-		if beat.Index%4 == actIndex {
-			ids = append(ids, beat.Index)
+		if beat.RoleSuggestion == "" {
+			return nil, fmt.Errorf("beat %d: empty role_suggestion: %w", beat.Index, domain.ErrValidation)
 		}
+		actID, ok := domain.ActForRole[beat.RoleSuggestion]
+		if !ok {
+			return nil, fmt.Errorf("beat %d: unknown role %q: %w", beat.Index, beat.RoleSuggestion, domain.ErrValidation)
+		}
+		byAct[actID] = append(byAct[actID], beat.Index)
 	}
-	sort.Ints(ids)
-	return ids
+	for _, actID := range domain.ActOrder {
+		if len(byAct[actID]) == 0 {
+			return nil, fmt.Errorf("act %s has no beats: %w", actID, domain.ErrValidation)
+		}
+		sort.Ints(byAct[actID])
+	}
+	return byAct, nil
 }
 
 func titleCase(id string) string {

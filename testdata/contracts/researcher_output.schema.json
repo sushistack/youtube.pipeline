@@ -54,8 +54,8 @@
     },
     "dramatic_beats": {
       "type": "array",
-      "minItems": 3,
-      "maxItems": 10,
+      "minItems": 4,
+      "maxItems": 16,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -67,6 +67,10 @@
           "emotional_tone": {
             "type": "string",
             "enum": ["mystery", "horror", "tension", "revelation"]
+          },
+          "role_suggestion": {
+            "type": "string",
+            "enum": ["hook", "tension", "reveal", "bridge", ""]
           }
         }
       }
@@ -76,6 +80,6 @@
       "type": "array",
       "items": { "type": "string" }
     },
-    "source_version": { "type": "string", "const": "v1.1-deterministic" }
+    "source_version": { "type": "string", "const": "v1.2-roles" }
   }
 }

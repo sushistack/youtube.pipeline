@@ -411,7 +411,16 @@ func buildPhaseARunner(
 		Logger:      logger,
 	}
 
-	researcher := agents.NewResearcher(corpus, researchV)
+	roleClassifierCfg := agents.TextAgentConfig{
+		Model:       cfg.WriterModel,
+		Provider:    cfg.WriterProvider,
+		MaxTokens:   1024,
+		Temperature: 0.0,
+		Concurrency: 1,
+		AuditLogger: auditLogger,
+		Logger:      logger,
+	}
+	researcher := agents.NewResearcher(corpus, researchV, writerGen, roleClassifierCfg, prompts)
 	structurer := agents.NewStructurer(structureV)
 	writer := agents.NewWriter(writerGen, writerCfg, prompts, writerV, terms)
 	postWriterCritic := agents.NewPostWriterCritic(criticGen, criticCfg, prompts, writerV, criticPostWriterV, terms, cfg.WriterProvider)

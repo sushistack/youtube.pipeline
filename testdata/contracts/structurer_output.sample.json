@@ -4,49 +4,53 @@
     {
       "id": "incident",
       "name": "Act 1 — Incident",
-      "synopsis": "Act 1 opens with The sentinel stands motionless beneath a flickering platform light.. (2 beats; 15% of runtime.)",
-      "scene_budget": 2,
+      "synopsis": "[ROLE: 흥미로운 상황] Act 1 opens with The sentinel stands motionless beneath a flickering platform light.. (1 beats × 1 scenes/beat = 1 scenes; 15% of runtime.)",
+      "scene_budget": 1,
       "duration_ratio": 0.15,
-      "dramatic_beat_ids": [0, 4],
+      "dramatic_beat_ids": [0],
       "key_points": [
-        "The sentinel stands motionless beneath a flickering platform light.",
-        "Its shadow lingers for several seconds after movement."
-      ]
+        "[ROLE: 흥미로운 상황] The sentinel stands motionless beneath a flickering platform light."
+      ],
+      "role": "hook"
     },
     {
       "id": "mystery",
       "name": "Act 2 — Mystery",
-      "synopsis": "Act 2 opens with A security monitor catches it one step closer after a blink.. (1 beats; 30% of runtime.)",
-      "scene_budget": 3,
+      "synopsis": "[ROLE: 급박한 상황] Act 2 opens with A security monitor catches it one step closer after a blink.. (2 beats × 2 scenes/beat = 4 scenes; 30% of runtime.)",
+      "scene_budget": 4,
       "duration_ratio": 0.3,
-      "dramatic_beat_ids": [1],
+      "dramatic_beat_ids": [1, 2],
       "key_points": [
-        "A security monitor catches it one step closer after a blink."
-      ]
+        "[ROLE: 급박한 상황] A security monitor catches it one step closer after a blink.",
+        "[ROLE: 급박한 상황] Red light leaks from the fractures as alarms begin to pulse."
+      ],
+      "role": "tension"
     },
     {
       "id": "revelation",
       "name": "Act 3 — Revelation",
-      "synopsis": "Act 3 opens with Red light leaks from the fractures as alarms begin to pulse.. (1 beats; 40% of runtime.)",
-      "scene_budget": 4,
+      "synopsis": "[ROLE: SCP 설명] Act 3 opens with It advances when every witness blinks.. (1 beats × 3 scenes/beat = 3 scenes; 40% of runtime.)",
+      "scene_budget": 3,
       "duration_ratio": 0.4,
-      "dramatic_beat_ids": [2],
+      "dramatic_beat_ids": [3],
       "key_points": [
-        "Red light leaks from the fractures as alarms begin to pulse."
-      ]
+        "[ROLE: SCP 설명] It advances when every witness blinks."
+      ],
+      "role": "reveal"
     },
     {
       "id": "unresolved",
       "name": "Act 4 — Unresolved",
-      "synopsis": "Act 4 opens with It advances when every witness blinks.. (1 beats; 15% of runtime.)",
+      "synopsis": "[ROLE: 부연 / 다른 SCP와의 관계] Act 4 opens with Its shadow lingers for several seconds after movement.. (1 beats × 1 scenes/beat = 1 scenes; 15% of runtime.)",
       "scene_budget": 1,
       "duration_ratio": 0.15,
-      "dramatic_beat_ids": [3],
+      "dramatic_beat_ids": [4],
       "key_points": [
-        "It advances when every witness blinks."
-      ]
+        "[ROLE: 부연 / 다른 SCP와의 관계] Its shadow lingers for several seconds after movement."
+      ],
+      "role": "bridge"
     }
   ],
-  "target_scene_count": 10,
-  "source_version": "v1.1-deterministic"
+  "target_scene_count": 9,
+  "source_version": "v1.2-roles"
 }

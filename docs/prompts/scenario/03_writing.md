@@ -52,7 +52,11 @@ You will write the narration for **a SINGLE ACT** of an SCP video about {scp_id}
 
 각 씬은 영상에서 **이미지 한 장**으로 표현됩니다. 따라서 한 씬의 narration은 **단일한 시각적 순간**을 묘사해야 합니다. 여러 장면 전환·여러 행동·여러 인물 동작을 한 씬에 욱여넣지 마세요.
 
-- **씬당 narration 길이**: **100~180자** (한국어 기준, 약 25~40초). **220자 초과 절대 금지.**
+- **씬당 narration 길이 (act별 cap)**: 작가 에이전트는 act_id별로 다른 cap을 강제합니다. 자기 act의 cap을 초과하면 즉시 reject됩니다.
+  - `incident` (Act 1, cold open): **100자 이하** — ≤15초 hook 규칙. 한 장면, 한 임팩트만.
+  - `mystery` (Act 2): **220자 이하** — 일반 페이싱.
+  - `revelation` (Act 3, climax): **320자 이하** — 정체 공개는 호흡을 길게.
+  - `unresolved` (Act 4): **180자 이하** — 짧은 여운으로.
 - **하나의 씬 = 하나의 무대 + 하나의 핵심 행동/순간 + 하나의 감정 비트**
 - 다음 중 하나라도 바뀌면 그건 다른 씬입니다: (a) 무대/위치, (b) 결정적 행동, (c) 시점 전환 ("그 순간", "그러더니", "그러고는" 등으로 연결되는 새 동작)
 - 한 씬 안에서는 narration이 **한 이미지가 보여줄 수 있는 범위**만 묘사. 묘사할 수 없으면 다음 씬으로 미루세요.
@@ -91,7 +95,7 @@ scene_budget(이 act의 씬 수)이 항상 key_points(이 act의 dramatic beats)
 
 ### 문장 & 페이싱 규칙
 - 문장 길이: 15~25자 (TTS 최적화용 — 짧고 펀치있게)
-- **씬당 narration 총 길이: 100~180자, 220자 초과 금지** (위 "씬 단위 규칙" 참조)
+- **씬당 narration 총 길이는 act별 cap을 따릅니다** (위 "씬 단위 규칙"의 incident=100 / mystery=220 / revelation=320 / unresolved=180)
 - 자연스러운 연결어 사용: 그때, 이후, 하지만, 게다가, 근데, 그런데 말이죠
 - 호러 비트에서는 문장을 끊어서 드라마틱 포즈를 만드세요.
 - 문장 리듬 변화: 긴 묘사 문장과 짧은 임팩트 문장을 번갈아 사용
@@ -165,7 +169,7 @@ Return JSON only. Do not wrap the JSON in markdown fences.
 - [ ] Every scene's `scene_num` is inside `{scene_num_range}`, unique, ascending
 - [ ] Every scene's `act_id` equals `{act_id}`
 - [ ] `characters_present`, `location`, `color_palette`, `atmosphere` filled per scene
-- [ ] **모든 씬의 `narration`은 220자 이하** (목표 100~180자). 초과한 씬은 가장 시각적인 한 비트만 남기고 나머지는 잘라내세요.
+- [ ] **모든 씬의 `narration`은 자기 act의 cap 이하** (incident=100 / mystery=220 / revelation=320 / unresolved=180). 초과한 씬은 가장 시각적인 한 비트만 남기고 나머지는 잘라내세요.
 - [ ] **모든 씬의 `narration`은 단일 시각적 순간을 묘사** — 한 씬 안에 무대 전환·새 인물 등장·여러 결정적 행동이 동시에 들어 있으면 한 비트만 남기고 나머지는 버리세요.
 
 If ANY check fails, fix the offending field before outputting.

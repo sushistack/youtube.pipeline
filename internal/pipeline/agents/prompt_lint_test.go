@@ -59,6 +59,13 @@ var promptRendererContract = []struct {
 			"frozen_descriptor", "estimated_tts_duration_s", "shot_count",
 		},
 	},
+	{
+		name: "role_classifier",
+		path: roleClassifierPromptPath,
+		substitutes: []string{
+			"scp_id", "beat_count", "beat_count_minus_one", "beat_table",
+		},
+	},
 }
 
 // TestPromptPlaceholders_AreFullyCovered asserts that every {placeholder}

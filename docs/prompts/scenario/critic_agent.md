@@ -20,7 +20,7 @@ Answer these questions honestly:
 6. **Scene Granularity (★ visual-beat singularity)**: Each scene maps to ONE image in the final video. Does each scene's narration describe a single visual moment that can be captured in one frame? Or does a scene cram multiple stage transitions, multiple decisive actions, or multiple character entrances into one narration block?
    - Red flags: connectives like "그 순간", "그러더니", "그러고는", "그리고 놀라운 일이 일어납니다" appearing inside a single scene's narration to chain distinct events.
    - Red flag example: a single scene that contains both "049가 격렬하게 반응합니다" AND "연구원이 라벤더를 내밉니다" AND "049가 멈춥니다" — that's three visual beats cramped into one frame.
-   - The writer's schema validator already rejects narration > 220 runes, so length alone is not the signal — the signal is **multiple visual beats inside the same scene regardless of length**.
+   - The writer's schema validator already rejects narration over the act's per-act rune cap (incident=100 / mystery=220 / revelation=320 / unresolved=180), so length alone is not the signal — the signal is **multiple visual beats inside the same scene regardless of length**.
    - For each violating scene, add a `scene_notes` entry naming the cramming and proposing which single beat to keep (the most visually striking moment) — the rest must be dropped, since `scene_budget` is fixed and cannot be expanded at writing time.
    - This dimension contributes to `immersion`: if 30%+ of scenes violate scene granularity, the narration cannot sync with the visual track and immersion collapses → drop `immersion` rubric below 65 and verdict = `retry` with `retry_reason: immersion`. If <30% violate, mark them in `scene_notes` and lean toward `accept_with_notes`.
 

@@ -28,11 +28,15 @@ type VisualIdentity struct {
 }
 
 // DramaticBeat is one deterministic dramatic beat extracted from the corpus.
+// RoleSuggestion is the narrative role assigned by the role classifier
+// (hook/tension/reveal/bridge); empty only on transitional fixtures/tests
+// — the prod researcher always populates it.
 type DramaticBeat struct {
-	Index         int    `json:"index"`
-	Source        string `json:"source"`
-	Description   string `json:"description"`
-	EmotionalTone string `json:"emotional_tone"`
+	Index          int    `json:"index"`
+	Source         string `json:"source"`
+	Description    string `json:"description"`
+	EmotionalTone  string `json:"emotional_tone"`
+	RoleSuggestion string `json:"role_suggestion,omitempty"`
 }
 
 // StructurerOutput is the schema-validated 4-act structure produced by the
@@ -44,7 +48,10 @@ type StructurerOutput struct {
 	SourceVersion    string `json:"source_version"`
 }
 
-// Act is one act in the deterministic 4-act scenario structure.
+// Act is one act in the deterministic 4-act scenario structure. Role mirrors
+// the act-id-to-role mapping from RoleForAct (incident→hook, mystery→tension,
+// revelation→reveal, unresolved→bridge); included in the contract so writer
+// and downstream stages can read the role without re-deriving it.
 type Act struct {
 	ID              string   `json:"id"`
 	Name            string   `json:"name"`
@@ -53,6 +60,7 @@ type Act struct {
 	DurationRatio   float64  `json:"duration_ratio"`
 	DramaticBeatIDs []int    `json:"dramatic_beat_ids"`
 	KeyPoints       []string `json:"key_points"`
+	Role            string   `json:"role,omitempty"`
 }
 
 const (
@@ -60,6 +68,17 @@ const (
 	ActMystery    = "mystery"
 	ActRevelation = "revelation"
 	ActUnresolved = "unresolved"
+
+	// RoleHook/RoleTension/RoleReveal/RoleBridge are the four narrative
+	// roles classified per dramatic beat. Each role maps 1:1 to an act
+	// (hook→incident, tension→mystery, reveal→revelation, bridge→unresolved)
+	// via RoleForAct/ActForRole. The classifier prompt mandates every
+	// role appears at least once across the beats; the structurer rejects
+	// any beat whose role is unset or unrecognized.
+	RoleHook    = "hook"
+	RoleTension = "tension"
+	RoleReveal  = "reveal"
+	RoleBridge  = "bridge"
 
 	// SourceVersionV1 identifies the deterministic-V1 contract for the
 	// researcher and structurer. Bump this when EITHER agent's output
@@ -71,9 +90,14 @@ const (
 	//
 	// History:
 	//   v1-deterministic   — initial deterministic researcher + structurer
-	//   v1.1-deterministic — structurer fans each beat out to scenesPerBeat
-	//                        scenes; old caches had 1 scene per beat
-	SourceVersionV1 = "v1.1-deterministic"
+	//   v1.1-deterministic — structurer fans each beat out to a constant
+	//                        per-beat scene budget; old caches had 1 scene
+	//                        per beat
+	//   v1.2-roles         — researcher gains a role-classifier LLM call;
+	//                        structurer assigns beats to acts by role and
+	//                        per-act scene multipliers replace the legacy
+	//                        global constant; writer narration cap is per-act
+	SourceVersionV1 = "v1.2-roles"
 )
 
 var ActOrder = [4]string{
@@ -88,4 +112,70 @@ var ActDurationRatio = map[string]float64{
 	ActMystery:    0.30,
 	ActRevelation: 0.40,
 	ActUnresolved: 0.15,
+}
+
+// RoleOrder lists narrative roles in the same order as ActOrder so downstream
+// code can iterate roles and acts together.
+var RoleOrder = [4]string{
+	RoleHook,
+	RoleTension,
+	RoleReveal,
+	RoleBridge,
+}
+
+// RoleForAct maps each act ID to the narrative role whose beats fill it.
+var RoleForAct = map[string]string{
+	ActIncident:   RoleHook,
+	ActMystery:    RoleTension,
+	ActRevelation: RoleReveal,
+	ActUnresolved: RoleBridge,
+}
+
+// ActForRole is the inverse of RoleForAct: given a beat's role, where it
+// belongs in the 4-act structure.
+var ActForRole = map[string]string{
+	RoleHook:    ActIncident,
+	RoleTension: ActMystery,
+	RoleReveal:  ActRevelation,
+	RoleBridge:  ActUnresolved,
+}
+
+// RoleKoreanLabel renders each role as the short Korean phrase the writer
+// and structurer prompts use to describe it. Stored here so the synopsis
+// prefix emitted by the structurer and any future writer-facing role copy
+// pull from one source.
+var RoleKoreanLabel = map[string]string{
+	RoleHook:    "흥미로운 상황",
+	RoleTension: "급박한 상황",
+	RoleReveal:  "SCP 설명",
+	RoleBridge:  "부연 / 다른 SCP와의 관계",
+}
+
+// ActScenesPerBeat is the per-act scene multiplier applied to each beat
+// assigned to that act. Replaces the legacy global per-beat scene constant.
+//
+//	incident   = 1  (cold open is one striking moment, not a montage)
+//	mystery    = 2  (information drip needs spread)
+//	revelation = 3  (multi-step reveal is the climax — needs room)
+//	unresolved = 1  (clean cliffhanger)
+var ActScenesPerBeat = map[string]int{
+	ActIncident:   1,
+	ActMystery:    2,
+	ActRevelation: 3,
+	ActUnresolved: 1,
+}
+
+// ActNarrationRuneCap is the per-act inclusive cap on a single scene's
+// narration length, in runes. Replaces the global `narrationRuneCap = 220`
+// constant.
+//
+//	incident   = 100 (≤15s cold-open rule from docs/prompts/scenario/03_writing.md)
+//	mystery    = 220 (unchanged from the legacy global cap)
+//	revelation = 320 (lets the climax breathe — longer, more sensory)
+//	unresolved = 180 (brevity for the bridge)
+var ActNarrationRuneCap = map[string]int{
+	ActIncident:   100,
+	ActMystery:    220,
+	ActRevelation: 320,
+	ActUnresolved: 180,
 }

@@ -16,7 +16,7 @@ func TestLoadPromptAssets_Happy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadPromptAssets: %v", err)
 	}
-	if assets.WriterTemplate == "" || assets.CriticTemplate == "" || assets.VisualBreakdownTemplate == "" || assets.ReviewerTemplate == "" || assets.FormatGuide == "" {
+	if assets.WriterTemplate == "" || assets.CriticTemplate == "" || assets.VisualBreakdownTemplate == "" || assets.ReviewerTemplate == "" || assets.RoleClassifierTemplate == "" || assets.FormatGuide == "" {
 		t.Fatalf("expected all assets loaded, got %#v", assets)
 	}
 	if containsFold(assets.VisualBreakdownTemplate, "1:1 sentence-to-image mapping") {

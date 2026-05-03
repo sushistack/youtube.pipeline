@@ -364,51 +364,57 @@ func TestWriter_Run_SchemaViolation(t *testing.T) {
 	}
 }
 
-// TestWriter_Run_NarrationRuneCapExceeded asserts that a scene whose
-// narration exceeds narrationRuneCap (the 220자 hard cap from
-// docs/prompts/scenario/03_writing.md "Scene Granularity") is rejected
-// by validateWriterActResponse and surfaces ErrValidation. This guards
-// against the failure mode where the LLM crams multiple visual beats
-// into one scene's narration, which the downstream image stage cannot
-// represent with a single frame.
-func TestWriter_Run_NarrationRuneCapExceeded(t *testing.T) {
+// TestWriter_Run_NarrationPerActCap exercises the per-act narration rune
+// cap lookup (domain.ActNarrationRuneCap) inside validateWriterActResponse.
+// At-cap narration must pass; cap+1 must fail with ErrValidation. Each act
+// is asserted independently because the caps differ
+// (incident=100, mystery=220, revelation=320, unresolved=180).
+func TestWriter_Run_NarrationPerActCap(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	perAct := perActFixturesFromMergedSample(t)
-	overCap := strings.Repeat("가", narrationRuneCap+1) // 221 runes
-	bad := mustEncodeActResponse(t, domain.ActIncident, []domain.NarrationScene{
-		fillRequiredSceneFields(domain.NarrationScene{SceneNum: 1, ActID: domain.ActIncident, Narration: overCap}),
-		fillRequiredSceneFields(domain.NarrationScene{SceneNum: 2, ActID: domain.ActIncident, Narration: "ok"}),
-	})
-	// Both attempts return the over-cap response so the retry budget is exhausted.
-	perAct[domain.ActIncident] = []string{bad, bad}
-	gen := newActIndexedTextGenerator(perAct)
-	state := sampleWriterState()
-	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
-	if !errors.Is(err, domain.ErrValidation) {
-		t.Fatalf("expected ErrValidation, got %v", err)
+	cases := []struct {
+		actID    string
+		sceneIdx int // index into the merged sample (scene_num - 1)
+	}{
+		{domain.ActIncident, 0},   // scene 1
+		{domain.ActMystery, 2},    // scene 3
+		{domain.ActRevelation, 5}, // scene 6
+		{domain.ActUnresolved, 8}, // scene 9
 	}
-	if err == nil || !strings.Contains(err.Error(), "exceeds cap") {
-		t.Fatalf("expected narration cap error, got %v", err)
-	}
-	if state.Narration != nil {
-		t.Fatalf("state mutated on cap violation: %+v", state.Narration)
-	}
-}
-
-// TestWriter_Run_NarrationAtCapAccepted asserts that narration of exactly
-// narrationRuneCap runes passes validation — the cap is inclusive.
-func TestWriter_Run_NarrationAtCapAccepted(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	merged := loadMergedSample(t)
-	merged.Scenes[0].Narration = strings.Repeat("가", narrationRuneCap)
-	perAct := splitMergedByAct(t, merged)
-	gen := newActIndexedTextGenerator(perAct)
-	state := sampleWriterState()
-	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
-	if err != nil {
-		t.Fatalf("writer rejected narration at exact cap: %v", err)
+	for _, tc := range cases {
+		tc := tc
+		cap := domain.ActNarrationRuneCap[tc.actID]
+		t.Run(tc.actID+"_at_cap_passes", func(t *testing.T) {
+			testutil.BlockExternalHTTP(t)
+			merged := loadMergedSample(t)
+			merged.Scenes[tc.sceneIdx].Narration = strings.Repeat("가", cap)
+			gen := newActIndexedTextGenerator(splitMergedByAct(t, merged))
+			state := sampleWriterState()
+			if err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state); err != nil {
+				t.Fatalf("writer rejected %s narration at cap=%d: %v", tc.actID, cap, err)
+			}
+		})
+		t.Run(tc.actID+"_over_cap_rejected", func(t *testing.T) {
+			testutil.BlockExternalHTTP(t)
+			merged := loadMergedSample(t)
+			merged.Scenes[tc.sceneIdx].Narration = strings.Repeat("가", cap+1)
+			perAct := splitMergedByAct(t, merged)
+			// Re-encode the offending act with both attempts identical so the retry
+			// budget is exhausted on the same broken shape.
+			perAct[tc.actID] = []string{perAct[tc.actID][0], perAct[tc.actID][0]}
+			gen := newActIndexedTextGenerator(perAct)
+			state := sampleWriterState()
+			err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+			if !errors.Is(err, domain.ErrValidation) {
+				t.Fatalf("expected ErrValidation for %s narration over cap=%d, got %v", tc.actID, cap, err)
+			}
+			if !strings.Contains(err.Error(), "exceeds cap") {
+				t.Fatalf("expected exceeds-cap error, got %v", err)
+			}
+			if state.Narration != nil {
+				t.Fatalf("state mutated on cap violation: %+v", state.Narration)
+			}
+		})
 	}
 }
 
@@ -594,10 +600,10 @@ func sampleStructurerOutput() *domain.StructurerOutput {
 		// scene→act distribution (2/3/3/2). Writer per-act validator demands
 		// exact match, so the fixtures must agree.
 		Acts: []domain.Act{
-			{ID: domain.ActIncident, Name: "Act 1", Synopsis: "Incident", SceneBudget: 2, DurationRatio: 0.15, DramaticBeatIDs: []int{0, 4}, KeyPoints: []string{"Beat 0"}},
-			{ID: domain.ActMystery, Name: "Act 2", Synopsis: "Mystery", SceneBudget: 3, DurationRatio: 0.30, DramaticBeatIDs: []int{1}, KeyPoints: []string{"Beat 1"}},
-			{ID: domain.ActRevelation, Name: "Act 3", Synopsis: "Revelation", SceneBudget: 3, DurationRatio: 0.40, DramaticBeatIDs: []int{2}, KeyPoints: []string{"Beat 2"}},
-			{ID: domain.ActUnresolved, Name: "Act 4", Synopsis: "Unresolved", SceneBudget: 2, DurationRatio: 0.15, DramaticBeatIDs: []int{3}, KeyPoints: []string{"Beat 3"}},
+			{ID: domain.ActIncident, Name: "Act 1", Synopsis: "Incident", SceneBudget: 2, DurationRatio: 0.15, DramaticBeatIDs: []int{0, 4}, KeyPoints: []string{"Beat 0"}, Role: domain.RoleHook},
+			{ID: domain.ActMystery, Name: "Act 2", Synopsis: "Mystery", SceneBudget: 3, DurationRatio: 0.30, DramaticBeatIDs: []int{1}, KeyPoints: []string{"Beat 1"}, Role: domain.RoleTension},
+			{ID: domain.ActRevelation, Name: "Act 3", Synopsis: "Revelation", SceneBudget: 3, DurationRatio: 0.40, DramaticBeatIDs: []int{2}, KeyPoints: []string{"Beat 2"}, Role: domain.RoleReveal},
+			{ID: domain.ActUnresolved, Name: "Act 4", Synopsis: "Unresolved", SceneBudget: 2, DurationRatio: 0.15, DramaticBeatIDs: []int{3}, KeyPoints: []string{"Beat 3"}, Role: domain.RoleBridge},
 		},
 		TargetSceneCount: 10,
 		SourceVersion:    domain.SourceVersionV1,

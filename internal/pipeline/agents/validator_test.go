@@ -223,9 +223,10 @@ func sampleResearcherOutput() domain.ResearcherOutput {
 			KeyVisualMoments:       []string{"Blink", "Shadow"},
 		},
 		DramaticBeats: []domain.DramaticBeat{
-			{Index: 0, Source: "visual_moment", Description: "Blink", EmotionalTone: "mystery"},
-			{Index: 1, Source: "anomalous_property", Description: "Moves when unwatched", EmotionalTone: "horror"},
-			{Index: 2, Source: "visual_moment", Description: "Shadow", EmotionalTone: "tension"},
+			{Index: 0, Source: "visual_moment", Description: "Blink", EmotionalTone: "mystery", RoleSuggestion: domain.RoleHook},
+			{Index: 1, Source: "anomalous_property", Description: "Moves when unwatched", EmotionalTone: "horror", RoleSuggestion: domain.RoleTension},
+			{Index: 2, Source: "visual_moment", Description: "Shadow", EmotionalTone: "tension", RoleSuggestion: domain.RoleReveal},
+			{Index: 3, Source: "anomalous_property", Description: "Lingering shadow", EmotionalTone: "revelation", RoleSuggestion: domain.RoleBridge},
 		},
 		MainTextExcerpt: "Excerpt",
 		Tags:            []string{"scp"},

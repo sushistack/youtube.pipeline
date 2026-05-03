@@ -14,6 +14,7 @@ type PromptAssets struct {
 	CriticTemplate          string
 	VisualBreakdownTemplate string
 	ReviewerTemplate        string
+	RoleClassifierTemplate  string
 	FormatGuide             string
 }
 
@@ -22,6 +23,7 @@ const (
 	criticPromptPath          = "docs/prompts/scenario/critic_agent.md"
 	visualBreakdownPromptPath = "docs/prompts/scenario/03_5_visual_breakdown.md"
 	reviewerPromptPath        = "docs/prompts/scenario/04_review.md"
+	roleClassifierPromptPath  = "docs/prompts/scenario/01_5_role_classifier.md"
 	formatGuidePath           = "docs/prompts/scenario/format_guide.md"
 )
 
@@ -53,6 +55,10 @@ func LoadPromptAssets(projectRoot string, useTemplatePrompts bool) (PromptAssets
 	if err != nil {
 		return PromptAssets{}, err
 	}
+	roleClassifierTemplate, err := readAsset(projectRoot, roleClassifierPromptPath)
+	if err != nil {
+		return PromptAssets{}, err
+	}
 	formatGuide, err := readAsset(projectRoot, formatGuidePath)
 	if err != nil {
 		return PromptAssets{}, err
@@ -63,6 +69,7 @@ func LoadPromptAssets(projectRoot string, useTemplatePrompts bool) (PromptAssets
 		CriticTemplate:          criticTemplate,
 		VisualBreakdownTemplate: visualBreakdownTemplate,
 		ReviewerTemplate:        reviewerTemplate,
+		RoleClassifierTemplate:  roleClassifierTemplate,
 		FormatGuide:             formatGuide,
 	}, nil
 }
