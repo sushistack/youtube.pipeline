@@ -96,7 +96,7 @@ func writeEnvIfNotExists(path string) error {
 	}
 
 	const envTemplate = `# youtube.pipeline — API keys (secrets)
-# Fill in your API keys below.
+# Fill in your API keys below. This file is .gitignored.
 
 DASHSCOPE_API_KEY=
 DEEPSEEK_API_KEY=

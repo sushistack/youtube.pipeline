@@ -1,10 +1,5 @@
 package domain
 
-import (
-	"os"
-	"path/filepath"
-)
-
 // PipelineConfig holds non-secret pipeline configuration.
 // Secrets (API keys) are read from .env via environment variables at runtime.
 type PipelineConfig struct {
@@ -142,10 +137,13 @@ type PipelineConfig struct {
 
 // DefaultConfig returns a PipelineConfig with sensible defaults.
 // Writer and Critic use different providers out of the box (FR46).
+//
+// Output directory and DB path are project-root-relative ("./output",
+// "./pipeline.db") so a fresh `git clone && pipeline init` produces a
+// self-contained working directory. DataDir stays at the external
+// corpus mount (/mnt/data/raw) — that is host-dependent infra, not
+// project state.
 func DefaultConfig() PipelineConfig {
-	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".youtube-pipeline")
-
 	return PipelineConfig{
 		WriterModel:              "deepseek-v4-flash",
 		CriticModel:              "gemini-3.1-flash-lite-preview",
@@ -164,8 +162,8 @@ func DefaultConfig() PipelineConfig {
 		ComfyUILoRAStrengthModel: 1.0,
 		ComfyUILoRAStrengthClip:  1.0,
 		DataDir:                  "/mnt/data/raw",
-		OutputDir:                filepath.Join(base, "output"),
-		DBPath:                   filepath.Join(base, "pipeline.db"),
+		OutputDir:                "./output",
+		DBPath:                   "./pipeline.db",
 		CostCapResearch:          0.50,
 		CostCapWrite:             0.50,
 		CostCapImage:             2.00,

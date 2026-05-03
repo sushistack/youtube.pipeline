@@ -341,12 +341,14 @@ func TestLoadConfig_ArtifactRetentionDaysRejectsInvalid(t *testing.T) {
 }
 
 func TestDefaultConfigDir(t *testing.T) {
-	dir := DefaultConfigDir()
-	if dir == "" {
-		t.Error("DefaultConfigDir returned empty")
+	if got := DefaultConfigDir(); got != "." {
+		t.Errorf("DefaultConfigDir = %q, want \".\" (project-root layout)", got)
 	}
-	if filepath.Base(dir) != ".youtube-pipeline" {
-		t.Errorf("DefaultConfigDir = %q, want suffix .youtube-pipeline", dir)
+	if got := DefaultConfigPath(); filepath.Base(got) != "config.yaml" {
+		t.Errorf("DefaultConfigPath = %q, want basename config.yaml", got)
+	}
+	if got := DefaultEnvPath(); filepath.Base(got) != ".env" {
+		t.Errorf("DefaultEnvPath = %q, want basename .env", got)
 	}
 }
 

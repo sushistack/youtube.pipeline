@@ -1,9 +1,6 @@
 package domain
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestDefaultConfig_WriterNotEqualCritic(t *testing.T) {
 	cfg := DefaultConfig()
@@ -115,12 +112,12 @@ func TestDefaultConfig_ComfyUIEndpoint(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig_PathsUnderHome(t *testing.T) {
+func TestDefaultConfig_ProjectRootRelative(t *testing.T) {
 	cfg := DefaultConfig()
-	if !strings.Contains(cfg.OutputDir, ".youtube-pipeline") {
-		t.Errorf("OutputDir should be under .youtube-pipeline, got %s", cfg.OutputDir)
+	if cfg.OutputDir != "./output" {
+		t.Errorf("OutputDir = %q, want \"./output\" (project-root layout)", cfg.OutputDir)
 	}
-	if !strings.Contains(cfg.DBPath, ".youtube-pipeline") {
-		t.Errorf("DBPath should be under .youtube-pipeline, got %s", cfg.DBPath)
+	if cfg.DBPath != "./pipeline.db" {
+		t.Errorf("DBPath = %q, want \"./pipeline.db\" (project-root layout)", cfg.DBPath)
 	}
 }

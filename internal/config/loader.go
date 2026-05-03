@@ -111,18 +111,22 @@ func BindFlags(v *viper.Viper, flags *pflag.FlagSet) {
 	})
 }
 
-// DefaultConfigDir returns the default configuration directory path.
+// DefaultConfigDir returns the default configuration directory — the
+// process's current working directory. Project-root layout: config.yaml,
+// .env, pipeline.db, and output/ all live alongside the source tree so
+// `git clone` is a complete checkout and config history flows through
+// version control. Operators can still point at a different directory
+// via `--config /elsewhere/config.yaml`.
 func DefaultConfigDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".youtube-pipeline")
+	return "."
 }
 
-// DefaultConfigPath returns the default config.yaml path.
+// DefaultConfigPath returns the default config.yaml path (project root).
 func DefaultConfigPath() string {
 	return filepath.Join(DefaultConfigDir(), "config.yaml")
 }
 
-// DefaultEnvPath returns the default .env path.
+// DefaultEnvPath returns the default .env path (project root).
 func DefaultEnvPath() string {
 	return filepath.Join(DefaultConfigDir(), ".env")
 }

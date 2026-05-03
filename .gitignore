@@ -19,6 +19,9 @@ e2e/node_modules/
 *.db-wal
 *.db-shm
 
+# Pipeline run artifacts (project-root layout)
+/output/
+
 # IDE / tool
 .claude
 .agent
