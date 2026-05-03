@@ -417,6 +417,10 @@ func renderWriterActPrompt(
 	forbidden := renderForbiddenTermsSection(terms.Raw)
 	keyPoints := renderKeyPoints(spec.Act.KeyPoints)
 	sceneRange := fmt.Sprintf("%d..%d", spec.SceneNumLo, spec.SceneNumHi)
+	exemplar, ok := prompts.ExemplarsByAct[spec.Act.ID]
+	if !ok || exemplar == "" {
+		return "", fmt.Errorf("writer: act %s: no exemplar narration available: %w", spec.Act.ID, domain.ErrValidation)
+	}
 	replacer := strings.NewReplacer(
 		"{scp_id}", state.SCPID,
 		"{act_id}", spec.Act.ID,
@@ -430,6 +434,7 @@ func renderWriterActPrompt(
 		"{forbidden_terms_section}", forbidden,
 		"{glossary_section}", "",
 		"{quality_feedback}", qualityFeedback,
+		"{exemplar_scenes}", exemplar,
 	)
 	return replacer.Replace(prompts.WriterTemplate), nil
 }

@@ -16,6 +16,11 @@ type PromptAssets struct {
 	ReviewerTemplate        string
 	RoleClassifierTemplate  string
 	FormatGuide             string
+	// ExemplarsByAct holds per-act narration text from real Korean SCP
+	// YouTube exemplar files, keyed by domain act ID. Injected into the
+	// writer prompt at render time so the LLM gets in-context tone/rhythm
+	// signal from native channels (Phase 1: 2 exemplars × 4 acts).
+	ExemplarsByAct map[string]string
 }
 
 const (
@@ -26,6 +31,17 @@ const (
 	roleClassifierPromptPath  = "docs/prompts/scenario/01_5_role_classifier.md"
 	formatGuidePath           = "docs/prompts/scenario/format_guide.md"
 )
+
+// exemplarPaths lists the writer fewshot exemplar markdown files. Phase 1
+// pins two: SCP-049 (humanoid emotional, "이게 뭐냐" hook) + SCP-2790
+// (humanoid threat, mystery-question hook). Both are 하다Hada channel —
+// single-creator imitation accepted at this hypothesis-verification stage
+// (per the spec's design notes). Phase 2 may add 유령시티 / 한국 cultural
+// channels for diversity.
+var exemplarPaths = []string{
+	"docs/exemplars/scp-049.exemplar.md",
+	"docs/exemplars/scp-2790.exemplar.md",
+}
 
 // LoadPromptAssets reads every agent prompt off disk. useTemplatePrompts
 // selects the writer template source: false → legacy markdown at
@@ -64,6 +80,11 @@ func LoadPromptAssets(projectRoot string, useTemplatePrompts bool) (PromptAssets
 		return PromptAssets{}, err
 	}
 
+	exemplarsByAct, err := loadExemplars(projectRoot, exemplarPaths)
+	if err != nil {
+		return PromptAssets{}, err
+	}
+
 	return PromptAssets{
 		WriterTemplate:          writerTemplate,
 		CriticTemplate:          criticTemplate,
@@ -71,7 +92,33 @@ func LoadPromptAssets(projectRoot string, useTemplatePrompts bool) (PromptAssets
 		ReviewerTemplate:        reviewerTemplate,
 		RoleClassifierTemplate:  roleClassifierTemplate,
 		FormatGuide:             formatGuide,
+		ExemplarsByAct:          exemplarsByAct,
 	}, nil
+}
+
+// loadExemplars reads each exemplar markdown file, parses out its per-act
+// narration via parseExemplar, then merges all inputs into one per-act map
+// where each entry concatenates every exemplar's contribution. Any read or
+// parse failure surfaces as ErrValidation so server start fails fast — a
+// runtime fallback to "no exemplars" would silently regress writer output
+// quality below the level we just shipped.
+func loadExemplars(projectRoot string, paths []string) (map[string]string, error) {
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("load exemplars: no exemplar paths configured: %w", domain.ErrValidation)
+	}
+	parsed := make([]map[string]string, 0, len(paths))
+	for _, rel := range paths {
+		raw, err := readAsset(projectRoot, rel)
+		if err != nil {
+			return nil, err
+		}
+		acts, err := parseExemplar(raw)
+		if err != nil {
+			return nil, fmt.Errorf("load exemplar %s: %w", rel, err)
+		}
+		parsed = append(parsed, acts)
+	}
+	return concatExemplars(parsed)
 }
 
 func readAsset(projectRoot, rel string) (string, error) {

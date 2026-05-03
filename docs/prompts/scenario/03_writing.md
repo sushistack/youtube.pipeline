@@ -100,6 +100,12 @@ scene_budget(이 act의 씬 수)이 항상 key_points(이 act의 dramatic beats)
 - 호러 비트에서는 문장을 끊어서 드라마틱 포즈를 만드세요.
 - 문장 리듬 변화: 긴 묘사 문장과 짧은 임팩트 문장을 번갈아 사용
 
+### 참고 예시 (실제 한국 SCP narrator 톤 — `{act_id}` 동일 act)
+
+다음은 실제 한국 SCP YouTube 채널의 narration 예시입니다 (현재 작성 중인 act와 동일한 act 부분만 발췌). 이 톤·리듬·연결어를 **참고**하되 **그대로 베끼지는 마세요** — 사실은 본 SCP의 것을, 톤만 빌려 쓰세요.
+
+{exemplar_scenes}
+
 ### Act-specific guidance
 
 - **act_id = `incident` (Act 1, Hook)** — 첫 문장이 곧 Hook. 5초 안에 시청자를 잡아야 합니다.

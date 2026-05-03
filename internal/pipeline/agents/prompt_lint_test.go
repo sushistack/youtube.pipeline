@@ -35,6 +35,7 @@ var promptRendererContract = []struct {
 			"act_synopsis", "act_key_points", "prior_act_summary",
 			"scp_visual_reference", "format_guide",
 			"forbidden_terms_section", "glossary_section", "quality_feedback",
+			"exemplar_scenes",
 		},
 	},
 	{

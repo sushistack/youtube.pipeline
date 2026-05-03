@@ -204,6 +204,47 @@ func TestWriter_PerAct_PriorActSummaryInjected(t *testing.T) {
 	}
 }
 
+// TestWriter_PerAct_ExemplarInjectedPerAct asserts the per-act inject
+// guarantee from the spec's Code Map: each act's prompt contains the
+// exemplar narration for ITS OWN act and none of the others. Mechanism
+// is constructionally per-act (single map lookup), but pin it explicitly
+// so a future refactor that accidentally concatenates all acts breaks the
+// build.
+func TestWriter_PerAct_ExemplarInjectedPerAct(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	perAct := perActFixturesFromMergedSample(t)
+	gen := newActIndexedTextGenerator(perAct)
+	state := sampleWriterState()
+	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err != nil {
+		t.Fatalf("Writer: %v", err)
+	}
+	wantStubs := map[string]string{
+		domain.ActIncident:   "[exemplar incident stub]",
+		domain.ActMystery:    "[exemplar mystery stub]",
+		domain.ActRevelation: "[exemplar revelation stub]",
+		domain.ActUnresolved: "[exemplar unresolved stub]",
+	}
+	for actID, ownStub := range wantStubs {
+		prompts := gen.prompts[actID]
+		if len(prompts) == 0 {
+			t.Fatalf("no prompt captured for act %s", actID)
+		}
+		if !strings.Contains(prompts[0], ownStub) {
+			t.Fatalf("act %s prompt missing own exemplar stub %q", actID, ownStub)
+		}
+		for otherActID, otherStub := range wantStubs {
+			if otherActID == actID {
+				continue
+			}
+			if strings.Contains(prompts[0], otherStub) {
+				t.Fatalf("act %s prompt leaked other-act exemplar %q (per-act inject violated)", actID, otherStub)
+			}
+		}
+	}
+}
+
 func TestWriter_PerAct_Concurrency(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
@@ -572,14 +613,22 @@ func sampleWriterConfig() TextAgentConfig {
 // sampleWriterAssets is the per-act test template. The `[ACT:{act_id}]`
 // marker is what actIndexedTextGenerator uses to route per-act responses.
 // {prior_act_summary} is included so the prior-summary injection test can
-// assert on its presence in Acts 2/3/4 prompts.
+// assert on its presence in Acts 2/3/4 prompts. {exemplar_scenes} is
+// populated from a per-act stub so renderWriterActPrompt's exemplar guard
+// passes — assets_test.go covers the real-file load path separately.
 func sampleWriterAssets() PromptAssets {
 	return PromptAssets{
-		WriterTemplate:          "[ACT:{act_id}]\nWrite {scp_id}\nrange={scene_num_range} budget={scene_budget}\nsynopsis={act_synopsis}\nkey_points={act_key_points}\nprior={prior_act_summary}\n{scp_visual_reference}\n{format_guide}\n{forbidden_terms_section}\n{glossary_section}\n{quality_feedback}",
+		WriterTemplate:          "[ACT:{act_id}]\nWrite {scp_id}\nrange={scene_num_range} budget={scene_budget}\nsynopsis={act_synopsis}\nkey_points={act_key_points}\nprior={prior_act_summary}\n{scp_visual_reference}\n{format_guide}\n{forbidden_terms_section}\n{glossary_section}\n{quality_feedback}\nexemplar={exemplar_scenes}",
 		CriticTemplate:          "unused",
 		VisualBreakdownTemplate: "unused",
 		ReviewerTemplate:        "unused",
 		FormatGuide:             "guide",
+		ExemplarsByAct: map[string]string{
+			domain.ActIncident:   "[exemplar incident stub]",
+			domain.ActMystery:    "[exemplar mystery stub]",
+			domain.ActRevelation: "[exemplar revelation stub]",
+			domain.ActUnresolved: "[exemplar unresolved stub]",
+		},
 	}
 }
 

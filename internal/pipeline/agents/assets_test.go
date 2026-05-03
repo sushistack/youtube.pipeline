@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sushistack/youtube.pipeline/internal/domain"
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
@@ -18,6 +19,11 @@ func TestLoadPromptAssets_Happy(t *testing.T) {
 	}
 	if assets.WriterTemplate == "" || assets.CriticTemplate == "" || assets.VisualBreakdownTemplate == "" || assets.ReviewerTemplate == "" || assets.RoleClassifierTemplate == "" || assets.FormatGuide == "" {
 		t.Fatalf("expected all assets loaded, got %#v", assets)
+	}
+	for _, actID := range domain.ActOrder {
+		if assets.ExemplarsByAct[actID] == "" {
+			t.Fatalf("ExemplarsByAct[%s] is empty after LoadPromptAssets", actID)
+		}
 	}
 	if containsFold(assets.VisualBreakdownTemplate, "1:1 sentence-to-image mapping") {
 		t.Fatal("visual breakdown template still contains stale sentence-to-image mapping rule")
