@@ -9,11 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
@@ -24,7 +21,9 @@ type TextAgentConfig struct {
 	MaxTokens   int
 	Temperature float64
 	// Concurrency caps the number of in-flight LLM calls when an agent fans
-	// out work in parallel (writer per-act, visual_breakdowner per-scene).
+	// out work in parallel (today: visual_breakdowner per-scene). Writer is
+	// fully serial across acts (cascade requires each act to see its actual
+	// predecessor's narration tail), so the writer ignores this value.
 	// Zero or negative falls back to a per-agent default; sequential agents
 	// ignore it.
 	Concurrency int
@@ -58,15 +57,13 @@ type writerActSpec struct {
 }
 
 const (
-	writerDefaultConcurrency = 2
-	writerMaxConcurrency     = 3
-	writerPerActRetryBudget  = 1   // one retry per act on schema violation
-	priorActBeatRuneCap      = 240 // bound on the Act-1-tail snippet repeated into Acts 2/3/4 prompts
+	writerPerActRetryBudget = 1   // one retry per act on schema violation
+	priorActBeatRuneCap     = 240 // bound on the prior-act narration tail injected into the next act's prompt (cascade: Act N+1 sees Act N's tail)
 	// Per-act narration rune caps live in domain.ActNarrationRuneCap (see
 	// scenario.go). validateWriterActResponse looks up the cap for the
-	// current act so cold-open scenes stay tight (incident=100 enforces
+	// current act so cold-open scenes stay tight (incident=120 enforces
 	// the ≤15s rule from docs/prompts/scenario/03_writing.md) while the
-	// climax has room to breathe (revelation=320). Schema-violation
+	// climax has room to breathe (revelation=520). Schema-violation
 	// retries re-render the same prompt; persistent overruns fail fast
 	// rather than dragging cap drift downstream into TTS/image stages.
 )
@@ -117,49 +114,25 @@ func NewWriter(
 		// it; today we mirror the legacy single-call writer's behavior.
 		qualityFeedback := state.PriorCriticFeedback
 
-		// Run Act 1 (incident) serially — its output sets the tone summary
-		// injected into Acts 2/3/4 prompts and acts as a wall-clock
-		// dependency, not a parallel sibling.
-		act1Resp, act1Meta, err := runWriterAct(ctx, gen, cfg, prompts, terms, state, specs[0], "", qualityFeedback)
-		if err != nil {
-			return err
-		}
-
-		priorSummary := summarizePriorAct(act1Resp)
-
-		// Acts 2/3/4 fan out under cfg.Concurrency.
+		// Cascade: Acts 1→2→3→4 are written sequentially so each act sees
+		// its actual predecessor's narration tail. Pure parallel fan-out
+		// (the prior design) sent Act 1's tail to Acts 2/3/4 indistinctly,
+		// which left Act 3 narrating against Act 1's mood and Act 4 closing
+		// against Act 1's hook — cross-act drift the cascade fixes.
+		// Wall-clock cost: ~4× a single act's runtime, accepted in exchange
+		// for narration coherence. See spec
+		// `_bmad-output/implementation-artifacts/spec-writer-continuity-commentary-volume-bridge.md`.
 		responses := make([]writerActResponse, len(specs))
 		metas := make([]actCallMeta, len(specs))
-		responses[0] = act1Resp
-		metas[0] = act1Meta
-
-		limit := cfg.Concurrency
-		if limit <= 0 {
-			limit = writerDefaultConcurrency
-		}
-		if limit > writerMaxConcurrency {
-			limit = writerMaxConcurrency
-		}
-
-		g, gctx := errgroup.WithContext(ctx)
-		g.SetLimit(limit)
-		var mu sync.Mutex
-		for i := 1; i < len(specs); i++ {
-			i, spec := i, specs[i]
-			g.Go(func() error {
-				resp, meta, err := runWriterAct(gctx, gen, cfg, prompts, terms, state, spec, priorSummary, qualityFeedback)
-				if err != nil {
-					return err
-				}
-				mu.Lock()
-				responses[i] = resp
-				metas[i] = meta
-				mu.Unlock()
-				return nil
-			})
-		}
-		if err := g.Wait(); err != nil {
-			return err
+		priorSummary := ""
+		for i, spec := range specs {
+			resp, meta, err := runWriterAct(ctx, gen, cfg, prompts, terms, state, spec, priorSummary, qualityFeedback)
+			if err != nil {
+				return err
+			}
+			responses[i] = resp
+			metas[i] = meta
+			priorSummary = summarizePriorAct(resp)
 		}
 
 		script, err := mergeWriterActs(state, specs, responses)
@@ -459,12 +432,12 @@ func renderForbiddenTermsSection(patterns []string) string {
 	return strings.Join(lines, "\n")
 }
 
-// summarizePriorAct condenses Act 1's narration tail into a continuity
-// hint for Acts 2/3/4. Empty for Act 1 itself (no prior). Acts 2/3/4 all
-// receive the same Act-1-derived summary — see spec Design Notes.
-//
-// The last-scene narration is rune-capped so that the same summary is
-// repeated 3× across the fan-out without ballooning prompt tokens.
+// summarizePriorAct condenses an act's narration tail into a continuity
+// hint for the next act. Returns "" for an empty act (defensive — also
+// used as the seed value before Act 1 runs, which renders an empty
+// `{prior_act_summary}` in Act 1's prompt). Each act sees its actual
+// predecessor's tail in the cascade; the rune cap keeps prompt cost
+// bounded even though the summary is no longer shared across siblings.
 func summarizePriorAct(act writerActResponse) string {
 	if len(act.Scenes) == 0 {
 		return ""

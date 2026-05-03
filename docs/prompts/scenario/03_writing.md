@@ -52,11 +52,11 @@ You will write the narration for **a SINGLE ACT** of an SCP video about {scp_id}
 
 각 씬은 영상에서 **이미지 한 장**으로 표현됩니다. 따라서 한 씬의 narration은 **단일한 시각적 순간**을 묘사해야 합니다. 여러 장면 전환·여러 행동·여러 인물 동작을 한 씬에 욱여넣지 마세요.
 
-- **씬당 narration 길이 (act별 cap)**: 작가 에이전트는 act_id별로 다른 cap을 강제합니다. 자기 act의 cap을 초과하면 즉시 reject됩니다.
-  - `incident` (Act 1, cold open): **100자 이하** — ≤15초 hook 규칙. 한 장면, 한 임팩트만.
-  - `mystery` (Act 2): **220자 이하** — 일반 페이싱.
-  - `revelation` (Act 3, climax): **320자 이하** — 정체 공개는 호흡을 길게.
-  - `unresolved` (Act 4): **180자 이하** — 짧은 여운으로.
+- **씬당 narration 길이 (act별 cap)**: 작가 에이전트는 act_id별로 다른 cap을 강제합니다. 자기 act의 cap을 초과하면 즉시 reject됩니다. (golden-channel 분량 parity 기준; 영상 전체 ≥4500자 목표)
+  - `incident` (Act 1, cold open): **120자 이하** — ≤15초 hook 규칙. 한 장면, 한 임팩트만. 단정문 한 줄로 닫기.
+  - `mystery` (Act 2): **400자 이하** — ≈50초 분량, 정보 누적 + commentary mode 활용.
+  - `revelation` (Act 3, climax): **520자 이하** — 정체 공개는 호흡을 가장 길게. 감각·수치 anchor 밀도 최대.
+  - `unresolved` (Act 4): **280자 이하** — closer 한 줄 (단정문) + 짧은 여운.
 - **하나의 씬 = 하나의 무대 + 하나의 핵심 행동/순간 + 하나의 감정 비트**
 - 다음 중 하나라도 바뀌면 그건 다른 씬입니다: (a) 무대/위치, (b) 결정적 행동, (c) 시점 전환 ("그 순간", "그러더니", "그러고는" 등으로 연결되는 새 동작)
 - 한 씬 안에서는 narration이 **한 이미지가 보여줄 수 있는 범위**만 묘사. 묘사할 수 없으면 다음 씬으로 미루세요.
@@ -72,6 +72,32 @@ You will write the narration for **a SINGLE ACT** of an SCP video about {scp_id}
 > "격리실 안. 049의 가운이 갑자기 휘날립니다. 새 부리 마스크가 흔들리고, 그 긴 손가락이 허공을 휘젓습니다. 보안 요원들이 무기를 들어 올립니다. 공기가 얼어붙습니다."
 
 (약 90자, 단일 무대·단일 순간. 다음 씬에서 라벤더 제시, 그 다음 씬에서 발화로 이어집니다.)
+
+### 씬 간 연결 규칙 (Within-Act Continuity) ★ 점프컷 금지
+
+한 act 내부에서 **첫 씬 이후의 모든 씬**은 직전 씬의 **직접적 결과**여야 합니다. 시청자가 "갑자기 왜 다른 곳?"이라고 느끼면 실패입니다.
+
+각 씬 N+1은 씬 N과 다음 셋 중 **최소 하나**로 이어져야 합니다:
+
+- **(a) 물리적 연속**: 같은 무대, 같은 인물, 영상 시간상 ~30초 이내.
+- **(b) 인과적 연속**: 씬 N에서 일어난 명확한 trigger가 씬 N+1의 행동을 일으킨다.
+- **(c) 허용된 연결어**: 점프를 명시하는 다음 토큰 중 하나로 시작 — `"그리고 며칠 뒤"`, `"한편"`, `"그로부터 얼마 후"`, `"이후"`, `"다음 날"`, `"같은 시각"` (장소 전환 시, (a) 물리적 연속으로는 사용 불가).
+
+`"그리고"`, `"그러더니"`, `"그러고는"` 같은 약한 접속사는 (c)의 점프 마커로 **인정되지 않습니다** — 같은 무대 안의 흐름에만 사용하세요.
+
+**❌ 잘못된 예시 (씬 N → 씬 N+1, 점프컷)**
+
+> 씬 N: "격리실 안. 049가 손을 들어 D-9982 위로 천천히 다가갑니다."
+> 씬 N+1: "재단 본부 회의실. 박사들이 보고서를 응시합니다."
+
+(무대도, 인물도, 시간도 단절. 연결어도 없음 → jump.)
+
+**✅ 올바른 예시 (인과 연속)**
+
+> 씬 N: "049의 손가락이 D-9982의 가슴에 닿습니다. 그의 호흡이 멈춥니다."
+> 씬 N+1: "그로부터 얼마 후. 박사들이 부검대 앞에 서 있습니다. 049가 만진 부위가 검게 번져 있습니다."
+
+(`그로부터 얼마 후` = 허용된 연결어 + 직전 사건의 결과로 이어진 새 무대.)
 
 **scene_budget vs key_points 관계 — 어떻게 매핑할지:**
 
@@ -93,9 +119,29 @@ scene_budget(이 act의 씬 수)이 항상 key_points(이 act의 dramatic beats)
    - "만약 세 명 모두가 동시에 눈을 깜빡인다면... 어떻게 될까요?"
 4. **상황 가정** ("만약 당신이...") 및 **리액션 삽입** ("솔직히 이 부분 자료 읽으면서 소름 돋았습니다.") 도 자연스럽게.
 
+### Narrator Commentary Modes (mystery / revelation / unresolved 전용)
+
+`incident` (Act 1)은 hook 임팩트만 — commentary 금지. 그 외 act의 **각 씬**은 다음 네 모드 중 **최소 하나**를 narration 안에 자연스럽게 녹여 넣어야 합니다. 별도 beat을 만들지 말고 기존 beat의 narration 안에 섞으세요 (commentary 단독 beat은 image budget을 낭비합니다).
+
+1. **Explainer / 설명조** — narrator가 자기 목소리로 시청자에게 설명.
+   - 예: "이 녀석은 상식을 아득히 뛰어넘는 수준의 변칙 개체인데요."
+   - 예: "그게 어느 정도인 거하니, 이 정도였습니다."
+2. **Aside / 회유조** — 시청자의 예상되는 반응을 미리 받아치는 말투.
+   - 예: "아니 그냥 격리하면 되잖아 라고 생각하실 수도 있지만"
+   - 예: "에이 설마, 라고 하실 텐데요"
+3. **Speculation hook / 추론 유도** — mid-stream 추론 질문 (영상 끝의 closer 질문과 별개).
+   - 예: "과연 이 사람은 진짜 의사였을까요?"
+   - 예: "어떻게 이런 일이 가능한 걸까요?"
+4. **Numeric anchor / 수치 정박** — 연구 단계 fact에서 가져온 숫자/비율/횟수.
+   - 예: "신체의 87%가 부패한 상태에서도"
+   - 예: "총 17번의 시도 중 12번이"
+   - **새 숫자를 지어내지 마세요** — `act_key_points`에 들어 있는 fact만 사용.
+
+mode 사용 분포 목표 (이 act 기준): 이 act 안에서 각 mode를 최소 1회 이상 고르게 분포시키세요. 한 씬 안에서 두 mode를 동시에 쓰는 것도 가능 (예: explainer + numeric anchor).
+
 ### 문장 & 페이싱 규칙
 - 문장 길이: 15~25자 (TTS 최적화용 — 짧고 펀치있게)
-- **씬당 narration 총 길이는 act별 cap을 따릅니다** (위 "씬 단위 규칙"의 incident=100 / mystery=220 / revelation=320 / unresolved=180)
+- **씬당 narration 총 길이는 act별 cap을 따릅니다** (위 "씬 단위 규칙"의 incident=120 / mystery=400 / revelation=520 / unresolved=280)
 - 자연스러운 연결어 사용: 그때, 이후, 하지만, 게다가, 근데, 그런데 말이죠
 - 호러 비트에서는 문장을 끊어서 드라마틱 포즈를 만드세요.
 - 문장 리듬 변화: 긴 묘사 문장과 짧은 임팩트 문장을 번갈아 사용
@@ -116,13 +162,19 @@ scene_budget(이 act의 씬 수)이 항상 key_points(이 act의 dramatic beats)
   - ✅ "14명. 단 하룻밤에 목이 꺾인 채 발견된 재단 인원 수입니다."
 - **act_id = `mystery` (Act 2)** — 미스터리 누적. "이게 뭔데?" 궁금증 유지. 정체는 아직 밝히지 마세요.
 - **act_id = `revelation` (Act 3)** — 그제서야 개체의 정체와 능력을 밝히세요. 공포 극대화.
-- **act_id = `unresolved` (Act 4)** — 미해결 질문으로 여운. 새로운 사건을 시작하지 마세요.
+- **act_id = `unresolved` (Act 4)** — 미해결의 여운. 새로운 사건을 시작하지 마세요.
+  - **Closer discipline (마지막 씬)**: 영상 전체의 마지막 씬은 **단정문**으로 닫습니다. 수사 의문문(`"~일까요?"`, `"~인 걸까요?"`)으로 끝내지 마세요 — 시청자에게 "끝났다"는 확정 신호를 줘야 합니다.
+    - ❌ "이게 치료일까요, 저주일까요?"
+    - ✅ "그날 049의 펜은 멈추지 않았습니다."
+    - ✅ "그리고 그 부검대는 지금도 비어 있지 않습니다."
+  - mid-stream의 speculation hook 질문은 권장 (Commentary Modes 참조). 마지막 씬에만 적용되는 규칙.
 
 ### 콘텐츠 규칙
 1. 각 씬의 나레이션은 위 act synopsis와 key_points에 맞춰 작성
 2. 팩트를 정확히 전달하되, **딱딱한 설명이 아닌 이야기로 전달**
 3. 원문에 없는 사실을 지어내지 마세요 — 단, 분위기를 위한 감각적 묘사는 자유롭게 추가
 4. 개체 묘사 시 Visual Identity Profile을 그대로 사용
+5. **수치 fact 의무 (mystery / revelation / unresolved)**: 비-`incident` act는 **최소 2회**, `act_key_points`에 들어 있는 숫자/비율/횟수를 narration에 surface해야 합니다. Numeric anchor commentary mode와 짝을 이룹니다. fact가 key_points에 없으면 surface하지 마세요 (지어내기 금지).
 
 {quality_feedback}
 
@@ -177,7 +229,11 @@ Return JSON only. Do not wrap the JSON in markdown fences.
 - [ ] Every scene's `scene_num` is inside `{scene_num_range}`, unique, ascending
 - [ ] Every scene's `act_id` equals `{act_id}`
 - [ ] `characters_present`, `location`, `color_palette`, `atmosphere` filled per scene
-- [ ] **모든 씬의 `narration`은 자기 act의 cap 이하** (incident=100 / mystery=220 / revelation=320 / unresolved=180). 초과한 씬은 가장 시각적인 한 비트만 남기고 나머지는 잘라내세요.
+- [ ] **모든 씬의 `narration`은 자기 act의 cap 이하** (incident=120 / mystery=400 / revelation=520 / unresolved=280). 초과한 씬은 가장 시각적인 한 비트만 남기고 나머지는 잘라내세요.
 - [ ] **모든 씬의 `narration`은 단일 시각적 순간을 묘사** — 한 씬 안에 무대 전환·새 인물 등장·여러 결정적 행동이 동시에 들어 있으면 한 비트만 남기고 나머지는 버리세요.
+- [ ] **씬 N+1은 씬 N과 (a) 무대 연속, (b) 인과 연속, (c) 허용된 연결어 중 하나로 이어진다** — jump-cut 금지. 연결어 미사용 + 무대/인물/시간 단절이면 fail.
+- [ ] **`unresolved` act의 마지막 씬은 단정문으로 끝난다** — 수사 의문문(`"~일까요?"`)으로 닫지 말 것.
+- [ ] **`mystery`/`revelation`/`unresolved` 각 씬은 commentary 모드 (explainer / aside / speculation hook / numeric anchor) 중 1개 이상 포함** — `incident`는 예외 (commentary 금지).
+- [ ] **비-`incident` act 전체에 걸쳐 숫자/비율 fact 2회 이상 surface** — `act_key_points`에 있는 수치만 사용 (지어내기 금지).
 
 If ANY check fails, fix the offending field before outputting.

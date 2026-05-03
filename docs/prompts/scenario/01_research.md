@@ -58,7 +58,21 @@ Rules for beat granularity:
 - Ambient sounds or environmental factors
 - Overall mood and horror subgenre
 
-### 5. Narrative Hooks (CRITICAL for YouTube retention)
+### 5. Numeric Facts (REQUIRED — narrator commentary fuel)
+
+Extract **at least 6** numbers / ratios / counts / dates from the source document. These feed the writer's numeric-anchor commentary mode (e.g. "신체의 87%가 부패한 상태에서도", "총 17번의 시도 중 12번이"). Without dense numeric anchors, narration drifts into vague description and loses the golden-channel feel.
+
+Format each entry as:
+
+- `<key>: <fact text in Korean>` (source: <which part of the source — incident log, containment proc, addendum, etc.>)
+
+Rules:
+- Numbers must come **directly** from the source document. Do NOT estimate, round, or fabricate. If the source says "approximately", preserve that hedge.
+- Prefer concrete countables (incidents, casualties, percentages, durations, distances, dates) over derived figures.
+- Each fact must be self-contained — narrator must be able to drop it into a sentence without further context.
+- If the source genuinely lacks 6 numerics, list as many as exist and note the shortfall explicitly. Do not pad with vague figures.
+
+### 6. Narrative Hooks (CRITICAL for YouTube retention)
 - **Opening hook** (first 5 seconds): Write 3 candidate hooks using different hook types (Question, Shock, Mystery, Contrast). Each must be a single punchy Korean sentence that grabs attention WITHOUT mentioning SCP classification.
 - **Mid-video twist**: The moment where the viewer's understanding of this SCP fundamentally changes
 - **Closing mystery**: An unresolved element that leaves viewers with lingering unease

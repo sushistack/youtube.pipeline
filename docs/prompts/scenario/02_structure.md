@@ -57,5 +57,6 @@ For each scene, provide the following. Scene count should match the research sta
 6. The last scene must leave an unresolved mystery
 7. **Adjacent scenes MUST have different emotional beats** — never repeat the same mood consecutively (e.g., "tension, tension" is forbidden; "tension, mystery" is correct)
 8. **Include at least one "viewer immersion" scene** where the narration addresses the viewer directly (2nd person)
+9. **Numeric fact propagation (REQUIRED)**: each non-`incident` act (`mystery` / `revelation` / `unresolved`) must surface **at least 2 numeric/ratio/count facts** from the research stage's "Numeric Facts" section. Embed them inside the scenes' `key_points` array as natural-language entries (Korean), not as raw `<key>` lookups — the writer reads `key_points` directly and uses them for the numeric-anchor commentary mode. Example `key_points` entry: `"부검 결과 신체의 87%가 부패한 상태였다"`. The `incident` (Act 1) act stays pure-impact and does NOT need numeric surfacing.
 
 Output as a JSON array of scene objects.

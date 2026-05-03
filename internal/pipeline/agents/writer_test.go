@@ -167,6 +167,11 @@ func TestWriter_PerAct_RetriesOnlyFailedAct(t *testing.T) {
 	}
 }
 
+// TestWriter_PerAct_PriorActSummaryInjected pins the Act 1 → Act 2 step
+// of the cascade: Act 2's prompt MUST contain Act 1's last-scene narration
+// tail, and Act 1's prompt MUST be empty of prior-summary content.
+// Acts 3 and 4 are covered by TestWriter_PerAct_PriorActSummary_Cascades
+// — they receive their own predecessor's tail, NOT Act 1's.
 func TestWriter_PerAct_PriorActSummaryInjected(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
@@ -177,31 +182,86 @@ func TestWriter_PerAct_PriorActSummaryInjected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Writer: %v", err)
 	}
-	// Pull the sample's Act 1 last scene narration and assert it appears in
-	// every Acts 2/3/4 prompt.
 	merged := loadMergedSample(t)
-	var act1Last domain.NarrationScene
-	for _, scene := range merged.Scenes {
-		if scene.ActID == domain.ActIncident {
-			act1Last = scene
-		}
-	}
+	act1Last := lastSceneOfAct(merged, domain.ActIncident)
 	if act1Last.Narration == "" {
 		t.Fatal("sample fixture has no incident scene; cannot test prior-summary injection")
 	}
-	for _, id := range []string{domain.ActMystery, domain.ActRevelation, domain.ActUnresolved} {
-		prompts := gen.prompts[id]
-		if len(prompts) == 0 {
-			t.Fatalf("no prompt captured for act %s", id)
-		}
-		if !strings.Contains(prompts[0], strings.TrimSpace(act1Last.Narration)) {
-			t.Fatalf("act %s prompt missing prior-act summary; want substring %q", id, act1Last.Narration)
-		}
+	mysteryPrompts := gen.prompts[domain.ActMystery]
+	if len(mysteryPrompts) == 0 {
+		t.Fatalf("no prompt captured for act %s", domain.ActMystery)
 	}
-	// Act 1 prompt should NOT contain the prior-summary phrase.
+	if !strings.Contains(mysteryPrompts[0], strings.TrimSpace(act1Last.Narration)) {
+		t.Fatalf("act mystery prompt missing Act 1 tail; want substring %q", act1Last.Narration)
+	}
 	if got := gen.prompts[domain.ActIncident]; len(got) > 0 && strings.Contains(got[0], "Previous act ended") {
 		t.Fatalf("act 1 prompt unexpectedly contains prior-summary phrase: %s", got[0])
 	}
+}
+
+// TestWriter_PerAct_PriorActSummary_Cascades pins the cascade chain
+// beyond Act 1 → Act 2: Act 3's prompt must contain Act 2's last-scene
+// narration tail (NOT Act 1's), and Act 4's prompt must contain Act 3's
+// last-scene narration tail. This is the core invariant of the
+// cross-act-bridge fix — without it, Act 4 would close the video
+// against Act 1's hook mood, which is what the prior fan-out design did.
+func TestWriter_PerAct_PriorActSummary_Cascades(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	perAct := perActFixturesFromMergedSample(t)
+	gen := newActIndexedTextGenerator(perAct)
+	state := sampleWriterState()
+	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err != nil {
+		t.Fatalf("Writer: %v", err)
+	}
+	merged := loadMergedSample(t)
+	cases := []struct {
+		actID, priorActID string
+	}{
+		{domain.ActRevelation, domain.ActMystery},
+		{domain.ActUnresolved, domain.ActRevelation},
+	}
+	for _, tc := range cases {
+		priorTail := lastSceneOfAct(merged, tc.priorActID)
+		if priorTail.Narration == "" {
+			t.Fatalf("sample fixture has no %s scene", tc.priorActID)
+		}
+		prompts := gen.prompts[tc.actID]
+		if len(prompts) == 0 {
+			t.Fatalf("no prompt captured for act %s", tc.actID)
+		}
+		if !strings.Contains(prompts[0], strings.TrimSpace(priorTail.Narration)) {
+			t.Fatalf("act %s prompt missing %s tail; want substring %q",
+				tc.actID, tc.priorActID, priorTail.Narration)
+		}
+		// Cross-check: Act N must NOT contain Act 1's tail (the old
+		// fan-out failure mode). Escape hatch only for the degenerate case
+		// where Act 1 and the prior act have identical narration — if the
+		// fixture is distinct (which it must be by construction), this
+		// check is always active.
+		act1Tail := strings.TrimSpace(lastSceneOfAct(merged, domain.ActIncident).Narration)
+		priorTailText := strings.TrimSpace(priorTail.Narration)
+		if act1Tail != "" && act1Tail != priorTailText {
+			if strings.Contains(prompts[0], act1Tail) {
+				t.Fatalf("act %s prompt contains Act 1 tail %q — cascade regressed to fan-out behavior",
+					tc.actID, act1Tail)
+			}
+		}
+	}
+}
+
+// lastSceneOfAct returns the highest-scene_num NarrationScene for actID
+// from the merged sample, or zero-value if absent. Used by cascade tests
+// to find each act's tail-of-act narration.
+func lastSceneOfAct(script domain.NarrationScript, actID string) domain.NarrationScene {
+	var last domain.NarrationScene
+	for _, scene := range script.Scenes {
+		if scene.ActID == actID {
+			last = scene
+		}
+	}
+	return last
 }
 
 // TestWriter_PerAct_ExemplarInjectedPerAct asserts the per-act inject
@@ -245,53 +305,88 @@ func TestWriter_PerAct_ExemplarInjectedPerAct(t *testing.T) {
 	}
 }
 
-func TestWriter_PerAct_Concurrency(t *testing.T) {
+// TestWriter_PerAct_Cascade_IsSerial pins the cascade serialization
+// invariant: each act must finish before the next starts (max 1 in-flight).
+// Replaces the prior fan-out concurrency tests — writer no longer runs
+// Acts 2/3/4 in parallel because each act needs its actual predecessor's
+// narration tail. cfg.Concurrency is now ignored by the writer.
+func TestWriter_PerAct_Cascade_IsSerial(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	perAct := perActFixturesFromMergedSample(t)
 	gen := newActIndexedTextGenerator(perAct)
-	gen.sleep = 30 * time.Millisecond
+	gen.sleep = 20 * time.Millisecond // gives in-flight overlap a chance to be observed if cascade ever regresses
 
 	cfg := sampleWriterConfig()
-	cfg.Concurrency = 2
+	cfg.Concurrency = 4 // intentionally permissive: cascade must be serial regardless of cfg
 	state := sampleWriterState()
 	writer := NewWriter(gen, cfg, sampleWriterAssets(), mustValidator(t, "writer_output.schema.json"), mustTerms(t))
 	if err := writer(context.Background(), state); err != nil {
 		t.Fatalf("Writer: %v", err)
 	}
-	if got := gen.maxInFlight.Load(); got > 2 {
-		t.Fatalf("max in-flight = %d, want <= 2 (cfg.Concurrency=2)", got)
+	// assert all 4 acts ran — without this, maxInFlight=1 is trivially satisfied
+	// by a 1-act run and the serial claim means nothing.
+	totalCalls := 0
+	for _, n := range gen.calls {
+		totalCalls += n
 	}
-	// Acts 2/3/4 are fan-out, so we should have observed >=2 to confirm they truly ran in parallel.
-	if got := gen.maxInFlight.Load(); got < 2 {
-		t.Fatalf("max in-flight = %d; expected acts 2/3/4 to overlap (>=2)", got)
+	if totalCalls != 4 {
+		t.Fatalf("expected exactly 4 act calls (one per act), got %d", totalCalls)
+	}
+	if got := gen.maxInFlight.Load(); got != 1 {
+		t.Fatalf("max in-flight = %d, want 1 (cascade is fully serial across acts)", got)
 	}
 }
 
-func TestWriter_PerAct_DefaultConcurrency(t *testing.T) {
+// TestWriter_PerAct_Cascade_FailsFastOnAct2 is the cascade-edge case
+// that the prior fan-out design hid: when Act 2 exhausts its retry budget,
+// Acts 3 and 4 must NEVER be invoked because their prompts depend on
+// Act 2's tail. Companion to TestWriter_Run_SchemaViolation (which covers
+// Act 1 hard-failure short-circuit). Together they pin: "any earlier act
+// failure halts the cascade with no further LLM calls."
+func TestWriter_PerAct_Cascade_FailsFastOnAct2(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	perAct := perActFixturesFromMergedSample(t)
-	gen := newActIndexedTextGenerator(perAct)
-	gen.sleep = 30 * time.Millisecond
+	bad := mustEncodeActResponse(t, domain.ActMystery, []domain.NarrationScene{
+		fillRequiredSceneFields(domain.NarrationScene{SceneNum: 3, ActID: domain.ActMystery, Narration: "broken"}),
+	})
+	perAct[domain.ActMystery] = []string{bad, bad}
 
-	cfg := sampleWriterConfig() // Concurrency unset → falls back to writerDefaultConcurrency=2.
+	gen := newActIndexedTextGenerator(perAct)
 	state := sampleWriterState()
-	writer := NewWriter(gen, cfg, sampleWriterAssets(), mustValidator(t, "writer_output.schema.json"), mustTerms(t))
-	if err := writer(context.Background(), state); err != nil {
-		t.Fatalf("Writer: %v", err)
+	err := newWriterForTest(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation from Act 2 retry-exhaustion, got %v", err)
 	}
-	if got := gen.maxInFlight.Load(); got > writerDefaultConcurrency {
-		t.Fatalf("max in-flight = %d, want <= %d (default fallback)", got, writerDefaultConcurrency)
+	if gen.calls[domain.ActIncident] != 1 {
+		t.Fatalf("act incident call count = %d, want 1", gen.calls[domain.ActIncident])
+	}
+	if gen.calls[domain.ActMystery] != 2 {
+		t.Fatalf("act mystery call count = %d, want 2 (initial + retry)", gen.calls[domain.ActMystery])
+	}
+	for _, id := range []string{domain.ActRevelation, domain.ActUnresolved} {
+		if gen.calls[id] != 0 {
+			t.Fatalf("act %s called %d times after Act 2 cascade failure; want 0", id, gen.calls[id])
+		}
+	}
+	if state.Narration != nil {
+		t.Fatalf("state mutated on Act 2 cascade failure: %+v", state.Narration)
 	}
 }
 
-func TestWriter_PerAct_ContextCanceledMidFanout(t *testing.T) {
+// TestWriter_PerAct_ContextCanceledMidCascade verifies that ctx
+// cancellation observed between cascade iterations short-circuits the
+// remaining acts. The cancel fires at 20ms while Act 1 is in its 80ms
+// gen-sleep (gen ignores ctx — sleep completes); when Act 2 enters
+// runWithRetry, the helper's per-attempt ctx.Err() check returns
+// context.Canceled before any further LLM call.
+func TestWriter_PerAct_ContextCanceledMidCascade(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	perAct := perActFixturesFromMergedSample(t)
 	gen := newActIndexedTextGenerator(perAct)
-	gen.sleep = 80 * time.Millisecond // give the canceller time to fire while Acts 2/3/4 are mid-flight
+	gen.sleep = 80 * time.Millisecond
 
 	state := sampleWriterState()
 	sentinel := &domain.NarrationScript{SCPID: "SENTINEL"}
@@ -299,7 +394,7 @@ func TestWriter_PerAct_ContextCanceledMidFanout(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		time.Sleep(20 * time.Millisecond) // after Act 1 completes, before Acts 2/3/4 finish
+		time.Sleep(20 * time.Millisecond)
 		cancel()
 	}()
 	defer cancel()
@@ -314,6 +409,13 @@ func TestWriter_PerAct_ContextCanceledMidFanout(t *testing.T) {
 	}
 	if state.Narration != sentinel {
 		t.Fatalf("state.Narration mutated on ctx cancel: %#v", state.Narration)
+	}
+	// Acts 3 and 4 must not have been invoked — Act 2 is where ctx.Err
+	// fires.
+	for _, id := range []string{domain.ActRevelation, domain.ActUnresolved} {
+		if gen.calls[id] != 0 {
+			t.Fatalf("act %s called %d times after mid-cascade cancel; want 0", id, gen.calls[id])
+		}
 	}
 }
 

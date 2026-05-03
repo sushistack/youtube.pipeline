@@ -166,16 +166,19 @@ var ActScenesPerBeat = map[string]int{
 }
 
 // ActNarrationRuneCap is the per-act inclusive cap on a single scene's
-// narration length, in runes. Replaces the global `narrationRuneCap = 220`
-// constant.
+// narration length, in runes. Numbers are tuned for voice-over density
+// parity with golden-channel exemplars (`docs/exemplars/scp-049-hada.txt`),
+// which run ~5500 KR chars per ~10-min video. At the target 18-24 scene
+// budget, these caps support ≥4500 chars total while keeping `incident`
+// hooks tight (e.g. 3×120 + 5×400 + 7×520 + 3×280 = 6840 at 18 scenes).
 //
-//	incident   = 100 (≤15s cold-open rule from docs/prompts/scenario/03_writing.md)
-//	mystery    = 220 (unchanged from the legacy global cap)
-//	revelation = 320 (lets the climax breathe — longer, more sensory)
-//	unresolved = 180 (brevity for the bridge)
+//	incident   = 120 (≤15s cold-open rule still applies; 20-rune headroom over the legacy 100 lets the hook close on a definite-state line)
+//	mystery    = 400 (≈50s @ 7-8 KR chars/sec — fits the 35-50s atmospheric scene target)
+//	revelation = 520 (climax needs the most room for sensory + numeric anchors)
+//	unresolved = 280 (closer + optional definite-state line; widened to fit the new closer-discipline rule)
 var ActNarrationRuneCap = map[string]int{
-	ActIncident:   100,
-	ActMystery:    220,
-	ActRevelation: 320,
-	ActUnresolved: 180,
+	ActIncident:   120,
+	ActMystery:    400,
+	ActRevelation: 520,
+	ActUnresolved: 280,
 }
