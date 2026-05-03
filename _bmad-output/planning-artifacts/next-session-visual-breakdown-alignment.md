@@ -127,3 +127,33 @@ plan owns the decision.)
 - ComfyUI / dashscope / image client integration — pure prompt-text changes only
 - Adding new agents — reuse the existing `visual_breakdowner`
 - LLM provider / model — stays on whatever the prior cycle settled
+
+---
+
+## Known fragility surfaced 2026-05-03 by structure-narrative-roles smoke run
+
+While dogfooding the v1.2-roles release on SCP-049, the `visual_breakdowner`
+hard-failed on `scene 6 shot 1 invalid transition ""` (LLM omitted the
+`transition` field). Root causes worth folding into THIS cycle's territory
+since you'll be rewriting the prompt and the validator anyway:
+
+1. **Zero retry budget on the visual_breakdowner.** Unlike the writer (1 retry
+   per act on schema violation), `visual_breakdowner.go:103-111` is single-shot
+   per scene. One bad LLM response = full stage failure, no second chance.
+   Add a per-scene retry mirror of the writer's `writerPerActRetryBudget=1`
+   pattern.
+2. **`transition` field is enum-strict but prompt-soft.** The prompt mentions
+   the allowed enum once on `03_5_visual_breakdown.md:53` and shows it once
+   on line 43; the LLM (especially Korean prompts) sometimes drops the field
+   entirely. Hardening options: (a) decode-time fallback to `ken_burns` on
+   empty/missing, (b) retry on enum violation, (c) tighten the prompt to
+   make the field non-skippable. Pick during plan step. Prompt rewrite is
+   already in scope so (c) costs ~nothing.
+3. **No test exercises empty/missing transition** — every existing test in
+   `visual_breakdowner_test.go` injects a valid `Transition` value. Add a
+   negative test as part of the rewrite so the regression doesn't recur.
+
+These are pre-existing — NOT caused by structure-narrative-roles — but the
+narration-shape changes from v1.2-roles increased the surface area enough
+to expose them on the first dogfood. Fix here so the next dogfood run
+doesn't re-hit this on a different scene.
