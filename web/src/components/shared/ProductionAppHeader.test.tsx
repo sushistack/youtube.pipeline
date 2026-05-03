@@ -1,10 +1,24 @@
 import '@testing-library/jest-dom'
-import { screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import { ProductionAppHeader } from './ProductionAppHeader'
+import { cancelRun } from '../../lib/apiClient'
 import { renderWithProviders } from '../../test/renderWithProviders'
 import { useUIStore } from '../../stores/useUIStore'
+
+vi.mock('../../lib/apiClient', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/apiClient')>(
+    '../../lib/apiClient',
+  )
+  return {
+    ...actual,
+    cancelRun: vi.fn(),
+    rewindRun: vi.fn(),
+  }
+})
+
+const mocked_cancel_run = vi.mocked(cancelRun)
 
 function render(ui: Parameters<typeof renderWithProviders>[0]) {
   return renderWithProviders(ui)
@@ -28,6 +42,7 @@ const base_run = {
 describe('ProductionAppHeader', () => {
   beforeEach(() => {
     useUIStore.getState().set_stage_stepper_expanded(false)
+    mocked_cancel_run.mockReset()
   })
 
   afterEach(() => {
@@ -98,6 +113,52 @@ describe('ProductionAppHeader', () => {
     expect(
       screen.getByRole('button', { name: /collapse pipeline view/i }),
     ).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('renders a Cancel button for running runs and calls cancelRun after confirm', async () => {
+    const user = userEvent.setup()
+    const confirm_spy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mocked_cancel_run.mockResolvedValueOnce({ run: { ...base_run, status: 'cancelled' } } as never)
+
+    render(
+      <ProductionAppHeader run={{ ...base_run, status: 'running' }} />,
+    )
+
+    const cancel_btn = screen.getByRole('button', { name: /cancel run/i })
+    await user.click(cancel_btn)
+
+    expect(confirm_spy).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(mocked_cancel_run).toHaveBeenCalledWith(base_run.id)
+    })
+
+    confirm_spy.mockRestore()
+  })
+
+  it('does not call cancelRun when the operator cancels the confirm dialog', async () => {
+    const user = userEvent.setup()
+    const confirm_spy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    render(
+      <ProductionAppHeader run={{ ...base_run, status: 'running' }} />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /cancel run/i }))
+
+    expect(confirm_spy).toHaveBeenCalledTimes(1)
+    expect(mocked_cancel_run).not.toHaveBeenCalled()
+
+    confirm_spy.mockRestore()
+  })
+
+  it('does not render the Cancel button for terminal-state runs', () => {
+    render(
+      <ProductionAppHeader run={{ ...base_run, status: 'completed' }} />,
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /cancel run/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('flows decisions_summary into the expanded stepper for the batch_review counter', () => {

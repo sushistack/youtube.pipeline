@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, CircleStop } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { RunStatusPayload, RunSummary } from '../../lib/formatters'
 import { getRunSequence } from '../../lib/formatters'
-import { rewindRun } from '../../lib/apiClient'
+import { cancelRun, rewindRun } from '../../lib/apiClient'
 import { queryKeys } from '../../lib/queryKeys'
 import { useUIStore } from '../../stores/useUIStore'
 import { StageStepper, type RewindNodeKey } from './StageStepper'
@@ -63,6 +63,35 @@ export function ProductionAppHeader({
       })
     },
   })
+  const cancel_mutation = useMutation({
+    mutationFn: (run_id: string) => cancelRun(run_id),
+    onSuccess: (_data, run_id) => {
+      void query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
+      void query_client.invalidateQueries({
+        queryKey: queryKeys.runs.status(run_id),
+      })
+    },
+  })
+  const is_cancellable =
+    run != null && (run.status === 'running' || run.status === 'waiting')
+
+  function handleCancel() {
+    if (!run) {
+      return
+    }
+    if (cancel_mutation.isPending) {
+      return
+    }
+    const ok = window.confirm(
+      `Cancel ${identity ?? run.id}?\n\n` +
+        `파이프라인이 중단되고 run 상태가 cancelled로 표시됩니다. ` +
+        `이후 Restart 버튼으로 같은 stage부터 재시작할 수 있습니다.`,
+    )
+    if (!ok) {
+      return
+    }
+    cancel_mutation.mutate(run.id)
+  }
 
   function handleRewind(target: RewindNodeKey) {
     if (!run) {
@@ -113,6 +142,19 @@ export function ProductionAppHeader({
             />
           </div>
           <div className="production-app-header__actions">
+            {is_cancellable ? (
+              <button
+                type="button"
+                className="production-app-header__cancel"
+                aria-label={
+                  cancel_mutation.isPending ? 'Cancelling run…' : 'Cancel run'
+                }
+                disabled={cancel_mutation.isPending}
+                onClick={handleCancel}
+              >
+                <CircleStop aria-hidden="true" size={18} />
+              </button>
+            ) : null}
             <button
               type="button"
               className="production-app-header__toggle"
@@ -136,6 +178,18 @@ export function ProductionAppHeader({
               Rewind failed:{' '}
               {rewind_mutation.error instanceof Error
                 ? rewind_mutation.error.message
+                : 'Unknown error — refresh and retry.'}
+            </div>
+          ) : null}
+          {cancel_mutation.isError ? (
+            <div
+              className="production-app-header__rewind-error"
+              role="status"
+              aria-live="polite"
+            >
+              Cancel failed:{' '}
+              {cancel_mutation.error instanceof Error
+                ? cancel_mutation.error.message
                 : 'Unknown error — refresh and retry.'}
             </div>
           ) : null}
