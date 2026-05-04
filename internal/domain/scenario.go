@@ -170,14 +170,16 @@ var ActScenesPerBeat = map[string]int{
 // so the v1 per-scene caps are rescaled ~4× to align with hada-golden density
 // (`docs/exemplars/scp-049-hada.txt`, ~5500 KR chars per ~10-min video).
 //
-// Sum at the cap floors: 480+1600+2080+1120 = 5280 runes — fits the ≥4500
-// Lever P parity floor with headroom, and stays under hada's ~5500 ceiling
-// so the writer doesn't bloat past golden density. Per-act ratios mirror v1:
-// incident is the tightest (cold-open hook still wants compression), mystery
-// and revelation carry the bulk of the explanation arc, unresolved leaves room
-// for the closer with the relaxed CTA + 의문문 rule.
+// Sum: 720+1600+2080+1120 = 5520 runes — fits the ≥4500 Lever P parity floor
+// with headroom and stays near hada's ~5500 ceiling. Per-act ratios mirror v1
+// EXCEPT for incident, which was raised after the dogfood-observed overshoot
+// pattern (LLM cannot count Korean runes precisely; the original v1×4 → 480
+// gave only +45% headroom over hada's ~330-rune Act 1, the tightest band in
+// the set, and the writer chronically retried into rejection). The other
+// three caps already sit at +73–129% over their hada-act baselines, so
+// overshoot has not been observed there.
 //
-//	incident   =  480 (~4× v1's 120 — opening discovery section)
+//	incident   =  720 (raised from 480; hada Act 1 ~330, +118% headroom)
 //	mystery    = 1600 (~4× v1's 400 — abilities/protocol setup)
 //	revelation = 2080 (~4× v1's 520 — climax with sensory + numeric anchors)
 //	unresolved = 1120 (~4× v1's 280 — closer + reflective questions + CTA)
@@ -185,8 +187,26 @@ var ActScenesPerBeat = map[string]int{
 // Stage-2 beat segmentation (8–10 beats/act) operates within these monologue
 // boundaries; it neither rescales nor enforces this cap.
 var ActMonologueRuneCap = map[string]int{
-	ActIncident:   480,
+	ActIncident:   720,
 	ActMystery:    1600,
 	ActRevelation: 2080,
 	ActUnresolved: 1120,
+}
+
+// ActMonologueRuneFloor is the per-act inclusive lower bound on the act's
+// continuous monologue length, in runes. Without a floor the writer LLM
+// chronically under-utilizes the cap (observed dogfood: 37% of cap on
+// average, revelation as low as 21%), producing monologues 38% shorter than
+// hada-golden density. Floors are set near the per-act hada baseline so the
+// writer cannot drift back to under-utilization, while leaving pacing
+// latitude. For incident the floor stays at 288 (just below hada Act 1's
+// ~330 runes) even though the cap was widened to 720 — the wider band gives
+// retry headroom without forcing length above golden density. Validation
+// rejects below floor and burns the writer retry budget if the LLM does not
+// expand.
+var ActMonologueRuneFloor = map[string]int{
+	ActIncident:   288,  // hada-realistic; cap=720 gives wide band for retries
+	ActMystery:    960,  // 1600 × 0.6
+	ActRevelation: 1248, // 2080 × 0.6
+	ActUnresolved: 672,  // 1120 × 0.6
 }

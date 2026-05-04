@@ -344,9 +344,18 @@ func validateWriterMonologueResponse(spec writerActSpec, decoded writerMonologue
 	if !ok {
 		return fmt.Errorf("writer: act %s monologue: no monologue cap configured: %w", spec.Act.ID, domain.ErrValidation)
 	}
-	if n := utf8.RuneCountInString(decoded.Monologue); n > cap {
+	floor, ok := domain.ActMonologueRuneFloor[spec.Act.ID]
+	if !ok {
+		return fmt.Errorf("writer: act %s monologue: no monologue floor configured: %w", spec.Act.ID, domain.ErrValidation)
+	}
+	n := utf8.RuneCountInString(decoded.Monologue)
+	if n > cap {
 		return fmt.Errorf("writer: act %s monologue: rune length=%d exceeds cap=%d: %w",
 			spec.Act.ID, n, cap, domain.ErrValidation)
+	}
+	if n < floor {
+		return fmt.Errorf("writer: act %s monologue: rune length=%d below floor=%d (cap=%d) — expand with anchors/sensory/narrator commentary, do not pad: %w",
+			spec.Act.ID, n, floor, cap, domain.ErrValidation)
 	}
 	// Sentence-terminal floor: stage 2 must split this monologue into
 	// beatCountMin..beatCountMax beats with each beat ending on a sentence
@@ -741,6 +750,10 @@ func renderWriterActPrompt(
 	if !ok {
 		return "", fmt.Errorf("writer: act %s: no monologue cap configured: %w", spec.Act.ID, domain.ErrValidation)
 	}
+	floor, ok := domain.ActMonologueRuneFloor[spec.Act.ID]
+	if !ok {
+		return "", fmt.Errorf("writer: act %s: no monologue floor configured: %w", spec.Act.ID, domain.ErrValidation)
+	}
 	priorBlock := priorTail
 	if priorBlock == "" {
 		priorBlock = "(이 act 가 첫 act 입니다 — origin-first 또는 incident-first 자유롭게 선택하세요.)"
@@ -749,6 +762,7 @@ func renderWriterActPrompt(
 		"{scp_id}", state.SCPID,
 		"{act_id}", spec.Act.ID,
 		"{monologue_rune_cap}", strconv.Itoa(cap),
+		"{monologue_rune_floor}", strconv.Itoa(floor),
 		"{act_synopsis}", spec.Act.Synopsis,
 		"{act_key_points}", keyPoints,
 		"{prior_act_summary}", priorBlock,

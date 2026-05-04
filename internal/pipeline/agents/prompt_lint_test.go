@@ -32,7 +32,7 @@ var promptRendererContract = []struct {
 		name: "writer",
 		path: writerPromptPath,
 		substitutes: []string{
-			"scp_id", "act_id", "monologue_rune_cap",
+			"scp_id", "act_id", "monologue_rune_cap", "monologue_rune_floor",
 			"act_synopsis", "act_key_points", "prior_act_summary",
 			"scp_visual_reference", "containment_constraints", "format_guide",
 			"forbidden_terms_section", "glossary_section", "quality_feedback",

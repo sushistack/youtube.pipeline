@@ -179,16 +179,41 @@ func mustTerms(t *testing.T) *ForbiddenTerms {
 
 // --- response builders --------------------------------------------------
 
-// validMonologueForAct returns a placeholder monologue exactly at the per-act
-// rune cap floor so tests stay green even after rune-cap rescales. The string
-// is composed of 8 nine-syllable Korean clauses each terminated with `.`,
-// totalling 80 runes — predictable for offset math, and every 10-rune
-// boundary lands on a `.` so the segmenter sentence-boundary validator
-// accepts the canonical 8-beat × 10-rune fixture.
+// fixtureClauses returns the number of 10-rune clauses to use in this act's
+// monologue fixture: a multiple of 8 (so an 8-beat segmentation with equal
+// slices ends each beat on a `.`) just above the per-act
+// domain.ActMonologueRuneFloor. Sized minimally to keep tests fast while
+// satisfying the floor validator; per-act sizes:
+//
+//	incident   floor 288  → 32 clauses (320 runes)
+//	mystery    floor 960  → 104 clauses (1040 runes)
+//	revelation floor 1248 → 128 clauses (1280 runes)
+//	unresolved floor 672  → 72 clauses (720 runes)
+func fixtureClauses(actID string) int {
+	floor := domain.ActMonologueRuneFloor[actID]
+	// Clauses needed to cover the floor (ceil), rounded up to the next
+	// multiple of 8.
+	c := (floor + 9) / 10
+	c = ((c + 7) / 8) * 8
+	if c*10 == floor { // ensure strictly above floor
+		c += 8
+	}
+	return c
+}
+
+// fixtureBeatRunes returns the per-beat rune count for the canonical 8-beat
+// fixture sized to this act's monologue (= fixtureClauses(actID)*10 / 8).
+// Each beat covers a clean multiple of 10 runes so end_offsets land on `.`.
+func fixtureBeatRunes(actID string) int {
+	return (fixtureClauses(actID) / 8) * 10
+}
+
+// validMonologueForAct returns a placeholder monologue sized just above the
+// per-act floor (domain.ActMonologueRuneFloor). The string is composed of N
+// nine-syllable Korean clauses each terminated with `.`, where N is a
+// multiple of 8 so an 8-beat segmentation lands every end_offset on a `.`.
 func validMonologueForAct(actID string) string {
-	// Each clause is `가가가가가가가가가.` = 10 runes ending in a sentence
-	// terminal. 8 clauses × 10 runes = 80 runes total.
-	return strings.Repeat(strings.Repeat("가", 9)+".", 8)
+	return strings.Repeat(strings.Repeat("가", 9)+".", fixtureClauses(actID))
 }
 
 func validMonologueResponse(actID string) string {
@@ -202,11 +227,12 @@ func validMonologueResponse(actID string) string {
 }
 
 func validBeatsResponse(actID string) string {
+	beatRunes := fixtureBeatRunes(actID)
 	beats := []map[string]any{}
 	for i := 0; i < 8; i++ {
 		beats = append(beats, map[string]any{
-			"start_offset":       i * 10,
-			"end_offset":         (i + 1) * 10,
+			"start_offset":       i * beatRunes,
+			"end_offset":         (i + 1) * beatRunes,
 			"mood":               "tense",
 			"location":           "site-19",
 			"characters_present": []string{"SCP-TEST"},
@@ -610,16 +636,17 @@ func TestWriter_Stage2_MidSentenceCut_SnappedAndAccepted(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	// validMonologueForAct ends every 10th rune with `.` (positions
-	// 9, 19, 29, ..., 79). Our bad cuts land at 5, 15, 25, ... — each
-	// boundary is exactly 5 runes off the nearest terminal, well within
-	// the 25-rune snap radius.
+	// 9, 19, 29, ..., last). Our bad cuts land 5 runes off the nearest
+	// terminal at each beat boundary — well within the snap radius.
 	mkBadCuts := func(actID string) string {
+		beatRunes := fixtureBeatRunes(actID)
+		runeCount := beatRunes * 8
 		beats := []map[string]any{}
 		for i := 0; i < 8; i++ {
-			start := i * 10
-			end := i*10 + 5
+			start := i * beatRunes
+			end := i*beatRunes + 5
 			if i == 7 {
-				end = 80
+				end = runeCount
 			}
 			beats = append(beats, map[string]any{
 				"start_offset":       start,
@@ -776,19 +803,22 @@ func badBeatsResponse(actID string, badEnd int) string {
 }
 
 func overlappingBeatsResponse(actID string) string {
-	// Both end_offsets land on sentence-terminal `.` boundaries (10, 20)
-	// so the sentence-boundary validator passes; the overlap is the first
-	// failure mode and the only one this fixture is intended to exercise.
-	// Beats: (0,20), (10,30), (20,40), (30,50), (40,60), (50,70), (60,80), (70,80)
-	// — beat[1].start_offset (10) < beat[0].end_offset (20) → overlap on beat[1].
+	// Each end_offset lands on a `.` (multiples of beatRunes, since clauses
+	// are 10 runes and beatRunes is a multiple of 10) so the sentence-
+	// boundary validator passes; the overlap is the first failure mode and
+	// the only one this fixture exercises. starts at i*beatRunes, ends at
+	// (i+2)*beatRunes (capped at total) — beat[1].start (= beatRunes) <
+	// beat[0].end (= 2*beatRunes) → overlap on beat[1].
+	beatRunes := fixtureBeatRunes(actID)
+	runeCount := beatRunes * 8
 	beats := []map[string]any{}
 	for i := 0; i < 8; i++ {
-		end := i*10 + 20
-		if end > 80 {
-			end = 80
+		end := (i + 2) * beatRunes
+		if end > runeCount {
+			end = runeCount
 		}
 		beats = append(beats, map[string]any{
-			"start_offset":       i * 10,
+			"start_offset":       i * beatRunes,
 			"end_offset":         end,
 			"mood":               "tense",
 			"location":           "site-19",
@@ -862,8 +892,10 @@ func TestWriter_Stage1_RejectsSparseMonologue(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	// Monologue with only 5 sentence terminals — below the 8 floor required
-	// for stage 2's [8, 10] beat range. Each clause is 9 runes + `.`.
-	sparseMono := strings.Repeat(strings.Repeat("가", 9)+".", 5) // 50 runes, 5 terminals
+	// for stage 2's [8, 10] beat range. Each clause is 59 runes + `.` so the
+	// total (300 runes) clears the per-act monologue floor (incident=288)
+	// and isolates the sentence-terminal check as the failing condition.
+	sparseMono := strings.Repeat(strings.Repeat("가", 59)+".", 5) // 300 runes, 5 terminals
 	sparseResp, _ := json.Marshal(map[string]any{
 		"act_id":     domain.ActIncident,
 		"monologue":  sparseMono,
@@ -891,6 +923,53 @@ func TestWriter_Stage1_RejectsSparseMonologue(t *testing.T) {
 		t.Fatalf("error should mention sentence terminals, got: %v", err)
 	}
 	// Stage 2 must NOT run when stage 1 keeps failing.
+	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 0 {
+		t.Errorf("segmenter called %d times despite stage-1 floor failure", got)
+	}
+}
+
+// TestWriter_Stage1_BelowFloor_RetriesThenFails verifies that a monologue
+// shorter than the per-act ActMonologueRuneFloor is rejected at stage 1
+// with retries burned. Length under-utilization was the dogfood regression
+// (gold ~3080 runes vs. observed ~1900) that motivated the floor — a writer
+// that returns 200 runes for a 480-cap incident act must fail loudly so
+// downstream stages don't get a too-thin monologue silently passed through.
+func TestWriter_Stage1_BelowFloor_RetriesThenFails(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// Monologue at 200 runes — has 20 sentence terminals (passes the 8
+	// terminals floor) but is below the incident-act monologue floor
+	// (domain.ActMonologueRuneFloor[ActIncident] = 288). Isolates the floor
+	// check as the failing condition.
+	shortMono := strings.Repeat(strings.Repeat("가", 9)+".", 20) // 200 runes, 20 terminals
+	shortResp, _ := json.Marshal(map[string]any{
+		"act_id":     domain.ActIncident,
+		"monologue":  shortMono,
+		"mood":       "tense",
+		"key_points": []string{"first", "second"},
+	})
+
+	gen := newTwoStageFakeGen()
+	// budget=2 → 3 attempts total. All return below-floor; run hard-fails.
+	for i := 0; i < writerPerStageRetryBudget+1; i++ {
+		gen.enqueue(stageKeyWriter, domain.ActIncident, string(shortResp), "")
+	}
+
+	state := freshWriterState()
+	err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err == nil {
+		t.Fatal("expected below-floor failure, got nil")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("error chain must include ErrValidation, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "below floor") {
+		t.Fatalf("error should mention below floor, got: %v", err)
+	}
+	if got, want := gen.callCount(stageKeyWriter, domain.ActIncident), writerPerStageRetryBudget+1; got != want {
+		t.Errorf("stage-1 calls=%d, want %d (retry budget exhausted)", got, want)
+	}
+	// Stage 2 must NOT run — atomicity: stage-1 failure stops the cascade.
 	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 0 {
 		t.Errorf("segmenter called %d times despite stage-1 floor failure", got)
 	}

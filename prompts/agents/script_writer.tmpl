@@ -9,7 +9,10 @@ The other acts are written in separate stage-1 calls. Stay strictly inside the a
 ## This Call's Act
 
 - **act_id**: `{act_id}`
-- **monologue rune cap (upper bound, inclusive)**: `{monologue_rune_cap}` — total rune count of your `monologue` MUST stay at or below this. Going under by ~10% is fine; going over fails validation and burns the retry budget.
+- **monologue rune length — TARGET BAND `[{monologue_rune_floor}, {monologue_rune_cap}]` (both inclusive)**:
+  - **Floor `{monologue_rune_floor}` is REQUIRED.** Outputs below the floor fail validation and burn the retry budget — this is not a soft target. The hada-golden reference for this SCP densely uses every rune of its act budget (anchors, sensory detail, narrator commentary, viewer address). A short monologue means you skipped material the gold reference covered — go back and add: a second sensory beat, a numeric/named anchor, a narrator aside (`이게 진짜 이상한 부분인데요…`), or a viewer-address line (`여러분도 한 번 상상해 보세요`).
+  - **Cap `{monologue_rune_cap}` is REQUIRED.** Going over the cap fails validation — even by a single rune. Korean character-level token counts are NOT visible to you while writing, so **leave a safety margin**: write toward the middle of the band, not toward the cap. If you sense you are approaching the cap, STOP and tighten — do not push "one more sentence" hoping it fits.
+  - Don't pad with filler ("그러니까…", "음…", "그래서요…"). If you can't reach the floor with substantive content, you are missing key_points coverage — revisit the act key points list and expand each one with more sensory/anchor detail.
 - **sentence-terminal floor (REQUIRED for stage 2)**: the monologue MUST contain **≥ 8 sentence-terminal runes** (`.`, `?`, `!`, `…`, or paragraph break `\n`). Stage 2 segments your monologue into 8–10 visual beats and each beat MUST end on a terminal — adjacent beats cannot share a terminal, so the act monologue needs ≥ 8 terminals or stage 2 will fail and burn its retry budget. **Practically: write short, punchy Korean sentences. Aim for ~30 runes per sentence on average; never let one sentence exceed ~80 runes without a clean break.** "한 호흡으로 길게 이어 쓰기"는 stage 2 에서 실패합니다.
 - **act synopsis**: {act_synopsis}
 - **act key points**:
@@ -89,14 +92,14 @@ You MUST output **exactly one JSON object** (no surrounding prose, no markdown f
 ```
 
 - `act_id` MUST equal `{act_id}` literally.
-- `monologue` rune count MUST be ≤ `{monologue_rune_cap}`.
+- `monologue` rune count MUST be in `[{monologue_rune_floor}, {monologue_rune_cap}]` (both inclusive). Below floor or above cap fails validation.
 - Both `mood` and each entry in `key_points` MUST be non-empty.
 - `key_points` is your structured summary of what this act narrated — stage 2 (segmenter) consumes it as anchor metadata. 4–8 entries recommended.
 
 ## Pre-Output Self-Check (MANDATORY before outputting JSON)
 
 1. `act_id` 정확히 `{act_id}` ?
-2. `monologue` rune 길이 ≤ `{monologue_rune_cap}` ?
+2. `monologue` rune 길이가 `[{monologue_rune_floor}, {monologue_rune_cap}]` 범위 안에 있는가? (floor 미만 또는 cap 초과면 fail — 짧으면 anchor/sensory/narrator-aside 추가)
 3. monologue 안에 sentence-terminal (`.`, `?`, `!`, `…`, `\n`) 가 **8개 이상** 있는가? (각 종결자가 한 문장의 끝 — 8문장 미만이면 stage 2 가 실패합니다.)
 4. 씬·shot·"Scene 1" 같은 메타 표기가 monologue 안에 섞여 있지 않은가?
 5. 위키 문장처럼 들리는 줄이 한 줄이라도 남아 있는가? — 있으면 다시 쓰세요.
