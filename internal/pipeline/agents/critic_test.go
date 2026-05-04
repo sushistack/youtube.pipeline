@@ -143,7 +143,7 @@ func TestPostReviewerCritic_Run_PrecheckSchemaFailureShortCircuits(t *testing.T)
 	testutil.BlockExternalHTTP(t)
 
 	state := samplePostReviewerCriticState(t)
-	state.VisualBreakdown.Scenes = nil
+	state.VisualScript.Acts = nil
 	gen := &fakeTextGenerator{}
 	err := NewPostReviewerCritic(gen, TextAgentConfig{Model: "critic-model", Provider: "anthropic"}, sampleWriterAssets(), mustValidator(t, "writer_output.schema.json"), mustValidator(t, "visual_breakdown.schema.json"), mustValidator(t, "reviewer_report.schema.json"), mustValidator(t, "critic_post_reviewer.schema.json"), mustTerms(t), "openai")(context.Background(), state)
 	if err != nil {
@@ -402,7 +402,7 @@ func samplePostReviewerCriticState(t *testing.T) *PipelineState {
 	t.Helper()
 	state := sampleCriticState(t)
 
-	var visual domain.VisualBreakdownOutput
+	var visual domain.VisualScript
 	if err := json.Unmarshal(testutil.LoadFixture(t, filepath.Join("contracts", "visual_breakdown.sample.json")), &visual); err != nil {
 		t.Fatalf("unmarshal visual: %v", err)
 	}
@@ -415,7 +415,7 @@ func samplePostReviewerCriticState(t *testing.T) *PipelineState {
 		t.Fatalf("unmarshal post_writer: %v", err)
 	}
 
-	state.VisualBreakdown = &visual
+	state.VisualScript = &visual
 	state.Review = &review
 	state.Critic = &domain.CriticOutput{PostWriter: &postWriter}
 	return state

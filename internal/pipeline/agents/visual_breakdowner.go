@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -16,18 +17,26 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
 
-type visualBreakdownResponse struct {
-	SceneNum int                           `json:"scene_num"`
-	Shots    []visualBreakdownResponseShot `json:"shots"`
+type visualBreakdownActResponse struct {
+	ActID string                          `json:"act_id"`
+	Shots []visualBreakdownActResponseShot `json:"shots"`
 }
 
-type visualBreakdownResponseShot struct {
-	VisualDescriptor   string `json:"visual_descriptor"`
-	Transition         string `json:"transition"`
-	NarrationBeatIndex int    `json:"narration_beat_index"`
+type visualBreakdownActResponseShot struct {
+	VisualDescriptor string             `json:"visual_descriptor"`
+	Transition       string             `json:"transition"`
+	NarrationAnchor  domain.BeatAnchor  `json:"narration_anchor"`
 }
 
-const visualBreakdownerPerSceneRetryBudget = 1 // one retry per scene on json/schema failure
+// visualBreakdownerPerActRetryBudget mirrors v1's per-scene retry budget value
+// (cycle-C policy, commit `2ef1d3c`): one retry per act on json/schema/anchor
+// validation failure. Transport errors short-circuit before consuming budget.
+const visualBreakdownerPerActRetryBudget = 1
+
+// visualBreakdownerActConcurrency caps per-act fan-out at 4 — one goroutine
+// per act, per spec D2 Design Notes ("Per-act vs per-scene fan-out"). v1's
+// ~32 per-scene goroutines drop to 4 acts (rate-friendlier for DashScope).
+const visualBreakdownerActConcurrency = 4
 
 func NewVisualBreakdowner(
 	gen domain.TextGenerator,
@@ -55,23 +64,35 @@ func NewVisualBreakdowner(
 		case estimator == nil:
 			return fmt.Errorf("visual breakdowner: %w: estimator is nil", domain.ErrValidation)
 		}
-		// v2 transition: synthesize the legacy per-scene shape via the
-		// LegacyScenes() bridge (snapshot — does NOT roundtrip back to
-		// state.Narration). Visual breakdowner v2 (D2) replaces this.
-		legacyScenes := state.Narration.LegacyScenes()
-		if len(legacyScenes) == 0 {
-			return fmt.Errorf("visual breakdowner: %w: narration has no scenes", domain.ErrValidation)
+		if len(state.Narration.Acts) == 0 {
+			return fmt.Errorf("visual breakdowner: %w: narration has no acts", domain.ErrValidation)
+		}
+		// Reject acts with zero beats — anchor-equality validator cannot
+		// produce zero-shot acts (1:1 beat→shot invariant per spec).
+		for i, act := range state.Narration.Acts {
+			if len(act.Beats) == 0 {
+				return fmt.Errorf("visual breakdowner: %w: act %d (%s) has no beats", domain.ErrValidation, i, act.ActID)
+			}
+		}
+		// Reject duplicate ActIDs — the v1-shape bridge relies on ActID
+		// lookup into narration; a duplicate would silently shadow.
+		seen := make(map[string]struct{}, len(state.Narration.Acts))
+		for _, act := range state.Narration.Acts {
+			if _, dup := seen[act.ActID]; dup {
+				return fmt.Errorf("visual breakdowner: %w: duplicate act_id=%q", domain.ErrValidation, act.ActID)
+			}
+			seen[act.ActID] = struct{}{}
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
 		frozen := BuildFrozenDescriptor(state.Research.VisualIdentity)
-		output := domain.VisualBreakdownOutput{
+		output := domain.VisualScript{
 			SCPID:            state.Narration.SCPID,
 			Title:            state.Narration.Title,
 			FrozenDescriptor: frozen,
-			Scenes:           make([]domain.VisualBreakdownScene, 0, len(legacyScenes)),
+			Acts:             make([]domain.VisualAct, 0, len(state.Narration.Acts)),
 			ShotOverrides:    map[int]domain.ShotOverride{},
 			Metadata: domain.VisualBreakdownMetadata{
 				VisualBreakdownModel:    cfg.Model,
@@ -79,88 +100,78 @@ func NewVisualBreakdowner(
 				PromptTemplate:          filepath.Base(visualBreakdownPromptPath),
 				ShotFormulaVersion:      domain.ShotFormulaVersionV1,
 			},
-			SourceVersion: domain.VisualBreakdownSourceVersionV1,
+			SourceVersion: domain.VisualBreakdownSourceVersionV2,
 		}
 
-		seen := make(map[int]struct{}, len(legacyScenes))
-		for _, scene := range legacyScenes {
-			if _, dup := seen[scene.SceneNum]; dup {
-				return fmt.Errorf("visual breakdowner: %w: duplicate scene_num=%d", domain.ErrValidation, scene.SceneNum)
-			}
-			seen[scene.SceneNum] = struct{}{}
-		}
-
-		scenes := legacyScenes
-		results := make([]domain.VisualBreakdownScene, len(scenes))
+		acts := state.Narration.Acts
+		results := make([]domain.VisualAct, len(acts))
 
 		concurrency := cfg.Concurrency
 		if concurrency <= 0 {
-			concurrency = defaultAgentConcurrency
+			concurrency = visualBreakdownerActConcurrency
 		}
 		g, gctx := errgroup.WithContext(ctx)
 		g.SetLimit(concurrency)
-		for i, scene := range scenes {
-			i, scene := i, scene
+		for i, act := range acts {
+			i, act := i, act
 			g.Go(func() error {
-				decoded, sceneDuration, err := runVisualBreakdownerScene(gctx, gen, cfg, prompts, state, scene, frozen, estimator)
+				decoded, err := runVisualBreakdownerAct(gctx, gen, cfg, prompts, state, act, frozen)
 				if err != nil {
 					return err
 				}
-				results[i] = buildVisualBreakdownScene(scene, frozen, sceneDuration, decoded, cfg.Logger)
+				results[i] = buildVisualAct(act, frozen, decoded, estimator, cfg.Logger)
 				return nil
 			})
 		}
 		if err := g.Wait(); err != nil {
 			return err
 		}
-		output.Scenes = results
+		output.Acts = results
 
 		if err := validator.Validate(output); err != nil {
 			return fmt.Errorf("visual breakdowner: %w", err)
 		}
-		state.VisualBreakdown = &output
+		state.VisualScript = &output
 		return nil
 	}
 }
 
-func runVisualBreakdownerScene(
+func runVisualBreakdownerAct(
 	ctx context.Context,
 	gen domain.TextGenerator,
 	cfg TextAgentConfig,
 	prompts PromptAssets,
 	state *PipelineState,
-	scene domain.NarrationScene,
+	act domain.ActScript,
 	frozen string,
-	estimator SceneDurationEstimator,
-) (visualBreakdownResponse, float64, error) {
-	sceneDuration := estimator.Estimate(scene)
-	shotCount := len(scene.NarrationBeats)
+) (visualBreakdownActResponse, error) {
+	shotCount := len(act.Beats)
 	if shotCount < 1 {
-		return visualBreakdownResponse{}, 0, fmt.Errorf(
-			"visual breakdowner: scene %d has no narration_beats (min 1 required): %w",
-			scene.SceneNum, domain.ErrValidation,
+		return visualBreakdownActResponse{}, fmt.Errorf(
+			"visual breakdowner: act %s has no beats (min 1 required): %w",
+			act.ActID, domain.ErrValidation,
 		)
 	}
-	prompt, err := renderVisualBreakdownPrompt(state, prompts, scene, frozen, sceneDuration, shotCount)
+	prompt, err := renderVisualBreakdownActPrompt(state, prompts, act, frozen, shotCount)
 	if err != nil {
-		return visualBreakdownResponse{}, 0, err
+		return visualBreakdownActResponse{}, err
 	}
 
 	opts := retryOpts{
 		Stage:  "visual_breakdowner",
-		Budget: visualBreakdownerPerSceneRetryBudget,
+		Budget: visualBreakdownerPerActRetryBudget,
 		Logger: cfg.Logger,
 		BaseAttrs: []slog.Attr{
 			slog.String("run_id", state.RunID),
-			slog.Int("scene_num", scene.SceneNum),
+			slog.String("act_id", act.ActID),
 		},
 	}
 
-	decoded, err := runWithRetry(ctx, opts, func(attempt int) (visualBreakdownResponse, retryReason, error) {
+	decoded, err := runWithRetry(ctx, opts, func(attempt int) (visualBreakdownActResponse, retryReason, error) {
 		if cfg.Logger != nil {
 			cfg.Logger.Info("visual breakdowner attempt start",
 				"run_id", state.RunID,
-				"scene_num", scene.SceneNum,
+				"act_id", act.ActID,
 				"attempt", attempt,
 				"provider", cfg.Provider,
 				"model", cfg.Model,
@@ -177,7 +188,7 @@ func runVisualBreakdownerScene(
 			if cfg.Logger != nil {
 				cfg.Logger.Error("visual breakdowner attempt failed",
 					"run_id", state.RunID,
-					"scene_num", scene.SceneNum,
+					"act_id", act.ActID,
 					"attempt", attempt,
 					"duration_ms", time.Since(callStart).Milliseconds(),
 					"error", err.Error(),
@@ -185,22 +196,22 @@ func runVisualBreakdownerScene(
 			}
 			// Context cancellation propagates verbatim — no retry.
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return visualBreakdownResponse{}, retryReasonAbort, err
+				return visualBreakdownActResponse{}, retryReasonAbort, err
 			}
 			// Transient upstream failures (provider returned empty content,
 			// 5xx, gateway timeout, …) are signaled with ErrStageFailed by
 			// the text clients. Make these retryable instead of aborting on
 			// the first attempt — a single empty-content blip would otherwise
-			// kill the whole stage despite the per-scene retry budget.
+			// kill the whole stage despite the per-act retry budget.
 			if errors.Is(err, domain.ErrStageFailed) {
-				return visualBreakdownResponse{}, "", err
+				return visualBreakdownActResponse{}, "", err
 			}
-			return visualBreakdownResponse{}, retryReasonAbort, err
+			return visualBreakdownActResponse{}, retryReasonAbort, err
 		}
 		if cfg.Logger != nil {
 			cfg.Logger.Info("visual breakdowner attempt complete",
 				"run_id", state.RunID,
-				"scene_num", scene.SceneNum,
+				"act_id", act.ActID,
 				"attempt", attempt,
 				"duration_ms", time.Since(callStart).Milliseconds(),
 			)
@@ -219,27 +230,26 @@ func runVisualBreakdownerScene(
 			})
 		}
 
-		var decoded visualBreakdownResponse
+		var decoded visualBreakdownActResponse
 		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
-			return visualBreakdownResponse{}, retryReasonJSONDecode, fmt.Errorf("visual breakdowner: %w", err)
+			return visualBreakdownActResponse{}, retryReasonJSONDecode, fmt.Errorf("visual breakdowner: %w", err)
 		}
-		if err := validateVisualBreakdownResponse(scene.SceneNum, shotCount, decoded); err != nil {
-			return visualBreakdownResponse{}, retryReasonSchemaValidation, err
+		if err := validateVisualBreakdownActResponse(act, decoded); err != nil {
+			return visualBreakdownActResponse{}, retryReasonSchemaValidation, err
 		}
 		return decoded, "", nil
 	})
 	if err != nil {
-		return visualBreakdownResponse{}, 0, err
+		return visualBreakdownActResponse{}, err
 	}
-	return decoded, sceneDuration, nil
+	return decoded, nil
 }
 
-func renderVisualBreakdownPrompt(
+func renderVisualBreakdownActPrompt(
 	state *PipelineState,
 	prompts PromptAssets,
-	scene domain.NarrationScene,
+	act domain.ActScript,
 	frozen string,
-	sceneDuration float64,
 	shotCount int,
 ) (string, error) {
 	visualJSON, err := json.MarshalIndent(state.Research.VisualIdentity, "", "  ")
@@ -247,88 +257,183 @@ func renderVisualBreakdownPrompt(
 		return "", fmt.Errorf("visual breakdowner: marshal visual identity: %w", domain.ErrValidation)
 	}
 	replacer := strings.NewReplacer(
-		"{scene_num}", strconv.Itoa(scene.SceneNum),
-		"{location}", scene.Location,
-		"{characters_present}", strings.Join(scene.CharactersPresent, ", "),
-		"{color_palette}", scene.ColorPalette,
-		"{atmosphere}", scene.Atmosphere,
+		"{act_id}", act.ActID,
+		"{act_mood}", act.Mood,
+		"{monologue}", act.Monologue,
+		"{beats_table}", renderBeatsTable(act.Beats),
 		"{scp_visual_reference}", string(visualJSON),
-		"{narration}", scene.Narration,
-		"{narration_beats}", renderNarrationBeats(scene.NarrationBeats),
 		"{frozen_descriptor}", frozen,
-		"{estimated_tts_duration_s}", strconv.FormatFloat(sceneDuration, 'f', 1, 64),
 		"{shot_count}", strconv.Itoa(shotCount),
 	)
 	return replacer.Replace(prompts.VisualBreakdownTemplate), nil
 }
 
-func renderNarrationBeats(beats []string) string {
+// renderBeatsTable produces a compact human-readable list of the ordered
+// BeatAnchors, surfacing every load-bearing field to the LLM. The LLM is
+// instructed to echo each beat's metadata byte-for-byte into its output's
+// `narration_anchor` block; the post-response validator enforces equality.
+func renderBeatsTable(beats []domain.BeatAnchor) string {
 	if len(beats) == 0 {
 		return "(none)"
 	}
 	lines := make([]string, 0, len(beats))
 	for i, beat := range beats {
-		lines = append(lines, fmt.Sprintf("- [beat %d] %s", i, beat))
+		factTags := "[]"
+		if len(beat.FactTags) > 0 {
+			parts := make([]string, 0, len(beat.FactTags))
+			for _, ft := range beat.FactTags {
+				parts = append(parts, fmt.Sprintf("%s=%s", ft.Key, ft.Content))
+			}
+			factTags = "[" + strings.Join(parts, ", ") + "]"
+		}
+		lines = append(lines, fmt.Sprintf(
+			"- [beat %d] start_offset=%d end_offset=%d mood=%q location=%q characters_present=%v entity_visible=%v color_palette=%q atmosphere=%q fact_tags=%s",
+			i,
+			beat.StartOffset, beat.EndOffset,
+			beat.Mood, beat.Location,
+			beat.CharactersPresent,
+			beat.EntityVisible,
+			beat.ColorPalette,
+			beat.Atmosphere,
+			factTags,
+		))
 	}
 	return strings.Join(lines, "\n")
 }
 
-func validateVisualBreakdownResponse(sceneNum, shotCount int, decoded visualBreakdownResponse) error {
-	if decoded.SceneNum != sceneNum {
-		return fmt.Errorf("visual breakdowner: scene %d response scene_num=%d: %w", sceneNum, decoded.SceneNum, domain.ErrValidation)
+// validateVisualBreakdownActResponse enforces the per-act anchor-equality
+// invariant: shots[i].NarrationAnchor MUST deeply equal act.Beats[i] for
+// every i, with len(shots) == len(act.Beats). Mismatches are retryable
+// ErrValidation per cycle-C policy.
+func validateVisualBreakdownActResponse(act domain.ActScript, decoded visualBreakdownActResponse) error {
+	if decoded.ActID != act.ActID {
+		return fmt.Errorf("visual breakdowner: act %s response act_id=%q: %w", act.ActID, decoded.ActID, domain.ErrValidation)
 	}
-	if len(decoded.Shots) != shotCount {
-		return fmt.Errorf("visual breakdowner: scene %d shot count=%d want=%d: %w", sceneNum, len(decoded.Shots), shotCount, domain.ErrValidation)
+	if len(decoded.Shots) != len(act.Beats) {
+		return fmt.Errorf(
+			"visual breakdowner: act %s shot count=%d want=%d (1:1 beat→shot invariant): %w",
+			act.ActID, len(decoded.Shots), len(act.Beats), domain.ErrValidation,
+		)
 	}
 	for i, shot := range decoded.Shots {
 		if strings.TrimSpace(shot.VisualDescriptor) == "" {
-			return fmt.Errorf("visual breakdowner: scene %d shot %d empty descriptor: %w", sceneNum, i+1, domain.ErrValidation)
+			return fmt.Errorf("visual breakdowner: act %s shot %d empty descriptor: %w", act.ActID, i+1, domain.ErrValidation)
 		}
 		if !isAllowedTransition(shot.Transition) {
-			return fmt.Errorf("visual breakdowner: scene %d shot %d invalid transition %q: %w", sceneNum, i+1, shot.Transition, domain.ErrValidation)
+			return fmt.Errorf("visual breakdowner: act %s shot %d invalid transition %q: %w", act.ActID, i+1, shot.Transition, domain.ErrValidation)
 		}
-		if shot.NarrationBeatIndex != i {
+		if !beatAnchorEqual(shot.NarrationAnchor, act.Beats[i]) {
 			return fmt.Errorf(
-				"visual breakdowner: scene %d shot %d narration_beat_index=%d (must equal shot order %d): %w",
-				sceneNum, i+1, shot.NarrationBeatIndex, i, domain.ErrValidation,
+				"visual breakdowner: act %s shot %d narration_anchor does not match source beat anchor (byte-for-byte equality required): %w",
+				act.ActID, i+1, domain.ErrValidation,
 			)
 		}
 	}
 	return nil
 }
 
-func buildVisualBreakdownScene(
-	scene domain.NarrationScene,
-	frozen string,
-	sceneDuration float64,
-	decoded visualBreakdownResponse,
-	logger *slog.Logger,
-) domain.VisualBreakdownScene {
-	durations := NormalizeShotDurations(sceneDuration, len(decoded.Shots))
+// beatAnchorEqual reports whether two BeatAnchors carry identical field
+// values. nil-vs-empty slices for CharactersPresent / FactTags are treated
+// as equal (LLMs may serialize empty arrays slightly differently across
+// retries; the load-bearing semantic is "no entries").
+func beatAnchorEqual(a, b domain.BeatAnchor) bool {
+	if a.StartOffset != b.StartOffset || a.EndOffset != b.EndOffset {
+		return false
+	}
+	if a.Mood != b.Mood || a.Location != b.Location {
+		return false
+	}
+	if a.EntityVisible != b.EntityVisible {
+		return false
+	}
+	if a.ColorPalette != b.ColorPalette || a.Atmosphere != b.Atmosphere {
+		return false
+	}
+	if !stringSliceEqualNilSafe(a.CharactersPresent, b.CharactersPresent) {
+		return false
+	}
+	if !factTagSliceEqualNilSafe(a.FactTags, b.FactTags) {
+		return false
+	}
+	return true
+}
+
+func stringSliceEqualNilSafe(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func factTagSliceEqualNilSafe(a, b []domain.FactTag) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !reflect.DeepEqual(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func buildVisualAct(
+	act domain.ActScript,
+	_ string,
+	decoded visualBreakdownActResponse,
+	estimator SceneDurationEstimator,
+	_ *slog.Logger,
+) domain.VisualAct {
+	// Estimate per-shot duration by treating each beat as a v1 NarrationScene
+	// with its rune slice as Narration text (the SceneDurationEstimator
+	// interface is v1-shaped; we compute one estimate per shot rather than
+	// dividing one act-level total). This matches the v1 "shot-as-tts-unit"
+	// formula but per beat instead of per scene.
+	runes := []rune(act.Monologue)
+	runeLen := len(runes)
 	shots := make([]domain.VisualShot, 0, len(decoded.Shots))
 	for i, shot := range decoded.Shots {
 		descriptor := strings.TrimSpace(shot.VisualDescriptor)
-		beatIdx := shot.NarrationBeatIndex
-		var beatText string
-		if beatIdx >= 0 && beatIdx < len(scene.NarrationBeats) {
-			beatText = scene.NarrationBeats[beatIdx]
+		anchor := act.Beats[i]
+		start := anchor.StartOffset
+		end := anchor.EndOffset
+		if start < 0 {
+			start = 0
 		}
+		if start > runeLen {
+			start = runeLen
+		}
+		if end > runeLen {
+			end = runeLen
+		}
+		if end < start {
+			end = start
+		}
+		beatText := ""
+		if runeLen > 0 {
+			beatText = string(runes[start:end])
+		}
+		dur := estimator.Estimate(domain.NarrationScene{
+			SceneNum:  i + 1,
+			ActID:     act.ActID,
+			Narration: beatText,
+		})
 		shots = append(shots, domain.VisualShot{
 			ShotIndex:          i + 1,
 			VisualDescriptor:   descriptor,
-			EstimatedDurationS: durations[i],
+			EstimatedDurationS: roundToTenth(dur),
 			Transition:         shot.Transition,
-			NarrationBeatIndex: beatIdx,
-			NarrationBeatText:  beatText,
+			NarrationAnchor:    anchor,
 		})
 	}
-	return domain.VisualBreakdownScene{
-		SceneNum:              scene.SceneNum,
-		ActID:                 scene.ActID,
-		Narration:             scene.Narration,
-		EstimatedTTSDurationS: roundToTenth(sceneDuration),
-		ShotCount:             len(shots),
-		Shots:                 shots,
+	return domain.VisualAct{
+		ActID: act.ActID,
+		Shots: shots,
 	}
 }
 

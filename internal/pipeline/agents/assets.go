@@ -75,7 +75,7 @@ func LoadPromptAssets(projectRoot string, useTemplatePrompts bool) (PromptAssets
 	if err != nil {
 		return PromptAssets{}, err
 	}
-	visualBreakdownTemplate, err := readAsset(projectRoot, visualBreakdownPromptPath)
+	visualBreakdownTemplate, err := loadVisualBreakdownerTemplate(projectRoot, useTemplatePrompts)
 	if err != nil {
 		return PromptAssets{}, err
 	}
@@ -175,4 +175,18 @@ func loadSegmenterTemplate(projectRoot string, useTemplatePrompts bool) (string,
 		return body, nil
 	}
 	return readAsset(projectRoot, segmenterPromptPath)
+}
+
+// loadVisualBreakdownerTemplate selects the v2 visual_breakdowner prompt
+// source. Mirrors loadWriterTemplate's `useTemplatePrompts` toggle so the
+// embedded + on-disk paths stay in lockstep.
+func loadVisualBreakdownerTemplate(projectRoot string, useTemplatePrompts bool) (string, error) {
+	if useTemplatePrompts {
+		body, err := prompts.ReadAgent(prompts.AgentVisualBreakdowner)
+		if err != nil {
+			return "", fmt.Errorf("load prompt asset %s: %w", prompts.AgentVisualBreakdowner, domain.ErrValidation)
+		}
+		return body, nil
+	}
+	return readAsset(projectRoot, visualBreakdownPromptPath)
 }

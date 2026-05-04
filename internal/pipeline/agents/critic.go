@@ -186,7 +186,7 @@ func NewPostReviewerCritic(
 			return fmt.Errorf("critic: %w: state is nil", domain.ErrValidation)
 		case state.Narration == nil:
 			return fmt.Errorf("critic: %w: narration is nil", domain.ErrValidation)
-		case state.VisualBreakdown == nil:
+		case state.VisualScript == nil:
 			return fmt.Errorf("critic: %w: visual breakdown is nil", domain.ErrValidation)
 		case state.Review == nil:
 			return fmt.Errorf("critic: %w: review is nil", domain.ErrValidation)

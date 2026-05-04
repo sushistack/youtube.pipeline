@@ -164,10 +164,16 @@ func runImageTrack(
 	if err != nil {
 		return ImageTrackResult{}, err
 	}
-	if state.VisualBreakdown == nil {
-		return ImageTrackResult{}, fmt.Errorf("image track: %w: scenario.json missing visual_breakdown", domain.ErrValidation)
+	if state.VisualScript == nil {
+		return ImageTrackResult{}, fmt.Errorf("image track: %w: scenario.json missing visual_script", domain.ErrValidation)
 	}
-	frozen := state.VisualBreakdown.FrozenDescriptor
+	// D2 migration: derive the legacy per-scene shape via the in-memory
+	// bridge so the v1 image_track loop continues to operate on
+	// VisualBreakdownScene[] without v2 awareness. Bridge is read-only;
+	// scenarioPath state is unaffected. Replaced by direct VisualAct
+	// consumption when the image-prompt redesign lands (post-D-vis-final).
+	legacyScenes := state.VisualScript.LegacyScenes(state.Narration)
+	frozen := state.VisualScript.FrozenDescriptor
 	if req.FrozenDescriptorOverride != nil && strings.TrimSpace(*req.FrozenDescriptorOverride) != "" {
 		// Operator-edited descriptor (runs.frozen_descriptor) takes precedence
 		// over the artifact value. The artifact itself is read-only — we only
@@ -184,8 +190,8 @@ func runImageTrack(
 	}
 
 	// Validate no duplicate SceneNum in visual breakdown.
-	seenScenes := make(map[int]bool, len(state.VisualBreakdown.Scenes))
-	for _, scene := range state.VisualBreakdown.Scenes {
+	seenScenes := make(map[int]bool, len(legacyScenes))
+	for _, scene := range legacyScenes {
 		if scene.SceneNum <= 0 {
 			return ImageTrackResult{}, fmt.Errorf("image track: %w: scene_num %d must be >= 1", domain.ErrValidation, scene.SceneNum)
 		}
@@ -242,7 +248,7 @@ func runImageTrack(
 	}
 
 	start := clk.Now()
-	for _, scene := range state.VisualBreakdown.Scenes {
+	for _, scene := range legacyScenes {
 		if err := ctx.Err(); err != nil {
 			return result, fmt.Errorf("image track: %w", err)
 		}
@@ -471,17 +477,14 @@ func FetchReferenceImageAsDataURL(ctx context.Context, imageURL string) (string,
 // narration's EntityVisible signal. Narration is the canonical source for
 // whether the named character/entity appears in a scene; image-track shot
 // routing must not infer this from prompt strings at call time.
-// Returns a validation error if VisualBreakdown contains character scenes but
+// Returns a validation error if VisualScript contains character scenes but
 // narration is absent or missing the required scene entry.
 func buildCharacterMap(state *agents.PipelineState) (map[int]bool, error) {
 	out := map[int]bool{}
 	if state.Narration == nil {
 		// If narration is absent, verify no scene needs character routing.
-		if state.VisualBreakdown != nil {
-			for _, scene := range state.VisualBreakdown.Scenes {
-				_ = scene // all will default to false; no error if none are character scenes
-			}
-		}
+		// (Bridged visual scenes derive EntityVisible from narration anyway,
+		// so an absent narration produces an empty char map — consistent.)
 		return out, nil
 	}
 	legacyScenes := state.Narration.LegacyScenes()
@@ -490,8 +493,9 @@ func buildCharacterMap(state *agents.PipelineState) (map[int]bool, error) {
 		narrationByScene[scene.SceneNum] = scene.EntityVisible
 	}
 	// Validate every visual scene has a narration counterpart.
-	if state.VisualBreakdown != nil {
-		for _, scene := range state.VisualBreakdown.Scenes {
+	if state.VisualScript != nil {
+		visualLegacy := state.VisualScript.LegacyScenes(state.Narration)
+		for _, scene := range visualLegacy {
 			if _, ok := narrationByScene[scene.SceneNum]; !ok {
 				return nil, fmt.Errorf("image track: %w: visual scene %d has no matching narration scene", domain.ErrValidation, scene.SceneNum)
 			}
@@ -504,10 +508,10 @@ func buildCharacterMap(state *agents.PipelineState) (map[int]bool, error) {
 }
 
 func anyCharacterScene(state *agents.PipelineState, sceneMap map[int]bool) bool {
-	if state.VisualBreakdown == nil {
+	if state.VisualScript == nil {
 		return false
 	}
-	for _, scene := range state.VisualBreakdown.Scenes {
+	for _, scene := range state.VisualScript.LegacyScenes(state.Narration) {
 		if sceneMap[scene.SceneNum] {
 			return true
 		}

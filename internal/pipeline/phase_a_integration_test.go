@@ -43,11 +43,11 @@ func TestPhaseARunner_Integration_EndToEnd(t *testing.T) {
 		case agents.StageWriter:
 			state.Narration = &domain.NarrationScript{SCPID: "scp-007", Title: "writer"}
 		case agents.StageVisualBreakdowner:
-			state.VisualBreakdown = &domain.VisualBreakdownOutput{
+			state.VisualScript = &domain.VisualScript{
 				SCPID:            "scp-007",
 				Title:            "writer",
 				FrozenDescriptor: "Appearance: test",
-				Scenes:           []domain.VisualBreakdownScene{},
+				Acts:             []domain.VisualAct{},
 				ShotOverrides:    map[int]domain.ShotOverride{},
 				Metadata: domain.VisualBreakdownMetadata{
 					VisualBreakdownModel:    "visual-model",
@@ -55,7 +55,7 @@ func TestPhaseARunner_Integration_EndToEnd(t *testing.T) {
 					PromptTemplate:          "03_5_visual_breakdown.md",
 					ShotFormulaVersion:      domain.ShotFormulaVersionV1,
 				},
-				SourceVersion: domain.VisualBreakdownSourceVersionV1,
+				SourceVersion: domain.VisualBreakdownSourceVersionV2,
 			}
 		case agents.StagePostWriterCritic:
 			state.Critic = &domain.CriticOutput{
@@ -164,7 +164,7 @@ func TestPhaseARunner_Integration_EndToEnd(t *testing.T) {
 		ps   agents.PipelineStage
 		seen bool
 	}{
-		{agents.StageVisualBreakdowner, got.VisualBreakdown != nil},
+		{agents.StageVisualBreakdowner, got.VisualScript != nil},
 		{agents.StageReviewer, got.Review != nil},
 	} {
 		if !c.seen {
@@ -248,7 +248,7 @@ func TestPhaseAIntegration_TwoCriticCheckpointsAndScenarioJSONIntegrity(t *testi
 			return nil
 		},
 		func(ctx context.Context, state *agents.PipelineState) error {
-			state.VisualBreakdown = samplePhaseAVisualBreakdown()
+			state.VisualScript = samplePhaseAVisualBreakdown()
 			return nil
 		},
 		func(ctx context.Context, state *agents.PipelineState) error {
@@ -333,7 +333,7 @@ func TestPhaseAIntegration_FinalRetryLeavesNoScenarioJSON(t *testing.T) {
 			state.Critic = &domain.CriticOutput{PostWriter: &domain.CriticCheckpointReport{Checkpoint: domain.CriticCheckpointPostWriter, Verdict: domain.CriticVerdictPass, OverallScore: 80, Feedback: "좋습니다."}}
 			return nil
 		},
-		func(ctx context.Context, state *agents.PipelineState) error { state.VisualBreakdown = samplePhaseAVisualBreakdown(); return nil },
+		func(ctx context.Context, state *agents.PipelineState) error { state.VisualScript = samplePhaseAVisualBreakdown(); return nil },
 		func(ctx context.Context, state *agents.PipelineState) error {
 			state.Review = &domain.ReviewReport{OverallPass: true, CoveragePct: 100, Issues: []domain.ReviewIssue{}, Corrections: []domain.ReviewCorrection{}, ReviewerModel: "review-model", ReviewerProvider: "anthropic", SourceVersion: domain.ReviewSourceVersionV1}
 			return nil
@@ -402,7 +402,7 @@ func TestPhaseAIntegration_PostReviewerReviewFailureShortCircuitsSecondLLMCall(t
 	if err := json.Unmarshal(testutil.LoadFixture(t, "contracts/writer_output.sample.json"), &narration); err != nil {
 		t.Fatalf("unmarshal narration: %v", err)
 	}
-	var visual domain.VisualBreakdownOutput
+	var visual domain.VisualScript
 	if err := json.Unmarshal(testutil.LoadFixture(t, "contracts/visual_breakdown.sample.json"), &visual); err != nil {
 		t.Fatalf("unmarshal visual: %v", err)
 	}
@@ -419,10 +419,10 @@ func TestPhaseAIntegration_PostReviewerReviewFailureShortCircuitsSecondLLMCall(t
 		SCPID:           "SCP-TEST",
 		Research:        samplePhaseAResearch(),
 		Structure:       &domain.StructurerOutput{SCPID: "SCP-TEST", TargetSceneCount: 10, SourceVersion: domain.SourceVersionV1},
-		Narration:       &narration,
-		VisualBreakdown: &visual,
-		Review:          &review,
-		Critic:          &domain.CriticOutput{PostWriter: &postWriter},
+		Narration:    &narration,
+		VisualScript: &visual,
+		Review:       &review,
+		Critic:       &domain.CriticOutput{PostWriter: &postWriter},
 	}
 	state.Review.OverallPass = false
 	if err := criticAgent(context.Background(), state); err != nil {
@@ -488,7 +488,7 @@ func TestPhaseARunner_ReviewOutputValidatedBeforeCritic(t *testing.T) {
 			return nil
 		},
 		func(ctx context.Context, state *agents.PipelineState) error {
-			state.VisualBreakdown = samplePhaseAVisualBreakdown()
+			state.VisualScript = samplePhaseAVisualBreakdown()
 			return nil
 		},
 		reviewerAgent,
@@ -593,28 +593,38 @@ func samplePhaseANarration() *domain.NarrationScript {
 	}
 }
 
-func samplePhaseAVisualBreakdown() *domain.VisualBreakdownOutput {
-	var scenes []domain.VisualBreakdownScene
-	for i := 1; i <= 10; i++ {
-		scenes = append(scenes, domain.VisualBreakdownScene{
-			SceneNum:              i,
-			ActID:                 actIDForPhaseATest(i),
-			Narration:             fmt.Sprintf("scene %d", i),
-			EstimatedTTSDurationS: 7.0,
-			ShotCount:             1,
-			Shots: []domain.VisualShot{{
-				ShotIndex:          1,
-				VisualDescriptor:   "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; Key visual moments: Blink; shot description",
+func samplePhaseAVisualBreakdown() *domain.VisualScript {
+	// v2: 4 acts × 8 shots, anchored to the sample monologue offsets.
+	actIDs := []string{domain.ActIncident, domain.ActMystery, domain.ActRevelation, domain.ActUnresolved}
+	acts := make([]domain.VisualAct, 0, 4)
+	for actIdx, actID := range actIDs {
+		shots := make([]domain.VisualShot, 0, 8)
+		for i := 0; i < 8; i++ {
+			shots = append(shots, domain.VisualShot{
+				ShotIndex:          i + 1,
+				VisualDescriptor:   fmt.Sprintf("Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; Key visual moments: Blink; act %d shot %d description", actIdx, i+1),
 				EstimatedDurationS: 7.0,
 				Transition:         domain.TransitionKenBurns,
-			}},
-		})
+				NarrationAnchor: domain.BeatAnchor{
+					StartOffset:       i * 50,
+					EndOffset:         i*50 + 50,
+					Mood:              "tense",
+					Location:          "transit platform",
+					CharactersPresent: []string{"SCP-TEST"},
+					EntityVisible:     true,
+					ColorPalette:      "alarm red, cold gray",
+					Atmosphere:        "low hum",
+					FactTags:          []domain.FactTag{},
+				},
+			})
+		}
+		acts = append(acts, domain.VisualAct{ActID: actID, Shots: shots})
 	}
-	return &domain.VisualBreakdownOutput{
+	return &domain.VisualScript{
 		SCPID:            "SCP-TEST",
 		Title:            "SCP-TEST",
 		FrozenDescriptor: "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; Key visual moments: Blink",
-		Scenes:           scenes,
+		Acts:             acts,
 		ShotOverrides:    map[int]domain.ShotOverride{},
 		Metadata: domain.VisualBreakdownMetadata{
 			VisualBreakdownModel:    "visual-model",
@@ -622,7 +632,7 @@ func samplePhaseAVisualBreakdown() *domain.VisualBreakdownOutput {
 			PromptTemplate:          "03_5_visual_breakdown.md",
 			ShotFormulaVersion:      domain.ShotFormulaVersionV1,
 		},
-		SourceVersion: domain.VisualBreakdownSourceVersionV1,
+		SourceVersion: domain.VisualBreakdownSourceVersionV2,
 	}
 }
 

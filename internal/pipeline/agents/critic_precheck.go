@@ -59,7 +59,7 @@ func runPostReviewerPrecheck(
 		return domain.CriticPrecheck{}, nil, fmt.Errorf("critic precheck: %w: state is nil", domain.ErrValidation)
 	case state.Narration == nil:
 		return domain.CriticPrecheck{}, nil, fmt.Errorf("critic precheck: %w: narration is nil", domain.ErrValidation)
-	case state.VisualBreakdown == nil:
+	case state.VisualScript == nil:
 		return domain.CriticPrecheck{}, nil, fmt.Errorf("critic precheck: %w: visual breakdown is nil", domain.ErrValidation)
 	case state.Review == nil:
 		return domain.CriticPrecheck{}, nil, fmt.Errorf("critic precheck: %w: review is nil", domain.ErrValidation)
@@ -85,7 +85,7 @@ func runPostReviewerPrecheck(
 		report := buildPostReviewerShortCircuitReport("schema_validation_failed", "내레이션 스키마 검증에 실패해 최종 비평을 진행하지 않았습니다. 작성 결과 형식을 먼저 수정해야 합니다.", cfg)
 		return precheck, &report, nil
 	}
-	if err := visualValidator.Validate(*state.VisualBreakdown); err != nil {
+	if err := visualValidator.Validate(*state.VisualScript); err != nil {
 		precheck.SchemaValid = false
 		precheck.ShortCircuited = true
 		report := buildPostReviewerShortCircuitReport("schema_validation_failed", "비주얼 브레이크다운 스키마 검증에 실패해 최종 비평을 진행하지 않았습니다. 장면 분해 결과를 먼저 수정해야 합니다.", cfg)

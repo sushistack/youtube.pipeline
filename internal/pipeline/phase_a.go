@@ -366,7 +366,7 @@ func shouldFinalizePhaseA(state *agents.PipelineState) bool {
 		state.Research == nil ||
 		state.Structure == nil ||
 		state.Narration == nil ||
-		state.VisualBreakdown == nil ||
+		state.VisualScript == nil ||
 		state.Review == nil ||
 		state.Critic == nil ||
 		state.Critic.PostWriter == nil ||

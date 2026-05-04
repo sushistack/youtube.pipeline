@@ -69,7 +69,7 @@ func validPipelineState(scpID string) *agents.PipelineState {
 				WriterProvider: "deepseek",
 			},
 		},
-		VisualBreakdown: &domain.VisualBreakdownOutput{
+		VisualScript: &domain.VisualScript{
 			Metadata: domain.VisualBreakdownMetadata{
 				VisualBreakdownModel:    "gemini-3.1-flash-lite-preview",
 				VisualBreakdownProvider: "gemini",
@@ -271,7 +271,7 @@ func TestMetadataBuilder_Build_MissingVisualBreakdownProvider(t *testing.T) {
 	dir := t.TempDir()
 
 	state := validPipelineState("049")
-	state.VisualBreakdown.Metadata.VisualBreakdownProvider = ""
+	state.VisualScript.Metadata.VisualBreakdownProvider = ""
 	writeScenarioJSON(t, filepath.Join(dir, "test-run-1"), state)
 
 	cfg := validMetadataBuilderConfig(t, dir)

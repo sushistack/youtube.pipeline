@@ -135,46 +135,70 @@ type imageTrackFixture struct {
 }
 
 func scenarioStateForTest(runID string, scenes []sceneFixture, frozen string) *agents.PipelineState {
-	// v2 transition: build a single-act NarrationScript whose LegacyScenes()
-	// returns one NarrationScene per fixture scene. Each scene → 1 BeatAnchor.
+	// v2 (D2 migration): collapse the v1 multi-shot-per-scene fixture shape
+	// into a v2 NarrationScript + VisualScript pair where each fixture shot
+	// is its own beat (1:1 invariant). The image-track loop, which now
+	// reads `state.VisualScript.LegacyScenes(state.Narration)`, then sees
+	// one bridged scene per shot — total bridged scene count == total shot
+	// count, matching every existing test's totalCalls expectation.
 	monoBuilder := []rune{}
 	anchors := []domain.BeatAnchor{}
-	for i, s := range scenes {
+	for sIdx, s := range scenes {
+		// Distribute the scene's narration runes evenly across its shots so
+		// each beat carries a non-empty rune slice. With one shot per scene
+		// (the dominant fixture shape), this collapses to "beat covers the
+		// whole scene narration" — a faithful preservation of v1 semantics.
 		runes := []rune(s.narration)
-		before := len(monoBuilder)
-		monoBuilder = append(monoBuilder, runes...)
-		anchors = append(anchors, domain.BeatAnchor{
-			StartOffset:       before,
-			EndOffset:         len(monoBuilder),
-			Mood:              "tense",
-			Location:          "site-19",
-			CharactersPresent: []string{"unknown"},
-			EntityVisible:     s.entityVisible,
-			ColorPalette:      "neutral",
-			Atmosphere:        "subdued",
-			FactTags:          []domain.FactTag{},
-		})
-		if i < len(scenes)-1 {
+		nShots := len(s.shots)
+		if nShots == 0 {
+			continue
+		}
+		chunk := len(runes) / nShots
+		if chunk == 0 {
+			chunk = 1
+		}
+		for shotIdx := 0; shotIdx < nShots; shotIdx++ {
+			before := len(monoBuilder)
+			beatStart := shotIdx * chunk
+			beatEnd := beatStart + chunk
+			if shotIdx == nShots-1 || beatEnd > len(runes) {
+				beatEnd = len(runes)
+			}
+			beatRunes := runes[beatStart:beatEnd]
+			monoBuilder = append(monoBuilder, beatRunes...)
+			anchors = append(anchors, domain.BeatAnchor{
+				StartOffset:       before,
+				EndOffset:         len(monoBuilder),
+				Mood:              "tense",
+				Location:          "site-19",
+				CharactersPresent: []string{"unknown"},
+				EntityVisible:     s.entityVisible,
+				ColorPalette:      "neutral",
+				Atmosphere:        "subdued",
+				FactTags:          []domain.FactTag{},
+			})
+		}
+		if sIdx < len(scenes)-1 {
 			monoBuilder = append(monoBuilder, ' ')
 		}
 	}
-	vbScenes := make([]domain.VisualBreakdownScene, 0, len(scenes))
+	// Build a v2 VisualScript whose Acts[0].Shots line up 1:1 with the
+	// flattened anchor sequence above. The bridge LegacyScenes() then
+	// reproduces the flattened scene→1-shot view that image_track.go
+	// iterates over.
+	visualShots := make([]domain.VisualShot, 0, len(anchors))
+	anchorIdx := 0
 	for _, s := range scenes {
-		shots := make([]domain.VisualShot, 0, len(s.shots))
-		for i, descriptor := range s.shots {
-			shots = append(shots, domain.VisualShot{
-				ShotIndex:          i + 1,
+		for _, descriptor := range s.shots {
+			visualShots = append(visualShots, domain.VisualShot{
+				ShotIndex:          anchorIdx + 1,
 				VisualDescriptor:   frozen + "; " + descriptor,
 				EstimatedDurationS: 4.0,
 				Transition:         domain.TransitionKenBurns,
+				NarrationAnchor:    anchors[anchorIdx],
 			})
+			anchorIdx++
 		}
-		vbScenes = append(vbScenes, domain.VisualBreakdownScene{
-			SceneNum:  s.sceneNum,
-			Narration: s.narration,
-			ShotCount: len(shots),
-			Shots:     shots,
-		})
 	}
 	return &agents.PipelineState{
 		RunID: runID,
@@ -189,11 +213,14 @@ func scenarioStateForTest(runID string, scenes []sceneFixture, frozen string) *a
 				Mood:      "tense",
 			}},
 		},
-		VisualBreakdown: &domain.VisualBreakdownOutput{
+		VisualScript: &domain.VisualScript{
 			SCPID:            "049",
 			FrozenDescriptor: frozen,
-			Scenes:           vbScenes,
-			ShotOverrides:    map[int]domain.ShotOverride{},
+			Acts: []domain.VisualAct{{
+				ActID: domain.ActIncident,
+				Shots: visualShots,
+			}},
+			ShotOverrides: map[int]domain.ShotOverride{},
 		},
 	}
 }
@@ -413,7 +440,7 @@ func TestImageTrack_MissingFrozenDescriptorFailsLoudly(t *testing.T) {
 	outputDir := t.TempDir()
 	runID := "scp-049-run-1"
 	state := scenarioStateForTest(runID, scenes, "")
-	state.VisualBreakdown.FrozenDescriptor = ""
+	state.VisualScript.FrozenDescriptor = ""
 	scenarioPath := writeScenario(t, outputDir, runID, state)
 
 	track, err := pipeline.NewImageTrack(pipeline.ImageTrackConfig{
@@ -566,9 +593,15 @@ func TestImageTrack_EditAndGenerateShareOutputPersistenceContract(t *testing.T) 
 func TestImageTrack_WritesImagesToSceneShotDirectories(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
+	// v2 (D2): the visual_breakdowner emits one shot per BeatAnchor; the
+	// bridge LegacyScenes() flattens that to one bridged scene per shot,
+	// preserving the 1-shot-per-scene canonical-path pattern. The test
+	// fixture below collapses to 3 fixture scenes × 1 shot each (= 3
+	// bridged scenes), matching v2's 1:1 invariant.
 	scenes := []sceneFixture{
-		{sceneNum: 1, narration: "scene 1", entityVisible: true, shots: []string{"a", "b"}},
-		{sceneNum: 2, narration: "scene 2", entityVisible: false, shots: []string{"c"}},
+		{sceneNum: 1, narration: "scene 1", entityVisible: true, shots: []string{"a"}},
+		{sceneNum: 2, narration: "scene 2", entityVisible: true, shots: []string{"b"}},
+		{sceneNum: 3, narration: "scene 3", entityVisible: false, shots: []string{"c"}},
 	}
 	f := newImageTrackFixture(t, scenes)
 
@@ -577,8 +610,8 @@ func TestImageTrack_WritesImagesToSceneShotDirectories(t *testing.T) {
 	}
 	expected := []string{
 		"images/scene_01/shot_01.png",
-		"images/scene_01/shot_02.png",
 		"images/scene_02/shot_01.png",
+		"images/scene_03/shot_01.png",
 	}
 	for _, rel := range expected {
 		if _, err := os.Stat(filepath.Join(f.outputDir, f.runID, rel)); err != nil {
@@ -683,25 +716,32 @@ func TestImageTrack_SegmentsShotsJSONPreservesVisualDescriptor(t *testing.T) {
 func TestImageTrack_SegmentsShotsRemainAlignedWithScenarioShotOrder(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
+	// v2 (D2): ordering invariant operates on the bridged scene sequence —
+	// one scene per BeatAnchor in narration→visual ordering. Three fixture
+	// scenes here exercise the same "shots emit in declared order" contract
+	// the v1 multi-shot-per-scene case did, but against v2's 1:1 layout.
 	scenes := []sceneFixture{
-		{sceneNum: 1, narration: "scene 1", entityVisible: true, shots: []string{"alpha", "beta", "gamma"}},
+		{sceneNum: 1, narration: "scene 1", entityVisible: true, shots: []string{"alpha"}},
+		{sceneNum: 2, narration: "scene 2", entityVisible: true, shots: []string{"beta"}},
+		{sceneNum: 3, narration: "scene 3", entityVisible: true, shots: []string{"gamma"}},
 	}
 	f := newImageTrackFixture(t, scenes)
 
 	if _, err := f.track(context.Background(), f.req); err != nil {
 		t.Fatalf("track: %v", err)
 	}
-	persisted := f.shots.entries[0]
-	if len(persisted) != 3 {
-		t.Fatalf("expected 3 shots, got %d", len(persisted))
-	}
 	wantSuffixes := []string{"alpha", "beta", "gamma"}
-	for i, s := range persisted {
-		if !strings.HasSuffix(s.VisualDescriptor, wantSuffixes[i]) {
-			t.Fatalf("shot %d descriptor out of order: %q (want suffix %q)", i, s.VisualDescriptor, wantSuffixes[i])
+	for i := range scenes {
+		persisted, ok := f.shots.entries[i]
+		if !ok || len(persisted) != 1 {
+			t.Fatalf("expected 1 shot at sceneIndex=%d, got %#v", i, persisted)
 		}
-		if s.ImagePath != filepath.Join("images", "scene_01", fmt.Sprintf("shot_%02d.png", i+1)) {
-			t.Fatalf("shot %d image path out of order: %q", i, s.ImagePath)
+		s := persisted[0]
+		if !strings.HasSuffix(s.VisualDescriptor, wantSuffixes[i]) {
+			t.Fatalf("scene %d descriptor out of order: %q (want suffix %q)", i+1, s.VisualDescriptor, wantSuffixes[i])
+		}
+		if s.ImagePath != filepath.Join("images", fmt.Sprintf("scene_%02d", i+1), "shot_01.png") {
+			t.Fatalf("scene %d image path out of order: %q", i+1, s.ImagePath)
 		}
 	}
 }
@@ -874,24 +914,23 @@ func TestImageTrack_FrozenDescriptorOverridePrecedesArtifactValue(t *testing.T) 
 				}},
 			}},
 		},
-		VisualBreakdown: &domain.VisualBreakdownOutput{
+		VisualScript: &domain.VisualScript{
 			SCPID:            "049",
 			FrozenDescriptor: frozen,
-			Scenes: []domain.VisualBreakdownScene{
-				{
-					SceneNum:  1,
-					Narration: "n1",
-					ShotCount: 1,
-					Shots: []domain.VisualShot{
-						{
-							ShotIndex:          1,
-							VisualDescriptor:   "camera: low wide establishing",
-							EstimatedDurationS: 4.0,
-							Transition:         domain.TransitionKenBurns,
-						},
+			Acts: []domain.VisualAct{{
+				ActID: domain.ActIncident,
+				Shots: []domain.VisualShot{{
+					ShotIndex:          1,
+					VisualDescriptor:   "camera: low wide establishing",
+					EstimatedDurationS: 4.0,
+					Transition:         domain.TransitionKenBurns,
+					NarrationAnchor: domain.BeatAnchor{
+						StartOffset: 0, EndOffset: 2,
+						Mood: "calm", Location: "site-19", CharactersPresent: []string{"unknown"},
+						EntityVisible: false, ColorPalette: "neutral", Atmosphere: "subdued",
 					},
-				},
-			},
+				}},
+			}},
 			ShotOverrides: map[int]domain.ShotOverride{},
 		},
 	}

@@ -597,11 +597,11 @@ func TestPhaseARunner_WritesScenarioJSON(t *testing.T) {
 		return nil
 	}
 	b.visualBreakdowner = func(ctx context.Context, state *agents.PipelineState) error {
-		state.VisualBreakdown = &domain.VisualBreakdownOutput{
+		state.VisualScript = &domain.VisualScript{
 			SCPID:            "scp-1",
 			Title:            "payload",
 			FrozenDescriptor: "Appearance: test",
-			Scenes:           []domain.VisualBreakdownScene{},
+			Acts:             []domain.VisualAct{},
 			ShotOverrides:    map[int]domain.ShotOverride{},
 			Metadata: domain.VisualBreakdownMetadata{
 				VisualBreakdownModel:    "visual-model",
@@ -609,7 +609,7 @@ func TestPhaseARunner_WritesScenarioJSON(t *testing.T) {
 				PromptTemplate:          "03_5_visual_breakdown.md",
 				ShotFormulaVersion:      domain.ShotFormulaVersionV1,
 			},
-			SourceVersion: domain.VisualBreakdownSourceVersionV1,
+			SourceVersion: domain.VisualBreakdownSourceVersionV2,
 		}
 		return nil
 	}
@@ -662,7 +662,7 @@ func TestPhaseARunner_WritesScenarioJSON(t *testing.T) {
 
 	// All 6 fields populated.
 	if got.Research == nil || got.Structure == nil || got.Narration == nil ||
-		got.VisualBreakdown == nil || got.Review == nil || got.Critic == nil {
+		got.VisualScript == nil || got.Review == nil || got.Critic == nil {
 		t.Errorf("expected all 6 output fields populated, got %+v", got)
 	}
 
@@ -696,7 +696,7 @@ func TestPhaseARunner_AtomicWrite(t *testing.T) {
 		return nil
 	}
 	b.visualBreakdowner = func(ctx context.Context, state *agents.PipelineState) error {
-		state.VisualBreakdown = samplePhaseAVisualBreakdown()
+		state.VisualScript = samplePhaseAVisualBreakdown()
 		return nil
 	}
 	b.reviewer = func(ctx context.Context, state *agents.PipelineState) error {
@@ -768,7 +768,7 @@ func TestPhaseARunner_IdempotentOverwrite(t *testing.T) {
 		return nil
 	}
 	b.visualBreakdowner = func(ctx context.Context, state *agents.PipelineState) error {
-		state.VisualBreakdown = samplePhaseAVisualBreakdown()
+		state.VisualScript = samplePhaseAVisualBreakdown()
 		return nil
 	}
 	b.reviewer = func(ctx context.Context, state *agents.PipelineState) error {

@@ -130,10 +130,10 @@ func sampleFinalizablePhaseAState() *agents.PipelineState {
 	return &agents.PipelineState{
 		RunID:           "run-1",
 		SCPID:           "SCP-TEST",
-		Research:        samplePhaseAResearch(),
-		Structure:       &domain.StructurerOutput{SCPID: "SCP-TEST", TargetSceneCount: 10, SourceVersion: domain.SourceVersionV1},
-		Narration:       samplePhaseANarration(),
-		VisualBreakdown: samplePhaseAVisualBreakdown(),
+		Research:     samplePhaseAResearch(),
+		Structure:    &domain.StructurerOutput{SCPID: "SCP-TEST", TargetSceneCount: 10, SourceVersion: domain.SourceVersionV1},
+		Narration:    samplePhaseANarration(),
+		VisualScript: samplePhaseAVisualBreakdown(),
 		Review: &domain.ReviewReport{
 			OverallPass:      true,
 			CoveragePct:      100,

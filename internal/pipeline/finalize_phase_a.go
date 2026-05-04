@@ -16,7 +16,7 @@ func finalizePhaseA(runDir string, state *agents.PipelineState) (bool, error) {
 	if state == nil {
 		return false, fmt.Errorf("finalize phase a: %w: state is nil", domain.ErrValidation)
 	}
-	if state.Research == nil || state.Structure == nil || state.Narration == nil || state.VisualBreakdown == nil || state.Review == nil {
+	if state.Research == nil || state.Structure == nil || state.Narration == nil || state.VisualScript == nil || state.Review == nil {
 		return false, nil
 	}
 	if state.Critic == nil || state.Critic.PostWriter == nil || state.Critic.PostReviewer == nil {

@@ -29,12 +29,12 @@ func TestReviewer_Run_Happy(t *testing.T) {
 	testutil.AssertEqual(t, state.Review.ReviewerModel, "review-model")
 }
 
-func TestReviewer_Run_InvalidVisualBreakdownBlockedBeforeLLM(t *testing.T) {
+func TestReviewer_Run_InvalidVisualScriptBlockedBeforeLLM(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	gen := &fakeTextGenerator{}
 	state := sampleReviewerState()
-	state.VisualBreakdown.ShotOverrides = nil
+	state.VisualScript.ShotOverrides = nil
 	err := NewReviewer(gen, TextAgentConfig{Model: "review-model", Provider: "anthropic"}, sampleVisualAssets(), mustValidator(t, "visual_breakdown.schema.json"), mustValidator(t, "reviewer_report.schema.json"))(context.Background(), state)
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("expected ErrValidation, got %v", err)
@@ -112,34 +112,35 @@ func TestReviewer_Run_DoesNotMutateStateOnFailure(t *testing.T) {
 }
 
 func sampleReviewerState() *PipelineState {
-	state := sampleWriterState()
-	state.Narration = sampleNarrationScenes(10)
-	state.VisualBreakdown = sampleVisualBreakdownForReview()
+	state := sampleVisualBreakdownState4Acts()
+	state.VisualScript = sampleVisualScriptForReview(state.Narration)
 	return state
 }
 
-func sampleVisualBreakdownForReview() *domain.VisualBreakdownOutput {
-	var scenes []domain.VisualBreakdownScene
-	for i := 1; i <= 10; i++ {
-		scenes = append(scenes, domain.VisualBreakdownScene{
-			SceneNum:              i,
-			ActID:                 actForScene(i),
-			Narration:             "scene narration",
-			EstimatedTTSDurationS: 7.0,
-			ShotCount:             1,
-			Shots: []domain.VisualShot{{
-				ShotIndex:          1,
+// sampleVisualScriptForReview builds a v2 VisualScript whose Acts/Shots
+// 1:1-mirror the supplied NarrationScript's Acts/Beats with frozen-descriptor
+// continuity and Korean-friendly Ken-Burns transitions. Used by reviewer +
+// critic precheck tests that need a schema-valid v2 visual_script in state.
+func sampleVisualScriptForReview(narration *domain.NarrationScript) *domain.VisualScript {
+	acts := make([]domain.VisualAct, 0, len(narration.Acts))
+	for _, srcAct := range narration.Acts {
+		shots := make([]domain.VisualShot, 0, len(srcAct.Beats))
+		for i, beat := range srcAct.Beats {
+			shots = append(shots, domain.VisualShot{
+				ShotIndex:          i + 1,
 				VisualDescriptor:   "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; Key visual moments: Blink; shot description",
 				EstimatedDurationS: 7.0,
 				Transition:         domain.TransitionKenBurns,
-			}},
-		})
+				NarrationAnchor:    beat,
+			})
+		}
+		acts = append(acts, domain.VisualAct{ActID: srcAct.ActID, Shots: shots})
 	}
-	return &domain.VisualBreakdownOutput{
+	return &domain.VisualScript{
 		SCPID:            "SCP-TEST",
 		Title:            "SCP-TEST",
 		FrozenDescriptor: "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; Key visual moments: Blink",
-		Scenes:           scenes,
+		Acts:             acts,
 		ShotOverrides:    map[int]domain.ShotOverride{},
 		Metadata: domain.VisualBreakdownMetadata{
 			VisualBreakdownModel:    "visual-model",
@@ -147,6 +148,6 @@ func sampleVisualBreakdownForReview() *domain.VisualBreakdownOutput {
 			PromptTemplate:          "03_5_visual_breakdown.md",
 			ShotFormulaVersion:      domain.ShotFormulaVersionV1,
 		},
-		SourceVersion: domain.VisualBreakdownSourceVersionV1,
+		SourceVersion: domain.VisualBreakdownSourceVersionV2,
 	}
 }

@@ -50,14 +50,14 @@ type PipelineState struct {
 	// means "upstream agent has not run yet"; a non-nil value is the
 	// agent's serialized output. Stories 3.2–3.5 progressively replace
 	// placeholders with strongly-typed structs on this same carrier.
-	Research        *domain.ResearcherOutput      `json:"research,omitempty"`         // Researcher (3.2)
-	Structure       *domain.StructurerOutput      `json:"structure,omitempty"`        // Structurer (3.2)
-	Narration       *domain.NarrationScript       `json:"narration,omitempty"`        // Writer (3.3)
-	VisualBreakdown *domain.VisualBreakdownOutput `json:"visual_breakdown,omitempty"` // VisualBreakdowner (3.4)
-	Review          *domain.ReviewReport          `json:"review,omitempty"`           // Reviewer (3.4)
-	Critic          *domain.CriticOutput          `json:"critic,omitempty"`           // Critic (3.3 post-Writer + 3.5 post-Reviewer)
-	Quality         *PhaseAQualitySummary         `json:"quality,omitempty"`          // Final Phase A quality summary (3.5)
-	Contracts       *PhaseAContractManifest       `json:"contracts,omitempty"`        // Final Phase A schema manifest (3.5)
+	Research     *domain.ResearcherOutput `json:"research,omitempty"`      // Researcher (3.2)
+	Structure    *domain.StructurerOutput `json:"structure,omitempty"`     // Structurer (3.2)
+	Narration    *domain.NarrationScript  `json:"narration,omitempty"`     // Writer (3.3)
+	VisualScript *domain.VisualScript     `json:"visual_script,omitempty"` // VisualBreakdowner (3.4 / D2 v2)
+	Review       *domain.ReviewReport     `json:"review,omitempty"`        // Reviewer (3.4)
+	Critic       *domain.CriticOutput     `json:"critic,omitempty"`        // Critic (3.3 post-Writer + 3.5 post-Reviewer)
+	Quality      *PhaseAQualitySummary    `json:"quality,omitempty"`       // Final Phase A quality summary (3.5)
+	Contracts    *PhaseAContractManifest  `json:"contracts,omitempty"`     // Final Phase A schema manifest (3.5)
 
 	// PriorCriticFeedback carries the Korean feedback text from the last
 	// failed critic report for this run. Non-empty on Resume after a

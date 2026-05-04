@@ -2,40 +2,61 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "additionalProperties": false,
-  "required": ["scp_id", "title", "frozen_descriptor", "scenes", "shot_overrides", "metadata", "source_version"],
+  "required": ["scp_id", "title", "frozen_descriptor", "acts", "shot_overrides", "metadata", "source_version"],
   "properties": {
     "scp_id": {"type": "string"},
     "title": {"type": "string"},
     "frozen_descriptor": {"type": "string"},
-    "scenes": {
+    "acts": {
       "type": "array",
       "minItems": 4,
-      "maxItems": 32,
+      "maxItems": 4,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["scene_num", "act_id", "narration", "estimated_tts_duration_s", "shot_count", "shots"],
+        "required": ["act_id", "shots"],
         "properties": {
-          "scene_num": {"type": "integer", "minimum": 1},
           "act_id": {"type": "string"},
-          "narration": {"type": "string"},
-          "estimated_tts_duration_s": {"type": "number", "minimum": 0},
-          "shot_count": {"type": "integer", "minimum": 1, "maximum": 12},
           "shots": {
             "type": "array",
-            "minItems": 1,
-            "maxItems": 12,
+            "minItems": 8,
+            "maxItems": 10,
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["shot_index", "visual_descriptor", "estimated_duration_s", "transition", "narration_beat_index", "narration_beat_text"],
+              "required": ["shot_index", "visual_descriptor", "estimated_duration_s", "transition", "narration_anchor"],
               "properties": {
                 "shot_index": {"type": "integer", "minimum": 1},
                 "visual_descriptor": {"type": "string"},
                 "estimated_duration_s": {"type": "number", "minimum": 0},
                 "transition": {"type": "string", "enum": ["ken_burns", "cross_dissolve", "hard_cut"]},
-                "narration_beat_index": {"type": "integer", "minimum": 0},
-                "narration_beat_text": {"type": "string"}
+                "narration_anchor": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["start_offset", "end_offset", "mood", "location", "characters_present", "entity_visible", "color_palette", "atmosphere", "fact_tags"],
+                  "properties": {
+                    "start_offset": {"type": "integer", "minimum": 0},
+                    "end_offset": {"type": "integer", "minimum": 0},
+                    "mood": {"type": "string"},
+                    "location": {"type": "string"},
+                    "characters_present": {"type": "array", "items": {"type": "string"}},
+                    "entity_visible": {"type": "boolean"},
+                    "color_palette": {"type": "string"},
+                    "atmosphere": {"type": "string"},
+                    "fact_tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["key", "content"],
+                        "properties": {
+                          "key": {"type": "string"},
+                          "content": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -64,6 +85,6 @@
         "shot_formula_version": {"const": "tts-duration-v1"}
       }
     },
-    "source_version": {"const": "v1-visual-breakdown"}
+    "source_version": {"const": "v2-visual"}
   }
 }

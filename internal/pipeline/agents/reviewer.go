@@ -25,7 +25,7 @@ func NewReviewer(
 			return fmt.Errorf("reviewer: %w: research is nil", domain.ErrValidation)
 		case state.Narration == nil:
 			return fmt.Errorf("reviewer: %w: narration is nil", domain.ErrValidation)
-		case state.VisualBreakdown == nil:
+		case state.VisualScript == nil:
 			return fmt.Errorf("reviewer: %w: visual breakdown is nil", domain.ErrValidation)
 		case cfg.Model == "":
 			return fmt.Errorf("reviewer: %w: model is empty", domain.ErrValidation)
@@ -38,7 +38,7 @@ func NewReviewer(
 		case reviewValidator == nil:
 			return fmt.Errorf("reviewer: %w: review validator is nil", domain.ErrValidation)
 		}
-		if err := visualValidator.Validate(*state.VisualBreakdown); err != nil {
+		if err := visualValidator.Validate(*state.VisualScript); err != nil {
 			return fmt.Errorf("reviewer: %w", err)
 		}
 
@@ -129,7 +129,7 @@ func renderReviewerPrompt(state *PipelineState, prompts PromptAssets) (string, e
 	if err != nil {
 		return "", fmt.Errorf("reviewer: marshal narration: %w", domain.ErrValidation)
 	}
-	visualJSON, err := json.MarshalIndent(state.VisualBreakdown, "", "  ")
+	visualJSON, err := json.MarshalIndent(state.VisualScript, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("reviewer: marshal visual breakdown: %w", domain.ErrValidation)
 	}
@@ -137,7 +137,7 @@ func renderReviewerPrompt(state *PipelineState, prompts PromptAssets) (string, e
 		"{scp_fact_sheet}", string(researchJSON),
 		"{narration_script}", string(narrationJSON),
 		"{visual_descriptions}", string(visualJSON),
-		"{scp_visual_reference}", state.VisualBreakdown.FrozenDescriptor,
+		"{scp_visual_reference}", state.VisualScript.FrozenDescriptor,
 		"{format_guide}", prompts.FormatGuide,
 	)
 	return replacer.Replace(prompts.ReviewerTemplate), nil

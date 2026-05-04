@@ -64,9 +64,8 @@ var promptRendererContract = []struct {
 		name: "visual_breakdown",
 		path: visualBreakdownPromptPath,
 		substitutes: []string{
-			"scene_num", "location", "characters_present", "color_palette",
-			"atmosphere", "scp_visual_reference", "narration", "narration_beats",
-			"frozen_descriptor", "estimated_tts_duration_s", "shot_count",
+			"act_id", "act_mood", "monologue", "beats_table",
+			"scp_visual_reference", "frozen_descriptor", "shot_count",
 		},
 	},
 	{

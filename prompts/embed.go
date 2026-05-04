@@ -37,6 +37,12 @@ const AgentScriptWriter = "script_writer"
 // + offsets contract so the LLM emits BeatAnchor[] slices.
 const AgentScriptSegmenter = "script_segmenter"
 
+// AgentVisualBreakdowner is the canonical name for the v2 visual
+// breakdowner template. Consumes one act's monologue + ordered
+// BeatAnchor slices, emits one VisualShot per beat with the
+// narration_anchor block carrying every BeatAnchor field byte-for-byte.
+const AgentVisualBreakdowner = "visual_breakdowner"
+
 // ReadAgent returns the embedded template body for the given agent name.
 // Returns an error wrapped with the agent name when the template is
 // missing — the caller can decide whether to fall back to the legacy

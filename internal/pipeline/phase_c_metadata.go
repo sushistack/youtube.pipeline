@@ -204,9 +204,9 @@ func (b *metadataBuilder) Build(ctx context.Context, runID string) (domain.Metad
 
 	// Visual breakdown model/provider from scenario.json.
 	var vbProvider, vbModel string
-	if state.VisualBreakdown != nil {
-		vbProvider = state.VisualBreakdown.Metadata.VisualBreakdownProvider
-		vbModel = state.VisualBreakdown.Metadata.VisualBreakdownModel
+	if state.VisualScript != nil {
+		vbProvider = state.VisualScript.Metadata.VisualBreakdownProvider
+		vbModel = state.VisualScript.Metadata.VisualBreakdownModel
 	}
 	if vbProvider == "" {
 		return domain.MetadataBundle{}, domain.SourceManifest{}, fmt.Errorf("metadata builder: %w: visual breakdown provider is empty", domain.ErrValidation)

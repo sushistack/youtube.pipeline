@@ -43,16 +43,16 @@ func TestPipelineState_JSONShape_RoundTrip(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	orig := PipelineState{
-		RunID:           "run-abc",
-		SCPID:           "scp-001",
-		Research:        &domain.ResearcherOutput{SCPID: "SCP-TEST", Title: "x"},
-		Structure:       &domain.StructurerOutput{SCPID: "SCP-TEST", TargetSceneCount: 10},
-		Narration:       &domain.NarrationScript{SCPID: "SCP-TEST", Title: "x"},
-		VisualBreakdown: &domain.VisualBreakdownOutput{SCPID: "SCP-TEST", Title: "x", ShotOverrides: map[int]domain.ShotOverride{}, SourceVersion: domain.VisualBreakdownSourceVersionV1},
-		Review:          &domain.ReviewReport{OverallPass: true, SourceVersion: domain.ReviewSourceVersionV1},
-		Critic:          &domain.CriticOutput{PostWriter: &domain.CriticCheckpointReport{Verdict: domain.CriticVerdictPass}},
-		StartedAt:       "2026-04-18T10:00:00Z",
-		FinishedAt:      "2026-04-18T10:05:00Z",
+		RunID:        "run-abc",
+		SCPID:        "scp-001",
+		Research:     &domain.ResearcherOutput{SCPID: "SCP-TEST", Title: "x"},
+		Structure:    &domain.StructurerOutput{SCPID: "SCP-TEST", TargetSceneCount: 10},
+		Narration:    &domain.NarrationScript{SCPID: "SCP-TEST", Title: "x"},
+		VisualScript: &domain.VisualScript{SCPID: "SCP-TEST", Title: "x", ShotOverrides: map[int]domain.ShotOverride{}, SourceVersion: domain.VisualBreakdownSourceVersionV2},
+		Review:       &domain.ReviewReport{OverallPass: true, SourceVersion: domain.ReviewSourceVersionV1},
+		Critic:       &domain.CriticOutput{PostWriter: &domain.CriticCheckpointReport{Verdict: domain.CriticVerdictPass}},
+		StartedAt:    "2026-04-18T10:00:00Z",
+		FinishedAt:   "2026-04-18T10:05:00Z",
 	}
 
 	first, err := json.Marshal(&orig)
@@ -83,16 +83,16 @@ func TestPipelineState_JSONTags_SnakeCase(t *testing.T) {
 
 	// Populate every field so each appears in the serialized output.
 	s := PipelineState{
-		RunID:           "r",
-		SCPID:           "s",
-		Research:        &domain.ResearcherOutput{},
-		Structure:       &domain.StructurerOutput{},
-		Narration:       &domain.NarrationScript{},
-		VisualBreakdown: &domain.VisualBreakdownOutput{ShotOverrides: map[int]domain.ShotOverride{}},
-		Review:          &domain.ReviewReport{},
-		Critic:          &domain.CriticOutput{},
-		StartedAt:       "t",
-		FinishedAt:      "t",
+		RunID:        "r",
+		SCPID:        "s",
+		Research:     &domain.ResearcherOutput{},
+		Structure:    &domain.StructurerOutput{},
+		Narration:    &domain.NarrationScript{},
+		VisualScript: &domain.VisualScript{ShotOverrides: map[int]domain.ShotOverride{}},
+		Review:       &domain.ReviewReport{},
+		Critic:       &domain.CriticOutput{},
+		StartedAt:    "t",
+		FinishedAt:   "t",
 	}
 	raw, err := json.Marshal(&s)
 	if err != nil {
@@ -103,7 +103,7 @@ func TestPipelineState_JSONTags_SnakeCase(t *testing.T) {
 	// Required snake_case keys.
 	for _, key := range []string{
 		`"run_id"`, `"scp_id"`, `"research"`, `"structure"`,
-		`"narration"`, `"visual_breakdown"`, `"review"`, `"critic"`,
+		`"narration"`, `"visual_script"`, `"review"`, `"critic"`,
 		`"started_at"`, `"finished_at"`,
 	} {
 		if !strings.Contains(payload, key) {
@@ -113,7 +113,7 @@ func TestPipelineState_JSONTags_SnakeCase(t *testing.T) {
 
 	// Forbidden camelCase variants.
 	for _, bad := range []string{
-		`"runId"`, `"scpId"`, `"visualBreakdown"`, `"startedAt"`, `"finishedAt"`,
+		`"runId"`, `"scpId"`, `"visualScript"`, `"startedAt"`, `"finishedAt"`,
 	} {
 		if strings.Contains(payload, bad) {
 			t.Errorf("forbidden camelCase JSON key %s found in %s", bad, payload)
@@ -121,25 +121,25 @@ func TestPipelineState_JSONTags_SnakeCase(t *testing.T) {
 	}
 }
 
-func TestPipelineState_VisualBreakdownReviewTyped(t *testing.T) {
+func TestPipelineState_VisualScriptReviewTyped(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	orig := PipelineState{
-		VisualBreakdown: &domain.VisualBreakdownOutput{
+		VisualScript: &domain.VisualScript{
 			SCPID:            "SCP-TEST",
 			Title:            "SCP-TEST",
 			FrozenDescriptor: "Appearance: test",
-			Scenes: []domain.VisualBreakdownScene{{
-				SceneNum:              1,
-				ActID:                 domain.ActIncident,
-				Narration:             "scene",
-				EstimatedTTSDurationS: 7.1,
-				ShotCount:             1,
+			Acts: []domain.VisualAct{{
+				ActID: domain.ActIncident,
 				Shots: []domain.VisualShot{{
 					ShotIndex:          1,
 					VisualDescriptor:   "Appearance: test; shot",
 					EstimatedDurationS: 7.1,
 					Transition:         domain.TransitionKenBurns,
+					NarrationAnchor: domain.BeatAnchor{
+						StartOffset: 0,
+						EndOffset:   12,
+					},
 				}},
 			}},
 			ShotOverrides: map[int]domain.ShotOverride{},
@@ -149,7 +149,7 @@ func TestPipelineState_VisualBreakdownReviewTyped(t *testing.T) {
 				PromptTemplate:          "03_5_visual_breakdown.md",
 				ShotFormulaVersion:      domain.ShotFormulaVersionV1,
 			},
-			SourceVersion: domain.VisualBreakdownSourceVersionV1,
+			SourceVersion: domain.VisualBreakdownSourceVersionV2,
 		},
 		Review: &domain.ReviewReport{
 			OverallPass:      true,
@@ -170,10 +170,10 @@ func TestPipelineState_VisualBreakdownReviewTyped(t *testing.T) {
 	if err := json.Unmarshal(raw, &round); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if round.VisualBreakdown == nil || round.Review == nil {
+	if round.VisualScript == nil || round.Review == nil {
 		t.Fatalf("typed fields did not unmarshal: %+v", round)
 	}
-	testutil.AssertEqual(t, round.VisualBreakdown.SourceVersion, domain.VisualBreakdownSourceVersionV1)
+	testutil.AssertEqual(t, round.VisualScript.SourceVersion, domain.VisualBreakdownSourceVersionV2)
 	testutil.AssertEqual(t, round.Review.SourceVersion, domain.ReviewSourceVersionV1)
 }
 
