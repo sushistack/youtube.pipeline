@@ -98,6 +98,8 @@ type NarrationMetadata struct {
 // See spec-d1-domain-types-and-writer-v2.md "Design Notes". Caller must
 // not mutate the result and expect it to round-trip back into Acts — the
 // bridge is in-memory, read-only.
+//
+// TODO(D4): remove with critic v2.
 func (n *NarrationScript) LegacyScenes() []NarrationScene {
 	if n == nil || len(n.Acts) == 0 {
 		return nil

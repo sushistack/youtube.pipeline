@@ -129,7 +129,8 @@ func renderReviewerPrompt(state *PipelineState, prompts PromptAssets) (string, e
 	if err != nil {
 		return "", fmt.Errorf("reviewer: marshal narration: %w", domain.ErrValidation)
 	}
-	visualJSON, err := json.MarshalIndent(state.VisualScript, "", "  ")
+	visualLegacy := state.VisualScript.LegacyScenes(state.Narration)
+	visualJSON, err := json.MarshalIndent(visualLegacy, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("reviewer: marshal visual breakdown: %w", domain.ErrValidation)
 	}

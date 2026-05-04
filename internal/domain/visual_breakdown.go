@@ -1,5 +1,7 @@
 package domain
 
+import "fmt"
+
 const (
 	// VisualBreakdownSourceVersionV1 is the legacy per-scene visual_breakdown
 	// shape. Reserved only as a const for archival fixtures; v2 producers MUST
@@ -117,14 +119,19 @@ func (v *VisualScript) LegacyScenes(narration *NarrationScript) []VisualBreakdow
 	if v == nil || len(v.Acts) == 0 {
 		return nil
 	}
-	// Index narration acts by ActID for monologue lookup. Falls back to
-	// positional match when narration is nil (test fixtures may bridge
-	// without narration; the fallback yields empty Narration strings).
-	monologueByAct := map[string]string{}
-	if narration != nil {
-		for _, act := range narration.Acts {
-			monologueByAct[act.ActID] = act.Monologue
-		}
+	// narration is structurally required: every VisualAct.ActID MUST
+	// resolve to a NarrationScript Monologue, otherwise the derived
+	// `Narration` field would be silently empty and downstream image
+	// prompts / TTS would render against blank text. nil narration or a
+	// missing ActID is programmer error (state corruption, version drift
+	// between Narration and Visual writers) — fail loud rather than
+	// produce a structurally-valid but semantically-empty bridge result.
+	if narration == nil {
+		panic("domain.VisualScript.LegacyScenes: narration is nil — bridge requires NarrationScript for monologue lookup")
+	}
+	monologueByAct := make(map[string]string, len(narration.Acts))
+	for _, act := range narration.Acts {
+		monologueByAct[act.ActID] = act.Monologue
 	}
 	total := 0
 	for _, act := range v.Acts {
@@ -133,10 +140,21 @@ func (v *VisualScript) LegacyScenes(narration *NarrationScript) []VisualBreakdow
 	scenes := make([]VisualBreakdownScene, 0, total)
 	sceneNum := 1
 	for _, act := range v.Acts {
-		runes := []rune(monologueByAct[act.ActID])
+		monologue, ok := monologueByAct[act.ActID]
+		if !ok {
+			panic(fmt.Sprintf(
+				"domain.VisualScript.LegacyScenes: VisualAct.ActID=%q not found in NarrationScript.Acts — state corruption",
+				act.ActID,
+			))
+		}
+		runes := []rune(monologue)
 		runeLen := len(runes)
-		for shotIdx, shot := range act.Shots {
+		for _, shot := range act.Shots {
 			anchor := shot.NarrationAnchor
+			// Defensive clamp: bridge MAY load pre-D2 / partially-migrated
+			// scenario.json with offsets that violate D2's preflight.
+			// Clamp so the bridge stays panic-free for legacy reads;
+			// new writes are pre-validated by visual_breakdowner.
 			start := anchor.StartOffset
 			end := anchor.EndOffset
 			if start < 0 {
@@ -151,9 +169,9 @@ func (v *VisualScript) LegacyScenes(narration *NarrationScript) []VisualBreakdow
 			if end < start {
 				end = start
 			}
-			narration := ""
+			narrText := ""
 			if runeLen > 0 {
-				narration = string(runes[start:end])
+				narrText = string(runes[start:end])
 			}
 			legacyShot := LegacyShotV1{
 				ShotIndex:          1,
@@ -161,18 +179,17 @@ func (v *VisualScript) LegacyScenes(narration *NarrationScript) []VisualBreakdow
 				EstimatedDurationS: shot.EstimatedDurationS,
 				Transition:         shot.Transition,
 				NarrationBeatIndex: 0,
-				NarrationBeatText:  narration,
+				NarrationBeatText:  narrText,
 			}
 			scenes = append(scenes, VisualBreakdownScene{
 				SceneNum:              sceneNum,
 				ActID:                 act.ActID,
-				Narration:             narration,
+				Narration:             narrText,
 				EstimatedTTSDurationS: shot.EstimatedDurationS,
 				ShotCount:             1,
 				Shots:                 []LegacyShotV1{legacyShot},
 			})
 			sceneNum++
-			_ = shotIdx
 		}
 	}
 	return scenes

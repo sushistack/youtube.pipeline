@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/sync/errgroup"
 
@@ -83,6 +84,28 @@ func NewVisualBreakdowner(
 			}
 			seen[act.ActID] = struct{}{}
 		}
+		// Per-beat anchor sanity preflight: offsets must lie inside the act's
+		// monologue rune bounds and form a non-empty ascending slice. D1's
+		// segmenter validator owns cross-beat ordering / non-overlap; this
+		// preflight is the last line of defense before LLM fan-out so corrupt
+		// upstream state fails loudly without burning provider cost or
+		// persisting bad anchors into scenario.json.
+		for actIdx, act := range state.Narration.Acts {
+			runeLen := utf8.RuneCountInString(act.Monologue)
+			for beatIdx, beat := range act.Beats {
+				switch {
+				case beat.StartOffset < 0:
+					return fmt.Errorf("visual breakdowner: %w: act %d (%s) beat %d start_offset=%d < 0",
+						domain.ErrValidation, actIdx, act.ActID, beatIdx, beat.StartOffset)
+				case beat.EndOffset > runeLen:
+					return fmt.Errorf("visual breakdowner: %w: act %d (%s) beat %d end_offset=%d > monologue rune count %d",
+						domain.ErrValidation, actIdx, act.ActID, beatIdx, beat.EndOffset, runeLen)
+				case beat.StartOffset >= beat.EndOffset:
+					return fmt.Errorf("visual breakdowner: %w: act %d (%s) beat %d empty/inverted offsets [%d, %d)",
+						domain.ErrValidation, actIdx, act.ActID, beatIdx, beat.StartOffset, beat.EndOffset)
+				}
+			}
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -119,7 +142,7 @@ func NewVisualBreakdowner(
 				if err != nil {
 					return err
 				}
-				results[i] = buildVisualAct(act, frozen, decoded, estimator, cfg.Logger)
+				results[i] = buildVisualAct(act, decoded, estimator)
 				return nil
 			})
 		}
@@ -384,40 +407,23 @@ func factTagSliceEqualNilSafe(a, b []domain.FactTag) bool {
 
 func buildVisualAct(
 	act domain.ActScript,
-	_ string,
 	decoded visualBreakdownActResponse,
 	estimator SceneDurationEstimator,
-	_ *slog.Logger,
 ) domain.VisualAct {
 	// Estimate per-shot duration by treating each beat as a v1 NarrationScene
 	// with its rune slice as Narration text (the SceneDurationEstimator
 	// interface is v1-shaped; we compute one estimate per shot rather than
 	// dividing one act-level total). This matches the v1 "shot-as-tts-unit"
-	// formula but per beat instead of per scene.
+	// formula but per beat instead of per scene. Offsets are pre-validated
+	// in the preflight at runVisualBreakdowner entry, so direct slicing is
+	// safe — any out-of-bounds slice here is a programmer error and SHOULD
+	// panic to surface bridge corruption immediately.
 	runes := []rune(act.Monologue)
-	runeLen := len(runes)
 	shots := make([]domain.VisualShot, 0, len(decoded.Shots))
 	for i, shot := range decoded.Shots {
 		descriptor := strings.TrimSpace(shot.VisualDescriptor)
 		anchor := act.Beats[i]
-		start := anchor.StartOffset
-		end := anchor.EndOffset
-		if start < 0 {
-			start = 0
-		}
-		if start > runeLen {
-			start = runeLen
-		}
-		if end > runeLen {
-			end = runeLen
-		}
-		if end < start {
-			end = start
-		}
-		beatText := ""
-		if runeLen > 0 {
-			beatText = string(runes[start:end])
-		}
+		beatText := string(runes[anchor.StartOffset:anchor.EndOffset])
 		dur := estimator.Estimate(domain.NarrationScene{
 			SceneNum:  i + 1,
 			ActID:     act.ActID,

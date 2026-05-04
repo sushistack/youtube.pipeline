@@ -2,7 +2,7 @@
 title: 'D2 — visual_breakdowner v2 (consume ActScript / BeatAnchor)'
 type: 'feature'
 created: '2026-05-04'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '5003a3b9c36dfd42d2cd480265dd500093785ea7'
 context:
   - '_bmad-output/planning-artifacts/next-session-monologue-mode-decoupling.md'
@@ -81,6 +81,34 @@ context:
 - Given the same dogfood, when `grep -rn "LegacyScenes" internal/pipeline/agents/visual_breakdowner.go` runs, then it returns zero matches.
 - Given a serialized state JSON, when inspected, then top-level visual key is `visual_script` (renamed from `visual_breakdown`) with `source_version: "v2-visual"`.
 
+### Review Findings
+
+(2026-05-04 — bmad-code-review on commit `95a1e7f` vs baseline `5003a3b`; 3 reviewers: Blind Hunter / Edge Case Hunter / Acceptance Auditor.)
+
+**Patch (8 fixed, 1 reclassified to defer):**
+- [x] [Review][Patch] `character_service.GetDescriptorPrefill` reads stale `json:"visual_breakdown"` key while producer writes `visual_script` — production breakage [internal/service/character_service.go:234-248]
+- [x] [Review][Patch] `NarrationScript.LegacyScenes()` missing the `// TODO(D4): remove with critic v2` marker required by frozen Intent paragraph 2 [internal/domain/narration.go:101]
+- [x] [Review][Patch] `reviewer.go` marshals raw v2 `VisualScript` JSON into `{visual_descriptions}` instead of bridging via `LegacyScenes(narration)` per Code Map prescription [internal/pipeline/agents/reviewer.go:131-138]
+- [x] [Review][Patch] Anchor offset preflight + remove silent clamp — negative / inverted / out-of-range / zero-length offsets pass anchor-equality validator and persist verbatim into scenario.json [internal/pipeline/agents/visual_breakdowner.go:298-365, 397-432]
+- [x] [Review][Patch] `(*VisualScript).LegacyScenes(narration)` silently emits empty Narration when narration is nil / has ActID drift / has count mismatch [internal/domain/visual_breakdown.go:116-180]
+- [x] [Review][Patch] Prompt fact_tags ordering + object-format clarity — LLM may reorder or emit string-array shape, causing flaky retries [docs/prompts/scenario/03_5_visual_breakdown.md, prompts/agents/visual_breakdowner.tmpl]
+- [x] [Review][Patch→Defer] `loadVisualBreakdownerTemplate` wraps asset-load failure with `domain.ErrValidation` — reclassified to defer because the same pattern is shared by ALL four asset loaders (`readAsset`, `loadWriterTemplate`, `loadSegmenterTemplate`, `loadVisualBreakdownerTemplate`); fixing only the D2 one introduces inconsistency. Tracked in `deferred-work.md` for systemic cleanup [internal/pipeline/agents/assets.go]
+- [x] [Review][Patch] `prompt_lint_test.go` covers `docs/prompts/scenario/03_5_visual_breakdown.md` only — `prompts/agents/visual_breakdowner.tmpl` placeholder set unchecked, drift = silent runtime bug under `useTemplatePrompts=true` [internal/pipeline/agents/prompt_lint_test.go]
+- [x] [Review][Patch] `buildVisualAct` retains unused `_ string` (frozen descriptor) + `_ *slog.Logger` parameters — code rot [internal/pipeline/agents/visual_breakdowner.go:385-391]
+
+**Defer (9, pre-existing or out-of-scope):**
+- [x] [Review][Defer] Schema `narration_anchor.fact_tags` allows empty `key`/`content` strings — pre-existing schema gap, not D2-introduced
+- [x] [Review][Defer] Heuristic estimator falls back to 4.0s for Korean per-beat slices (`strings.Fields` returns 1 element on Korean text) — D-tts territory; pre-existing v1 behavior on short scenes
+- [x] [Review][Defer] Schema `acts.minItems == maxItems == 4` hard-pins the act count — D1 plan choice (P2: 4 acts)
+- [x] [Review][Defer] `ShotOverrides` semantic shift to global 1-indexed shot number not enforced (no v2 producer writes overrides yet) — design notes acknowledge; D-vis-final HITL UI scope
+- [x] [Review][Defer] Bridge `EstimatedTTSDurationS = shot.EstimatedDurationS` semantic-mismatch with v1 per-scene total — D3 (TTS) territory
+- [x] [Review][Defer] `LegacyScenes` invoked multiple times per run in `image_track` (perf, not correctness)
+- [x] [Review][Defer] `format_guide` placeholder dropped from visual_breakdowner prompt — intentional in diff
+- [x] [Review][Defer] `sampleVisualBreakdownForReview` test-fixture coupling cliff (future-rot, not a current bug)
+- [x] [Review][Defer] `buildCharacterMap` symmetric SceneNum mismatch undetectable on cross-version state corruption — defended by 1:1 invariant + anchor-equality validator
+
+**Dismissed (8 noise / by-design):** bridge ShotIndex=1 + NarrationBeatIndex=0 (correct under 1:1 mapping); bridge omits ShotOverrides (by design — wrapper field, not bridge return); `parseActPromptID` backtick fragility (test-only); LLM `shot_index` discarded by agent (defensive override safe under anchor-equality); FactTag DeepEqual latent regression (speculative — both fields are strings today); `cfg.Concurrency=1` serializes (operator knob, default=4 holds); `strings.Replacer` re-substitution (Go contract — single-pass); `output.Acts` aliases `results` slice (Go convention, doc-only contract).
+
 ## Spec Change Log
 
 <!-- Append-only. Empty until the first bad_spec loopback. -->
@@ -126,6 +154,52 @@ on the D2 baseline `5003a3b` before any D2 edits):
 `TestSettingsService_SaveWritesEffectiveAndDisk`,
 `TestSettingsService_SaveRejectsIfMatchMismatch`,
 `TestSceneHandler_ListReviewItems_ReturnsPayload`. Out of D2 scope.
+
+### 2026-05-04 — D2 review/fix cycle (8 patches applied, 1 deferred)
+
+bmad-code-review on commit `95a1e7f` (D2 baseline) ran three parallel
+adversarial layers (Blind Hunter / Edge Case Hunter / Acceptance Auditor)
+and surfaced 9 patch findings. Eight applied; one reclassified to defer.
+All fixes are in-scope for D2 and were applied as a single follow-up
+commit on top of `95a1e7f`:
+
+- **P0** (production-blocking / frozen-block instruction):
+  - `internal/service/character_service.go` — json tag `visual_breakdown` →
+    `visual_script` (+ test fixture); descriptor-prefill API was 404'ing
+    silently against post-D2 scenario.json.
+  - `internal/domain/narration.go:102` — added the `// TODO(D4): remove
+    with critic v2` marker required by frozen Intent paragraph 2.
+  - `internal/pipeline/agents/reviewer.go` — replaced raw v2 marshal of
+    `state.VisualScript` with `state.VisualScript.LegacyScenes(state.Narration)`
+    bridge per Code Map prescription.
+- **P1** (correctness — silent corruption surface):
+  - `internal/pipeline/agents/visual_breakdowner.go` — added per-beat
+    anchor offset preflight (rejects negative offsets / EndOffset >
+    monologue rune count / StartOffset >= EndOffset before LLM fan-out).
+    Removed the silent clamp in `buildVisualAct`; out-of-bounds slicing
+    now panics so bridge/state corruption surfaces immediately.
+  - `internal/domain/visual_breakdown.go` — `(*VisualScript).LegacyScenes`
+    now panics on nil narration or missing-ActID drift; the in-memory
+    bridge still defensively clamps offsets for legacy on-disk reads.
+- **P2** (prompt robustness):
+  - `docs/prompts/scenario/03_5_visual_breakdown.md` +
+    `prompts/agents/visual_breakdowner.tmpl` — explicit fact_tags
+    object-array shape + order-preservation rules; `characters_present`
+    order rule mirrored.
+- **P3** (hygiene):
+  - `internal/pipeline/agents/visual_breakdowner.go` — `buildVisualAct`
+    signature trimmed to `(act, decoded, estimator)` (dropped unused
+    frozen-string + slog.Logger params).
+  - `internal/pipeline/agents/prompt_lint_test.go` — new
+    `TestPromptPlaceholders_DocsAndEmbeddedMirrorsAgree` enforces
+    docs/prompts vs prompts/agents/*.tmpl placeholder parity for
+    writer / segmenter / visual_breakdowner.
+- **Deferred:** `loadVisualBreakdownerTemplate` ErrValidation wrap is the
+  same systemic pattern across all four asset loaders (`readAsset`,
+  `loadWriterTemplate`, `loadSegmenterTemplate`,
+  `loadVisualBreakdownerTemplate`) — fixing only the D2 one would
+  introduce inconsistency. Logged in `deferred-work.md` for systemic
+  cleanup.
 
 ## Design Notes
 

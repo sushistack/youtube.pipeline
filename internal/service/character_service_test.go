@@ -208,7 +208,7 @@ func TestCharacterService_GetSelectedCandidate_MissingCacheRowFailsLoudly(t *tes
 
 func writeScenarioFixture(t *testing.T, dir, frozen string) string {
 	t.Helper()
-	body := []byte(`{"visual_breakdown":{"frozen_descriptor":"` + frozen + `"}}`)
+	body := []byte(`{"visual_script":{"frozen_descriptor":"` + frozen + `"}}`)
 	path := filepath.Join(dir, "scenario.json")
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatalf("write scenario: %v", err)

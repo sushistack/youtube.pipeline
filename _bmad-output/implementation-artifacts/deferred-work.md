@@ -606,3 +606,17 @@ Spec: `_bmad-output/implementation-artifacts/spec-polisher-whole-scenario-polish
 **Scope sketch (refine at dequeue time).** Inputs: `[]ActScript`. Outputs: same shape with `Acts[].Monologue` minimally edited under per-act rune-delta budget. Read-only invariance for `BeatAnchor` rune offsets (offset shifts allowed only if the polisher rewrites edges of monologue text and recomputes anchor positions atomically, OR is forbidden — to be decided at dequeue). Calibration: ≥3 dogfood runs to fit the rune-delta cap to the actual seam-fix distribution.
 
 **Files (touch surface preview).** `internal/pipeline/agents/polisher.go`, `polisher_test.go`, `internal/domain/narration.go` (`PolisherMaxEditRatio` reintroduced with v2 calibration), `cmd/pipeline/serve.go` (polisherCfg readded), `docs/prompts/scenario/polisher.md` (rewrite for monologue input).
+
+---
+
+## Asset-loader error class — systemic cleanup (deferred from D2 review, 2026-05-04)
+
+**What.** All four asset-loading helpers in `internal/pipeline/agents/assets.go` (`readAsset`, `loadWriterTemplate`, `loadSegmenterTemplate`, `loadVisualBreakdownerTemplate`) wrap a missing/unreadable embedded prompt template with `domain.ErrValidation`. Asset-load failure is an internal config / build error, NOT a user-correctable validation error — this misroutes upstream `errors.Is(err, ErrValidation)` callers (which class as user-correctable retryable). The underlying error from `prompts.ReadAgent` / `os.ReadFile` is also discarded.
+
+**Why deferred.** D2 code review (Blind Hunter finding) flagged this on `loadVisualBreakdownerTemplate`. The pattern pre-dates D2 (D1 introduced `loadWriterTemplate` / `loadSegmenterTemplate` with the same wrap; `readAsset` predates D1). Fixing only the D2 loader would diverge one of four loaders from the rest. Per `feedback_commit_scope` memory, out-of-scope cleanup belongs in its own commit; per `feedback_no_dead_layers`, all four should change consistently.
+
+**Dequeue trigger.** Any time a real asset-load failure surfaces in production and the wrong error class causes operator confusion or a misrouted retry — at that point the systemic fix becomes load-bearing.
+
+**Scope sketch.** Replace `domain.ErrValidation` wrap with a new `domain.ErrAssetLoad` (or just propagate the underlying error, no wrap) in all four loaders. Add unit tests asserting the error class. One commit, four-line touch + one new error sentinel.
+
+**Files.** `internal/pipeline/agents/assets.go` (~4 sites), `internal/domain/errors.go` (new sentinel if introduced), `internal/pipeline/agents/assets_test.go` (new tests).

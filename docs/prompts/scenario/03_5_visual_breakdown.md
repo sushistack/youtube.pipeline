@@ -65,6 +65,8 @@ Rules:
 - `act_id` MUST equal `{act_id}`
 - output exactly `{shot_count}` items in `shots` (one per beat above)
 - shot ordering MUST match beat ordering: `shots[i].narration_anchor` MUST be the i-th beat from the input table, with EVERY field copied byte-for-byte (start_offset, end_offset, mood, location, characters_present, entity_visible, color_palette, atmosphere, fact_tags). The downstream validator rejects any drift.
+- `fact_tags` MUST be an array of `{"key": "...", "content": "..."}` objects — never a flat string, never a `"key=value"` string, never `null`. Preserve the order from the input beat exactly; do NOT sort, dedupe, or reorder. If the input beat's `fact_tags` is `[]`, output `[]`.
+- `characters_present` likewise preserves the input array order verbatim.
 - every `visual_descriptor` must be non-empty
 - every `visual_descriptor` must preserve visual identity (entity proportions, palette, distinguishing features) so all shots feel cohesive across the video — but **shift the focal subject per beat** (entity / environment / character POV / artifact close-up). Do NOT make every shot start with the same identity description.
 - the `transition` field MUST be present and non-empty on every shot — omitting it or returning `""` is a contract violation

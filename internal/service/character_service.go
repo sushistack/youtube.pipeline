@@ -231,21 +231,21 @@ func (s *CharacterService) GetDescriptorPrefill(ctx context.Context, runID strin
 		return nil, fmt.Errorf("descriptor prefill: read scenario: %w", err)
 	}
 	var envelope struct {
-		VisualBreakdown *struct {
+		VisualScript *struct {
 			FrozenDescriptor string `json:"frozen_descriptor"`
-		} `json:"visual_breakdown"`
+		} `json:"visual_script"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return nil, fmt.Errorf("descriptor prefill: decode scenario.json: %w", err)
 	}
-	// Missing visual_breakdown means Phase A produced a malformed artifact.
+	// Missing visual_script means Phase A produced a malformed artifact.
 	// Silently returning auto="" would let the operator confirm an empty
 	// descriptor and propagate the bad state downstream. Surface as NotFound
 	// so the client can retry or fall back to prior-run lookup.
-	if envelope.VisualBreakdown == nil {
-		return nil, fmt.Errorf("descriptor prefill: scenario.json has no visual_breakdown: %w", domain.ErrNotFound)
+	if envelope.VisualScript == nil {
+		return nil, fmt.Errorf("descriptor prefill: scenario.json has no visual_script: %w", domain.ErrNotFound)
 	}
-	auto := envelope.VisualBreakdown.FrozenDescriptor
+	auto := envelope.VisualScript.FrozenDescriptor
 	prior, err := s.runs.LatestFrozenDescriptorBySCPID(ctx, run.SCPID, runID)
 	if err != nil {
 		return nil, fmt.Errorf("descriptor prefill: lookup prior: %w", err)

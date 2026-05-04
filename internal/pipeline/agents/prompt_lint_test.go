@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
+	"github.com/sushistack/youtube.pipeline/prompts"
 )
 
 // placeholderRE matches `{snake_case}` template placeholders. JSON example
@@ -131,6 +132,71 @@ func TestPromptPlaceholders_AreFullyCovered(t *testing.T) {
 				t.Errorf("%s: renderer substitutes %d placeholder(s) not referenced by prompt: %v\n"+
 					"  Either add them to %s, or remove them from the renderer (and from promptRendererContract in this file).",
 					tc.path, len(stale), stale, tc.path)
+			}
+		})
+	}
+}
+
+// TestPromptPlaceholders_DocsAndEmbeddedMirrorsAgree asserts that for every
+// agent that has BOTH a docs/prompts/scenario/*.md source and a
+// prompts/agents/*.tmpl embedded mirror, the two files reference the
+// EXACT same set of `{placeholder}` tokens. Drift between the two would
+// silently change runtime behavior depending on the `useTemplatePrompts`
+// flag — a placeholder present in one but not the other leaks raw
+// `{xxx}` text into the LLM call when the flag toggles.
+func TestPromptPlaceholders_DocsAndEmbeddedMirrorsAgree(t *testing.T) {
+	root := testutil.ProjectRoot(t)
+	pairs := []struct {
+		name      string
+		docsPath  string
+		agentName string
+	}{
+		{"writer", writerPromptPath, prompts.AgentScriptWriter},
+		{"segmenter", segmenterPromptPath, prompts.AgentScriptSegmenter},
+		{"visual_breakdowner", visualBreakdownPromptPath, prompts.AgentVisualBreakdowner},
+	}
+	for _, p := range pairs {
+		p := p
+		t.Run(p.name, func(t *testing.T) {
+			docsRaw, err := os.ReadFile(filepath.Join(root, p.docsPath))
+			if err != nil {
+				t.Fatalf("read docs prompt %s: %v", p.docsPath, err)
+			}
+			embedded, err := prompts.ReadAgent(p.agentName)
+			if err != nil {
+				t.Fatalf("read embedded agent %s: %v", p.agentName, err)
+			}
+
+			docsTokens := map[string]bool{}
+			for _, m := range placeholderRE.FindAllString(string(docsRaw), -1) {
+				docsTokens[m[1:len(m)-1]] = true
+			}
+			embeddedTokens := map[string]bool{}
+			for _, m := range placeholderRE.FindAllString(embedded, -1) {
+				embeddedTokens[m[1:len(m)-1]] = true
+			}
+
+			var docsOnly, embeddedOnly []string
+			for name := range docsTokens {
+				if !embeddedTokens[name] {
+					docsOnly = append(docsOnly, name)
+				}
+			}
+			for name := range embeddedTokens {
+				if !docsTokens[name] {
+					embeddedOnly = append(embeddedOnly, name)
+				}
+			}
+			sort.Strings(docsOnly)
+			sort.Strings(embeddedOnly)
+
+			if len(docsOnly) > 0 || len(embeddedOnly) > 0 {
+				t.Errorf("%s: docs vs embedded mirror placeholder drift\n"+
+					"  docs-only (%d): %v\n"+
+					"  embedded-only (%d): %v\n"+
+					"  Sync %s with %s — runtime behavior depends on useTemplatePrompts flag.",
+					p.name, len(docsOnly), docsOnly, len(embeddedOnly), embeddedOnly,
+					p.docsPath, "prompts/agents/"+p.agentName+".tmpl")
 			}
 		})
 	}
