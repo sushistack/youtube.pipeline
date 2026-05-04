@@ -479,6 +479,9 @@ func FetchReferenceImageAsDataURL(ctx context.Context, imageURL string) (string,
 // routing must not infer this from prompt strings at call time.
 // Returns a validation error if VisualScript contains character scenes but
 // narration is absent or missing the required scene entry.
+//
+// scene_num here is 1-based and matches NarrationBeatView.Index — i.e. flat
+// beat order across all acts.
 func buildCharacterMap(state *agents.PipelineState) (map[int]bool, error) {
 	out := map[int]bool{}
 	if state.Narration == nil {
@@ -487,10 +490,10 @@ func buildCharacterMap(state *agents.PipelineState) (map[int]bool, error) {
 		// so an absent narration produces an empty char map — consistent.)
 		return out, nil
 	}
-	legacyScenes := state.Narration.LegacyScenes()
-	narrationByScene := make(map[int]bool, len(legacyScenes))
-	for _, scene := range legacyScenes {
-		narrationByScene[scene.SceneNum] = scene.EntityVisible
+	beats := state.Narration.FlatBeats()
+	narrationByScene := make(map[int]bool, len(beats))
+	for _, beat := range beats {
+		narrationByScene[beat.Index] = beat.Anchor.EntityVisible
 	}
 	// Validate every visual scene has a narration counterpart.
 	if state.VisualScript != nil {

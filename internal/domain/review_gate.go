@@ -59,14 +59,28 @@ func IsPrePhaseC(stage Stage, status Status) bool {
 	return false
 }
 
+// MinorPolicyFinding is one minor-protection concern surfaced by the critic
+// LLM. v2 keys findings on (ActID, RuneOffset) — both relative to
+// NarrationScript.Acts[].Monologue — so a single act-level monologue carrying
+// multiple findings can be addressed without re-fragmenting it into scenes.
+//
+// ActID matches NarrationScript.Acts[i].ActID (e.g. domain.ActIncident).
+// RuneOffset is a half-open inclusive-on-the-left coordinate within that
+// act's Monologue, in rune units; review_gate consumers translate it to a
+// flat segments.scene_index via NarrationScript.BeatIndexAt(ActID, RuneOffset).
 type MinorPolicyFinding struct {
-	SceneNum int    `json:"scene_num"`
-	Reason   string `json:"reason"`
+	ActID      string `json:"act_id"`
+	RuneOffset int    `json:"rune_offset"`
+	Reason     string `json:"reason"`
 }
 
+// MinorRegexHit is the in-process counterpart of MinorPolicyFinding emitted
+// by MinorSensitivePatterns.MatchNarration when a per-act monologue regex
+// fires. ActID + RuneOffset have the same semantics as MinorPolicyFinding.
 type MinorRegexHit struct {
-	SceneNum int
-	Pattern  string
+	ActID      string
+	RuneOffset int
+	Pattern    string
 }
 
 func (s ReviewStatus) IsValid() bool {

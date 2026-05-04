@@ -68,6 +68,52 @@ func TestPostWriterCritic_Run_PrecheckRetryWithoutLLMCall(t *testing.T) {
 	testutil.AssertEqual(t, gen.calls, 0)
 }
 
+// TestPostWriterPrecheck_ForbiddenTermHitsCiteActIDAndRuneOffset locks in
+// the I/O-matrix expectation that forbidden-term hits surface the act_id
+// + rune offset of the match (not v1's scene_num) in the precheck's
+// flattened forbidden_term_hits entries. This is the v2 critic finding
+// shape the spec acceptance criterion calls out as a manual check.
+func TestPostWriterPrecheck_ForbiddenTermHitsCiteActIDAndRuneOffset(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	state := sampleCriticState(t)
+	// Inject a forbidden term ("wiki") into the second act's monologue.
+	// Splice the term at a known rune position so the flattened hit entry
+	// reports a non-zero rune_offset (more discriminating than 0).
+	original := []rune(state.Narration.Acts[1].Monologue)
+	splicePos := 5 // 5 runes in
+	if splicePos > len(original) {
+		t.Fatalf("act 1 monologue too short for splice (%d runes)", len(original))
+	}
+	mutated := string(original[:splicePos]) + "wiki" + string(original[splicePos:])
+	state.Narration.Acts[1].Monologue = mutated
+
+	precheck, err := runPostWriterPrecheck(state.Narration, mustValidator(t, "writer_output.schema.json"), mustTerms(t))
+	if err != nil {
+		t.Fatalf("precheck: %v", err)
+	}
+	if !precheck.ShortCircuited {
+		t.Fatalf("expected short-circuit, got %+v", precheck)
+	}
+	if len(precheck.ForbiddenTermHits) == 0 {
+		t.Fatalf("expected forbidden_term_hits, got empty list")
+	}
+	// Spec expectation: each hit entry cites act_id + rune offset, not
+	// scene_num. The flattened format is "act <act_id> @rune <N>: <pattern>"
+	// for per-act hits and "title: <pattern>" for title-level hits.
+	wantPrefix := "act " + state.Narration.Acts[1].ActID + " @rune "
+	found := false
+	for _, hit := range precheck.ForbiddenTermHits {
+		if strings.HasPrefix(hit, wantPrefix) && strings.Contains(hit, "wiki") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected at least one hit with prefix %q and pattern 'wiki', got %v", wantPrefix, precheck.ForbiddenTermHits)
+	}
+}
+
 func TestPostWriterCritic_Run_FillsRetryReasonFromRubric(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
@@ -183,7 +229,7 @@ func TestPostReviewerCritic_Run_FillsRetryReasonFromRubric(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	gen := &fakeTextGenerator{resp: domain.TextResponse{NormalizedResponse: domain.NormalizedResponse{
-		Content: `{"checkpoint":"post_reviewer","verdict":"retry","overall_score":42,"rubric":{"hook":60,"fact_accuracy":20,"emotional_variation":70,"immersion":80},"feedback":"사실 검증 보강이 더 필요합니다.","scene_notes":[],"precheck":{"schema_valid":true,"forbidden_term_hits":[],"short_circuited":false},"critic_model":"critic-model","critic_provider":"anthropic","source_version":"v1-critic-post-writer"}`,
+		Content: `{"checkpoint":"post_reviewer","verdict":"retry","overall_score":42,"rubric":{"hook":60,"fact_accuracy":20,"emotional_variation":70,"immersion":80},"feedback":"사실 검증 보강이 더 필요합니다.","scene_notes":[],"precheck":{"schema_valid":true,"forbidden_term_hits":[],"short_circuited":false},"critic_model":"critic-model","critic_provider":"anthropic","source_version":"v2-critic-post-reviewer"}`,
 		Model:   "critic-model", Provider: "anthropic",
 	}}}
 	state := samplePostReviewerCriticState(t)

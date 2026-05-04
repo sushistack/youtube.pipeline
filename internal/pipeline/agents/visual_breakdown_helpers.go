@@ -8,18 +8,27 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
 
-type SceneDurationEstimator interface {
-	Estimate(scene domain.NarrationScene) float64
+// BeatDurationEstimator computes the per-beat audio-driven duration in
+// seconds for one BeatAnchor of an act. Implementations receive the parent
+// ActScript context (ActID, Monologue) plus the anchor itself so the
+// estimator can read the rune-slice text without re-slicing.
+type BeatDurationEstimator interface {
+	Estimate(actID string, monologue string, anchor domain.BeatAnchor) float64
 }
 
 type heuristicDurationEstimator struct{}
 
-func NewHeuristicDurationEstimator() SceneDurationEstimator {
+// NewHeuristicDurationEstimator returns the v2 word-count heuristic
+// estimator: ~0.8s per word with a 4.0s floor. Production wires the
+// schema-aware estimator instead; this is the legacy default surfaced for
+// tests and offline preview tooling.
+func NewHeuristicDurationEstimator() BeatDurationEstimator {
 	return heuristicDurationEstimator{}
 }
 
-func (heuristicDurationEstimator) Estimate(scene domain.NarrationScene) float64 {
-	words := len(strings.Fields(scene.Narration))
+func (heuristicDurationEstimator) Estimate(_ string, monologue string, anchor domain.BeatAnchor) float64 {
+	text := beatRuneSlice(monologue, anchor)
+	words := len(strings.Fields(text))
 	if words == 0 {
 		return 4.0
 	}
@@ -28,6 +37,34 @@ func (heuristicDurationEstimator) Estimate(scene domain.NarrationScene) float64 
 		return 4.0
 	}
 	return roundToTenth(seconds)
+}
+
+// beatRuneSlice returns the rune-slice text of a beat anchor with defensive
+// clamping. Out-of-range or inverted offsets yield "" rather than panicking
+// — the validator at runVisualBreakdowner entry catches malformed offsets,
+// and a panic here would surface as bridge corruption rather than a clear
+// validation error.
+func beatRuneSlice(monologue string, anchor domain.BeatAnchor) string {
+	if monologue == "" {
+		return ""
+	}
+	runes := []rune(monologue)
+	runeLen := len(runes)
+	start := anchor.StartOffset
+	end := anchor.EndOffset
+	if start < 0 {
+		start = 0
+	}
+	if start > runeLen {
+		start = runeLen
+	}
+	if end > runeLen {
+		end = runeLen
+	}
+	if end < start {
+		end = start
+	}
+	return string(runes[start:end])
 }
 
 // NormalizeShotDurations splits a scene's total duration evenly across

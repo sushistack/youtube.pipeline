@@ -26,10 +26,15 @@ func TestForbiddenTerms_LoadAndMatch(t *testing.T) {
 		beatSpec{narration: "여기 금칙어 표현이 있습니다."},
 	))
 	if len(hits) != 2 {
-		t.Fatalf("got %d hits, want 2", len(hits))
+		t.Fatalf("got %d hits, want 2: %+v", len(hits), hits)
 	}
-	testutil.AssertEqual(t, hits[0].SceneNum, 1)
-	testutil.AssertEqual(t, hits[1].SceneNum, 2)
+	testutil.AssertEqual(t, hits[0].ActID, domain.ActIncident)
+	testutil.AssertEqual(t, hits[0].Pattern, "wiki")
+	testutil.AssertEqual(t, hits[1].ActID, domain.ActIncident)
+	testutil.AssertEqual(t, hits[1].Pattern, "금칙어")
+	if hits[0].RuneOffset >= hits[1].RuneOffset {
+		t.Fatalf("expected wiki offset < 금칙어 offset, got %d, %d", hits[0].RuneOffset, hits[1].RuneOffset)
+	}
 }
 
 func TestForbiddenTerms_InvalidRegexFailure(t *testing.T) {
@@ -73,10 +78,13 @@ func TestMinorSensitivePatterns_LoadAndMatch(t *testing.T) {
 		beatSpec{narration: "아동 성착취 묘사는 금지입니다."},
 	))
 	if len(hits) != 2 {
-		t.Fatalf("got %d hits, want 2", len(hits))
+		t.Fatalf("got %d hits, want 2: %+v", len(hits), hits)
 	}
-	testutil.AssertEqual(t, hits[0].SceneNum, 1)
-	testutil.AssertEqual(t, hits[1].SceneNum, 2)
+	testutil.AssertEqual(t, hits[0].ActID, domain.ActIncident)
+	testutil.AssertEqual(t, hits[1].ActID, domain.ActIncident)
+	if hits[0].RuneOffset >= hits[1].RuneOffset {
+		t.Fatalf("expected first hit before second, got %d, %d", hits[0].RuneOffset, hits[1].RuneOffset)
+	}
 }
 
 func TestMinorSensitivePatterns_InvalidRegexRejected(t *testing.T) {
@@ -120,8 +128,9 @@ func TestMatchNarration_ScansAllTextFields(t *testing.T) {
 		if len(hits) != 1 {
 			t.Fatalf("got %d hits, want 1: %+v", len(hits), hits)
 		}
-		testutil.AssertEqual(t, hits[0].SceneNum, 0)
+		testutil.AssertEqual(t, hits[0].ActID, "")
 		testutil.AssertEqual(t, hits[0].Pattern, "wiki")
+		testutil.AssertEqual(t, hits[0].RuneOffset, 0)
 	})
 
 	t.Run("location_only", func(t *testing.T) {
@@ -131,8 +140,9 @@ func TestMatchNarration_ScansAllTextFields(t *testing.T) {
 		if len(hits) != 1 {
 			t.Fatalf("got %d hits, want 1: %+v", len(hits), hits)
 		}
-		testutil.AssertEqual(t, hits[0].SceneNum, 1)
+		testutil.AssertEqual(t, hits[0].ActID, domain.ActIncident)
 		testutil.AssertEqual(t, hits[0].Pattern, "wiki")
+		testutil.AssertEqual(t, hits[0].RuneOffset, 0)
 	})
 
 	t.Run("atmosphere_only", func(t *testing.T) {
@@ -142,7 +152,7 @@ func TestMatchNarration_ScansAllTextFields(t *testing.T) {
 		if len(hits) != 1 {
 			t.Fatalf("got %d hits, want 1: %+v", len(hits), hits)
 		}
-		testutil.AssertEqual(t, hits[0].SceneNum, 1)
+		testutil.AssertEqual(t, hits[0].ActID, domain.ActIncident)
 		testutil.AssertEqual(t, hits[0].Pattern, "wiki")
 	})
 
@@ -153,7 +163,7 @@ func TestMatchNarration_ScansAllTextFields(t *testing.T) {
 		if len(hits) != 1 {
 			t.Fatalf("got %d hits, want 1: %+v", len(hits), hits)
 		}
-		testutil.AssertEqual(t, hits[0].SceneNum, 1)
+		testutil.AssertEqual(t, hits[0].ActID, domain.ActIncident)
 		testutil.AssertEqual(t, hits[0].Pattern, "wiki")
 	})
 
@@ -167,7 +177,7 @@ func TestMatchNarration_ScansAllTextFields(t *testing.T) {
 		if len(hits) != 1 {
 			t.Fatalf("got %d hits, want 1: %+v", len(hits), hits)
 		}
-		testutil.AssertEqual(t, hits[0].SceneNum, 1)
+		testutil.AssertEqual(t, hits[0].ActID, domain.ActIncident)
 		testutil.AssertEqual(t, hits[0].Pattern, "wiki")
 	})
 
@@ -179,13 +189,14 @@ func TestMatchNarration_ScansAllTextFields(t *testing.T) {
 		if len(hits) != 2 {
 			t.Fatalf("got %d hits, want 2: %+v", len(hits), hits)
 		}
-		testutil.AssertEqual(t, hits[0].SceneNum, 1)
 		testutil.AssertEqual(t, hits[0].Pattern, "wiki")
-		testutil.AssertEqual(t, hits[1].SceneNum, 2)
 		testutil.AssertEqual(t, hits[1].Pattern, "금칙어")
+		if hits[0].RuneOffset >= hits[1].RuneOffset {
+			t.Fatalf("expected wiki offset < 금칙어 offset, got %d, %d", hits[0].RuneOffset, hits[1].RuneOffset)
+		}
 	})
 
-	t.Run("multi_field_multi_scene_sort_order", func(t *testing.T) {
+	t.Run("title_plus_monologue_plus_metadata_sort_order", func(t *testing.T) {
 		hits := terms.MatchNarration(scriptFromBeats("A 금칙어 appears in title",
 			beatSpec{
 				narration:  "scene 1 narration wiki here",
@@ -201,20 +212,29 @@ func TestMatchNarration_ScansAllTextFields(t *testing.T) {
 				factTags:   []domain.FactTag{{Key: "note", Content: "금칙어 inside fact tag"}},
 			},
 		))
-
+		// Expectations:
+		//   1) title-level 금칙어 (ActID="" sorts first)
+		//   2) beat[0].location wiki -> ActID="incident", RuneOffset=0
+		//   3) monologue wiki @ rune 18 (within beat[0])
+		//   4) beat[1].atmosphere wiki -> ActID="incident", RuneOffset=beat[1].StartOffset (28)
+		//   5) beat[1].factTags[0] 금칙어 -> ActID="incident", RuneOffset=28
 		want := []ForbiddenTermHit{
-			{SceneNum: 0, Pattern: "금칙어"},
-			{SceneNum: 1, Pattern: "wiki"},
-			{SceneNum: 1, Pattern: "wiki"},
-			{SceneNum: 2, Pattern: "wiki"},
-			{SceneNum: 2, Pattern: "금칙어"},
+			{ActID: "", Pattern: "금칙어"},
+			{ActID: domain.ActIncident, RuneOffset: 0, Pattern: "wiki"},
+			{ActID: domain.ActIncident, RuneOffset: 18, Pattern: "wiki"},
+			{ActID: domain.ActIncident, RuneOffset: 28, Pattern: "wiki"},
+			{ActID: domain.ActIncident, RuneOffset: 28, Pattern: "금칙어"},
 		}
 		if len(hits) != len(want) {
 			t.Fatalf("got %d hits, want %d: %+v", len(hits), len(want), hits)
 		}
 		for i := range want {
-			testutil.AssertEqual(t, hits[i].SceneNum, want[i].SceneNum)
-			testutil.AssertEqual(t, hits[i].Pattern, want[i].Pattern)
+			if hits[i].ActID != want[i].ActID || hits[i].Pattern != want[i].Pattern {
+				t.Fatalf("hit[%d] = %+v, want %+v", i, hits[i], want[i])
+			}
+			if want[i].ActID != "" && hits[i].RuneOffset != want[i].RuneOffset {
+				t.Fatalf("hit[%d] rune_offset = %d, want %d", i, hits[i].RuneOffset, want[i].RuneOffset)
+			}
 		}
 	})
 }

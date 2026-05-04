@@ -2,7 +2,8 @@
 title: 'D4 — critic v2 (consume ActScript[]; per-beat / per-paragraph checks)'
 type: 'feature'
 created: '2026-05-04'
-status: 'draft'
+status: 'done'
+baseline_commit: '8d6d103'
 context:
   - '_bmad-output/planning-artifacts/next-session-monologue-mode-decoupling.md'
   - '_bmad-output/implementation-artifacts/spec-d1-domain-types-and-writer-v2.md'
@@ -57,13 +58,15 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] Audit `git grep -n "NarrationScene\|LegacyScenes"` — list all remaining callers. Each must be either migrated in D4 or already migrated by D2/D3.
-- [ ] `internal/pipeline/agents/critic.go` -- consume `[]ActScript`, retarget forbidden-term scan to monologue text.
-- [ ] `docs/prompts/scenario/04_critic.md` -- rewrite for v2 input.
-- [ ] `testdata/contracts/critic_*.{schema,sample}.json` -- v2 rewrite.
-- [ ] `internal/pipeline/agents/critic_test.go` -- rewrite end-to-end + I/O matrix coverage.
-- [ ] `internal/domain/narration.go` -- delete `NarrationScene`, `LegacyScenes()`, `// Deprecated` markers.
-- [ ] Final audit: re-run `git grep -n "NarrationScene\|LegacyScenes"` — expected zero functional matches.
+- [x] Audit `git grep -n "NarrationScene\|LegacyScenes"` — list all remaining callers. Each must be either migrated in D4 or already migrated by D2/D3.
+- [x] `internal/pipeline/agents/critic.go` -- consume `[]ActScript`, retarget forbidden-term scan to monologue text.
+- [x] `docs/prompts/scenario/critic_agent.md` -- rewrite for v2 input.
+- [x] `testdata/contracts/critic_*.{schema,sample}.json` -- v2 rewrite.
+- [x] `internal/pipeline/agents/critic_test.go` -- rewrite end-to-end + I/O matrix coverage.
+- [x] `internal/domain/narration.go` -- delete `NarrationScene`, `LegacyScenes()`, `// Deprecated` markers.
+- [x] Migrate stranded callers (`critic/rubricv2/scorer.go`, `pipeline/agents/policy.go`, visual_breakdowner internals, `db/segment_store.go`, `pipeline/resume.go`, `pipeline/image_track.go`, `pipeline/review_gate.go`, `service/review_gate.go`, `service/scene_service.go`, `contract/v2/adapter.go`).
+- [x] Migrate finding identifier types (`MinorPolicyFinding`, `CriticSceneNote`, `MinorRegexHit`, `ForbiddenTermHit`) from `SceneNum` to `ActID` + `RuneOffset`.
+- [x] Final audit: re-run `git grep -n "NarrationScene\|LegacyScenes"` — only historical comments remain (no functional matches).
 
 **Acceptance Criteria:**
 - Given clean repo on `feat/monologue-mode-v2` post-D1/D2/D3, when `go build ./...` runs, then it succeeds with `NarrationScene` and `LegacyScenes` fully removed.

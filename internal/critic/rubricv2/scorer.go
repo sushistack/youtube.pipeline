@@ -7,15 +7,23 @@
 // touched in this cycle. A future cycle can wire this scorer in behind
 // a feature flag once calibrated.
 //
+// v2 (D4): every criterion consumes domain.NarrationScript.Acts directly.
+// "First scene" / "last scene" map to first/last beat of the script in
+// flat order; per-scene checks become per-beat checks; act-position
+// arithmetic uses NarrationBeatView.Index over total beat count. The v1
+// LegacyScenes() bridge died with this scorer's migration in D4.
+//
 // Coverage by criterion:
-//   1. Hook ≤15s            — deterministic (rune-count proxy + opening lint)
+//   1. Hook ≤15s            — deterministic (rune-count proxy + opening lint
+//                              against the first beat's text)
 //   2. Information drip     — heuristic floor; sets RequiresLLMReview
 //   3. Concrete incident    — heuristic floor; sets RequiresLLMReview
-//   4. Twist position       — deterministic (act-position arithmetic)
-//   5. Unresolved outro     — deterministic (last-line punctuation/keyword)
+//   4. Twist position       — deterministic (act-position arithmetic over
+//                              flat beat order)
+//   5. Unresolved outro     — deterministic (last beat's punctuation/keyword)
 //   6. Sentence rhythm      — deterministic (KR sentence length avg)
 //   7. Sensory language     — deterministic (style guide hit count)
-//   8. POV consistency      — deterministic (per-scene marker scan)
+//   8. POV consistency      — deterministic (per-beat marker scan)
 //   9. SCP fidelity         — heuristic floor; sets RequiresLLMReview
 //  10. Visual reusability   — deterministic when shots provided
 package rubricv2
@@ -29,8 +37,8 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/style"
 )
 
-// hookRunesPer15s is the rune-count proxy for "Scene 1 ≤15 seconds of
-// narration" when the script lacks explicit per-scene durations.
+// hookRunesPer15s is the rune-count proxy for "first beat ≤15 seconds of
+// narration" when the script lacks explicit per-beat durations.
 // Calibrated against Korean TTS at ~3.5 char/sec → 15s ≈ 52 runes;
 // rounded up to 60 to allow short pauses.
 const hookRunesPer15s = 60
@@ -115,23 +123,24 @@ func Score(in Input) contractv2.CriticReport {
 // --- Criterion 1: hook ≤15s ---------------------------------------------
 
 func scoreHook(in Input) (int, *contractv2.Failure) {
-	if len(in.Script.LegacyScenes()) == 0 {
-		return 0, &contractv2.Failure{FailureQuote: "no scenes"}
+	beats := in.Script.FlatBeats()
+	if len(beats) == 0 {
+		return 0, &contractv2.Failure{FailureQuote: "no beats"}
 	}
-	first := in.Script.LegacyScenes()[0]
-	runes := []rune(first.Narration)
+	first := beats[0]
+	runes := []rune(first.Text)
 	score := contractv2.MaxScorePerCriterion
 	notes := []string{}
 
 	if len(runes) > hookRunesPer15s {
 		score -= 4
-		notes = append(notes, fmt.Sprintf("scene 1 narration is %d runes (cap %d)", len(runes), hookRunesPer15s))
+		notes = append(notes, fmt.Sprintf("first beat is %d runes (cap %d)", len(runes), hookRunesPer15s))
 	}
 	if in.Style != nil {
 		for _, opening := range in.Style.Narration.ForbiddenOpenings {
-			if opening != "" && strings.HasPrefix(strings.TrimSpace(first.Narration), opening) {
+			if opening != "" && strings.HasPrefix(strings.TrimSpace(first.Text), opening) {
 				score -= 4
-				notes = append(notes, fmt.Sprintf("scene 1 begins with forbidden opening %q", opening))
+				notes = append(notes, fmt.Sprintf("first beat begins with forbidden opening %q", opening))
 				break
 			}
 		}
@@ -140,7 +149,7 @@ func scoreHook(in Input) (int, *contractv2.Failure) {
 		return score, nil
 	}
 	return score, &contractv2.Failure{
-		FailureQuote:   strings.TrimSpace(first.Narration),
+		FailureQuote:   strings.TrimSpace(first.Text),
 		Recommendation: "강렬한 이미지로 15초 이내 hook을 확보하고 채널 인사말을 제거하세요. " + strings.Join(notes, "; "),
 	}
 }
@@ -149,25 +158,25 @@ func scoreHook(in Input) (int, *contractv2.Failure) {
 
 func scoreInformationDrip(in Input) (int, *contractv2.Failure) {
 	keywords := []string{"격리", "절차", "프로토콜", "수용", "수감", "수직"}
-	hitScenes := 0
-	for _, s := range in.Script.LegacyScenes() {
+	hitBeats := 0
+	for _, beat := range in.Script.FlatBeats() {
 		for _, kw := range keywords {
-			if strings.Contains(s.Narration, kw) {
-				hitScenes++
+			if strings.Contains(beat.Text, kw) {
+				hitBeats++
 				break
 			}
 		}
 	}
-	if hitScenes >= 3 {
+	if hitBeats >= 3 {
 		return 8, &contractv2.Failure{
 			RequiresLLMReview: true,
-			Recommendation:    "정보가 ≥3 scene에 분산되어 있으나 LLM 단계에서 미세 검증 필요.",
+			Recommendation:    "정보가 ≥3 beat에 분산되어 있으나 LLM 단계에서 미세 검증 필요.",
 		}
 	}
 	return 5, &contractv2.Failure{
 		RequiresLLMReview: true,
-		FailureQuote:      fmt.Sprintf("containment-info keyword density across %d scenes (need ≥3)", hitScenes),
-		Recommendation:    "격리/절차 정보를 한 번에 쏟지 말고 3개 이상 scene에 흩뿌리세요.",
+		FailureQuote:      fmt.Sprintf("containment-info keyword density across %d beats (need ≥3)", hitBeats),
+		Recommendation:    "격리/절차 정보를 한 번에 쏟지 말고 3개 이상 beat에 흩뿌리세요.",
 	}
 }
 
@@ -175,16 +184,16 @@ func scoreInformationDrip(in Input) (int, *contractv2.Failure) {
 
 func scoreConcreteIncident(in Input) (int, *contractv2.Failure) {
 	sensoryVerbs := []string{"흘러내렸", "찢어졌", "갈라졌", "터졌", "무너졌", "스며들었", "쏟아졌"}
-	hitScenes := 0
-	for _, s := range in.Script.LegacyScenes() {
+	hitBeats := 0
+	for _, beat := range in.Script.FlatBeats() {
 		for _, v := range sensoryVerbs {
-			if strings.Contains(s.Narration, v) {
-				hitScenes++
+			if strings.Contains(beat.Text, v) {
+				hitBeats++
 				break
 			}
 		}
 	}
-	if hitScenes >= 1 {
+	if hitBeats >= 1 {
 		return 8, &contractv2.Failure{
 			RequiresLLMReview: true,
 			Recommendation:    "구체적 incident가 감지됨. 인물/시간/장소 명시 여부는 LLM 단계에서 추가 검증.",
@@ -192,7 +201,7 @@ func scoreConcreteIncident(in Input) (int, *contractv2.Failure) {
 	}
 	return 4, &contractv2.Failure{
 		RequiresLLMReview: true,
-		FailureQuote:      "no sensory verbs detected across scenes",
+		FailureQuote:      "no sensory verbs detected across beats",
 		Recommendation:    "한 사건을 시간·장소·결과까지 드라마타이즈하세요. '흘러내렸다', '찢어졌다' 같은 감각 동사 권장.",
 	}
 }
@@ -200,22 +209,22 @@ func scoreConcreteIncident(in Input) (int, *contractv2.Failure) {
 // --- Criterion 4: twist position ----------------------------------------
 
 func scoreTwistPosition(in Input) (int, *contractv2.Failure) {
-	scenes := in.Script.LegacyScenes()
-	total := len(scenes)
+	beats := in.Script.FlatBeats()
+	total := len(beats)
 	if total == 0 {
-		return 0, &contractv2.Failure{FailureQuote: "no scenes"}
+		return 0, &contractv2.Failure{FailureQuote: "no beats"}
 	}
 	revealIdx := -1
-	for i, s := range scenes {
-		if s.ActID == domain.ActRevelation {
+	for i, beat := range beats {
+		if beat.ActID == domain.ActRevelation {
 			revealIdx = i
 			break
 		}
 	}
 	if revealIdx < 0 {
 		return 4, &contractv2.Failure{
-			FailureQuote:   "no scene tagged act_id=revelation",
-			Recommendation: "twist 장면을 act_id=revelation로 태그하세요.",
+			FailureQuote:   "no act tagged act_id=revelation",
+			Recommendation: "twist를 담는 act을 act_id=revelation으로 태그하세요.",
 		}
 	}
 	pos := float64(revealIdx) / float64(total)
@@ -226,7 +235,7 @@ func scoreTwistPosition(in Input) (int, *contractv2.Failure) {
 		return 8, nil
 	default:
 		return 4, &contractv2.Failure{
-			FailureQuote:   fmt.Sprintf("revelation at scene index %d/%d (≈%.2f)", revealIdx, total, pos),
+			FailureQuote:   fmt.Sprintf("revelation starts at beat index %d/%d (≈%.2f)", revealIdx, total, pos),
 			Recommendation: "twist는 전체 길이의 70–85% 지점에 두세요.",
 		}
 	}
@@ -235,11 +244,11 @@ func scoreTwistPosition(in Input) (int, *contractv2.Failure) {
 // --- Criterion 5: unresolved outro --------------------------------------
 
 func scoreUnresolvedOutro(in Input) (int, *contractv2.Failure) {
-	scenes := in.Script.LegacyScenes()
-	if len(scenes) == 0 {
-		return 0, &contractv2.Failure{FailureQuote: "no scenes"}
+	beats := in.Script.FlatBeats()
+	if len(beats) == 0 {
+		return 0, &contractv2.Failure{FailureQuote: "no beats"}
 	}
-	last := strings.TrimSpace(scenes[len(scenes)-1].Narration)
+	last := strings.TrimSpace(beats[len(beats)-1].Text)
 	if last == "" {
 		return 0, &contractv2.Failure{FailureQuote: "outro empty"}
 	}
@@ -270,12 +279,15 @@ func scoreSentenceRhythm(in Input) (int, *contractv2.Failure) {
 	}
 	totalLen := 0
 	totalSentences := 0
-	violatingScene := -1
-	for i, s := range in.Script.LegacyScenes() {
-		if !isTenseMood(s.Mood) {
+	for _, beat := range in.Script.FlatBeats() {
+		mood := beat.Anchor.Mood
+		if mood == "" {
+			mood = beat.ActMood
+		}
+		if !isTenseMood(mood) {
 			continue
 		}
-		sentences := splitKoreanSentences(s.Narration)
+		sentences := splitKoreanSentences(beat.Text)
 		for _, snt := range sentences {
 			runes := []rune(strings.TrimSpace(snt))
 			if len(runes) == 0 {
@@ -284,12 +296,9 @@ func scoreSentenceRhythm(in Input) (int, *contractv2.Failure) {
 			totalLen += len(runes)
 			totalSentences++
 		}
-		if totalSentences > 0 && totalLen/totalSentences > tenseAvgCap && violatingScene < 0 {
-			violatingScene = i
-		}
 	}
 	if totalSentences == 0 {
-		// No tense scenes — the script may be all calm; don't penalize.
+		// No tense beats — the script may be all calm; don't penalize.
 		return 8, nil
 	}
 	avg := totalLen / totalSentences
@@ -298,12 +307,12 @@ func scoreSentenceRhythm(in Input) (int, *contractv2.Failure) {
 		return contractv2.MaxScorePerCriterion, nil
 	case avg <= tenseAvgCap+5:
 		return 7, &contractv2.Failure{
-			FailureQuote:   fmt.Sprintf("tense-scene avg sentence length=%d (cap %d)", avg, tenseAvgCap),
+			FailureQuote:   fmt.Sprintf("tense-beat avg sentence length=%d (cap %d)", avg, tenseAvgCap),
 			Recommendation: "긴장 구간 평균 문장 길이를 줄이세요.",
 		}
 	default:
 		return 4, &contractv2.Failure{
-			FailureQuote:   fmt.Sprintf("tense-scene avg sentence length=%d (cap %d)", avg, tenseAvgCap),
+			FailureQuote:   fmt.Sprintf("tense-beat avg sentence length=%d (cap %d)", avg, tenseAvgCap),
 			Recommendation: "긴장 구간 평균 문장 길이를 18자 이하로 단축하세요.",
 		}
 	}
@@ -347,13 +356,13 @@ func scorePOVConsistency(in Input) (int, *contractv2.Failure) {
 	thirdPerson := []string{"재단은", "그것은", "조사관은", "요원은", "그들은"}
 	violations := 0
 	firstViolation := ""
-	for _, s := range in.Script.LegacyScenes() {
-		hasSecond := containsAny(s.Narration, secondPerson)
-		hasThird := containsAny(s.Narration, thirdPerson)
+	for _, beat := range in.Script.FlatBeats() {
+		hasSecond := containsAny(beat.Text, secondPerson)
+		hasThird := containsAny(beat.Text, thirdPerson)
 		if hasSecond && hasThird {
 			violations++
 			if firstViolation == "" {
-				firstViolation = s.Narration
+				firstViolation = beat.Text
 			}
 		}
 	}
@@ -363,7 +372,7 @@ func scorePOVConsistency(in Input) (int, *contractv2.Failure) {
 	}
 	return score, &contractv2.Failure{
 		FailureQuote:   firstViolation,
-		Recommendation: "한 scene 안에서 2인칭(당신/여러분)과 3인칭(재단은/그것은) 시점을 섞지 마세요.",
+		Recommendation: "한 beat 안에서 2인칭(당신/여러분)과 3인칭(재단은/그것은) 시점을 섞지 마세요.",
 	}
 }
 
@@ -455,14 +464,16 @@ func scoreVisualReusability(in Input) (int, *contractv2.Failure) {
 
 // --- helpers ------------------------------------------------------------
 
+// scriptText returns one string with every act's monologue separated by
+// newlines. Used by criteria that operate on whole-script text rather than
+// per-beat (sensory language, SCP fidelity).
 func scriptText(script *domain.NarrationScript) string {
 	if script == nil {
 		return ""
 	}
-	scenes := script.LegacyScenes()
-	parts := make([]string, len(scenes))
-	for i, s := range scenes {
-		parts[i] = s.Narration
+	parts := make([]string, 0, len(script.Acts))
+	for _, act := range script.Acts {
+		parts = append(parts, act.Monologue)
 	}
 	return strings.Join(parts, "\n")
 }

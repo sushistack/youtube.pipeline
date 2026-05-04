@@ -153,7 +153,7 @@ func buildPrecheckRetryReport(precheck domain.CriticPrecheck, cfg TextAgentConfi
 		Precheck:       precheck,
 		CriticModel:    cfg.Model,
 		CriticProvider: cfg.Provider,
-		SourceVersion:  domain.CriticSourceVersionV1,
+		SourceVersion:  domain.CriticSourceVersionV2,
 	}
 }
 
@@ -169,14 +169,19 @@ func buildPostReviewerShortCircuitReport(reason, feedback string, cfg TextAgentC
 		Precheck:       domain.CriticPrecheck{},
 		CriticModel:    cfg.Model,
 		CriticProvider: cfg.Provider,
-		SourceVersion:  domain.CriticSourceVersionPostReviewerV1,
+		SourceVersion:  domain.CriticSourceVersionPostReviewerV2,
 	}
 }
 
 func flattenForbiddenTermHits(hits []ForbiddenTermHit) []string {
 	items := make([]string, 0, len(hits))
 	for _, hit := range hits {
-		items = append(items, fmt.Sprintf("scene %d: %s", hit.SceneNum, hit.Pattern))
+		switch {
+		case hit.ActID == "":
+			items = append(items, fmt.Sprintf("title: %s", hit.Pattern))
+		default:
+			items = append(items, fmt.Sprintf("act %s @rune %d: %s", hit.ActID, hit.RuneOffset, hit.Pattern))
+		}
 	}
 	return items
 }

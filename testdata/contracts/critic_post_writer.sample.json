@@ -8,11 +8,12 @@
     "emotional_variation": 76,
     "immersion": 82
   },
-  "feedback": "도입 장면의 긴장감은 강하지만 4번 장면과 5번 장면 사이의 감정 대비를 조금 더 벌리면 유지력이 더 좋아집니다.",
+  "feedback": "도입 act의 긴장감은 강하지만 mystery act와 revelation act 사이의 감정 대비를 조금 더 벌리면 유지력이 더 좋아집니다.",
   "scene_notes": [
     {
-      "scene_num": 1,
-      "issue": "첫 문장이 충분히 짧지만 후반 설명이 조금 길어집니다.",
+      "act_id": "incident",
+      "rune_offset": 0,
+      "issue": "도입부 hook이 충분히 짧지만 후반 설명이 조금 길어집니다.",
       "suggestion": "두 번째 문장을 더 잘게 끊어서 충격 리듬을 유지하세요."
     }
   ],
@@ -23,5 +24,5 @@
   },
   "critic_model": "gpt-test-critic",
   "critic_provider": "anthropic",
-  "source_version": "v1-critic-post-writer"
+  "source_version": "v2-critic-post-writer"
 }

@@ -3,16 +3,11 @@ package domain
 import "unicode/utf8"
 
 const (
-	// NarrationSourceVersionV1 is the legacy per-scene narration shape. Reserved
-	// only for archival fixtures; v2 producers MUST emit NarrationSourceVersionV2.
-	NarrationSourceVersionV1 = "v1-llm-writer"
+	// NarrationSourceVersionV2 is the canonical writer source-version emitted
+	// by D1+ writer v2. v1 strings are no longer recognized — the per-scene
+	// shape and its bridge died with D4 (clean cut per the D plan).
 	NarrationSourceVersionV2 = "v2-monologue"
 	LanguageKorean           = "ko"
-	// PolisherMaxEditRatio is the v1 polisher's per-scene rune-delta ceiling.
-	// Retained as a constant only because the v1 polisher.go still compiles
-	// against the LegacyScenes() bridge during the D1–D6 incremental migration.
-	// Recalibrated in D7 against the v2 unit; the 0.40 figure is v1-specific.
-	PolisherMaxEditRatio = 0.40
 )
 
 // NarrationScript v2: per-act continuous monologue + ordered BeatAnchor slices.
@@ -26,9 +21,8 @@ type NarrationScript struct {
 	SourceVersion string            `json:"source_version"`
 }
 
-// ActScript replaces the v1 per-scene NarrationScene array as the act-level
-// narration unit. Monologue is a single continuous KR text; Beats segment that
-// text into visual cuts via rune-offset slices.
+// ActScript is the act-level narration unit. Monologue is a single continuous
+// KR text; Beats segment that text into visual cuts via rune-offset slices.
 type ActScript struct {
 	ActID     string       `json:"act_id"`
 	Monologue string       `json:"monologue"`
@@ -53,28 +47,6 @@ type BeatAnchor struct {
 	FactTags          []FactTag `json:"fact_tags"`
 }
 
-// NarrationScene is the v1 per-scene shape, kept ONLY as the return element
-// type of (*NarrationScript).LegacyScenes(). Every downstream consumer
-// reaches it through the bridge during the D1–D6 migration; the bridge is
-// deleted in the same PR as the last consumer (D6).
-//
-// Deprecated: use ActScript / BeatAnchor. The bridge LegacyScenes() exists
-// purely to keep v1 agents (visual_breakdowner v1, polisher v1, scene_service)
-// compiling and functionally green until D2/D4/D6 migrate them off.
-type NarrationScene struct {
-	SceneNum          int       `json:"scene_num"`
-	ActID             string    `json:"act_id"`
-	Narration         string    `json:"narration"`
-	NarrationBeats    []string  `json:"narration_beats"`
-	FactTags          []FactTag `json:"fact_tags"`
-	Mood              string    `json:"mood"`
-	EntityVisible     bool      `json:"entity_visible"`
-	Location          string    `json:"location"`
-	CharactersPresent []string  `json:"characters_present"`
-	ColorPalette      string    `json:"color_palette"`
-	Atmosphere        string    `json:"atmosphere"`
-}
-
 type FactTag struct {
 	Key     string `json:"key"`
 	Content string `json:"content"`
@@ -90,17 +62,36 @@ type NarrationMetadata struct {
 	ForbiddenTermsVersion string `json:"forbidden_terms_version"`
 }
 
-// LegacyScenes derives the v1 []NarrationScene shape from v2 Acts/Beats.
-// One scene per beat; the beat's rune slice from Monologue becomes
-// NarrationScene.Narration. SceneNum is 1-indexed in beat order.
+// NarrationBeatView is a v2 read-only flat projection of one BeatAnchor with
+// its parent act context resolved. It carries the parent ActID + ActMood
+// fall-through and the rune slice text from the parent monologue. Returned
+// by NarrationScript.FlatBeats() in stable beat order.
 //
-// Deprecated: the bridge is deleted in the PR that lands the last v2 consumer.
-// See spec-d1-domain-types-and-writer-v2.md "Design Notes". Caller must
-// not mutate the result and expect it to round-trip back into Acts — the
-// bridge is in-memory, read-only.
+// Index is 1-based across all acts and matches the segments table's
+// scene_index = Index - 1 convention. Downstream consumers that previously
+// keyed on v1 NarrationScene.SceneNum can key on Index unchanged.
 //
-// TODO(D4): remove with critic v2.
-func (n *NarrationScript) LegacyScenes() []NarrationScene {
+// Anchor is a copy of the source BeatAnchor; mutating it does not propagate
+// back to the parent NarrationScript. ActMood is the parent ActScript.Mood —
+// callers should fall through to it when Anchor.Mood is empty.
+type NarrationBeatView struct {
+	Index   int
+	ActID   string
+	ActMood string
+	Anchor  BeatAnchor
+	Text    string
+}
+
+// FlatBeats returns a flat 1-based ordered view over every beat in the script.
+// The view materializes each beat's rune-slice text from its parent act's
+// Monologue once, which lets downstream consumers read the per-beat narration
+// text without re-slicing offsets themselves. Slices are clamped to the
+// monologue's rune length defensively; out-of-range offsets produce empty
+// text, never a panic.
+//
+// Returns nil for nil receiver, nil for an empty Acts list. The returned
+// slice has length sum(len(act.Beats) for act in Acts).
+func (n *NarrationScript) FlatBeats() []NarrationBeatView {
 	if n == nil || len(n.Acts) == 0 {
 		return nil
 	}
@@ -108,8 +99,8 @@ func (n *NarrationScript) LegacyScenes() []NarrationScene {
 	for _, act := range n.Acts {
 		total += len(act.Beats)
 	}
-	scenes := make([]NarrationScene, 0, total)
-	sceneNum := 1
+	out := make([]NarrationBeatView, 0, total)
+	idx := 1
 	for _, act := range n.Acts {
 		runes := []rune(act.Monologue)
 		runeLen := len(runes)
@@ -128,24 +119,17 @@ func (n *NarrationScript) LegacyScenes() []NarrationScene {
 			if end < start {
 				end = start
 			}
-			narration := string(runes[start:end])
-			scenes = append(scenes, NarrationScene{
-				SceneNum:          sceneNum,
-				ActID:             act.ActID,
-				Narration:         narration,
-				NarrationBeats:    []string{narration},
-				FactTags:          beat.FactTags,
-				Mood:              firstNonEmpty(beat.Mood, act.Mood),
-				EntityVisible:     beat.EntityVisible,
-				Location:          beat.Location,
-				CharactersPresent: beat.CharactersPresent,
-				ColorPalette:      beat.ColorPalette,
-				Atmosphere:        beat.Atmosphere,
+			out = append(out, NarrationBeatView{
+				Index:   idx,
+				ActID:   act.ActID,
+				ActMood: act.Mood,
+				Anchor:  beat,
+				Text:    string(runes[start:end]),
 			})
-			sceneNum++
+			idx++
 		}
 	}
-	return scenes
+	return out
 }
 
 // MonologueRuneCount returns the total rune count across all act monologues.
@@ -162,11 +146,50 @@ func (n *NarrationScript) MonologueRuneCount() int {
 	return total
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
+// ActByID returns a pointer to the ActScript with the matching ID, or nil
+// when no act has that ID. Mutations through the returned pointer DO
+// propagate back into the script — callers that need an immutable copy
+// should dereference and copy.
+func (n *NarrationScript) ActByID(actID string) *ActScript {
+	if n == nil || actID == "" {
+		return nil
+	}
+	for i := range n.Acts {
+		if n.Acts[i].ActID == actID {
+			return &n.Acts[i]
 		}
 	}
-	return ""
+	return nil
+}
+
+// BeatIndexAt returns the 1-based flat beat index for the beat in the named
+// act whose [StartOffset, EndOffset) range contains runeOffset. Returns 0
+// when no such beat exists (act_id not found, runeOffset out of range, or
+// the act has no beats). The returned index matches NarrationBeatView.Index
+// from FlatBeats().
+//
+// runeOffset is a half-open inclusive-on-the-left coordinate within the
+// parent act's Monologue, in rune units. An offset that lands exactly on a
+// beat boundary maps to the trailing beat (the one whose StartOffset equals
+// runeOffset).
+func (n *NarrationScript) BeatIndexAt(actID string, runeOffset int) int {
+	if n == nil || actID == "" || runeOffset < 0 {
+		return 0
+	}
+	flatIdx := 0
+	for _, act := range n.Acts {
+		for _, beat := range act.Beats {
+			flatIdx++
+			if act.ActID != actID {
+				continue
+			}
+			if runeOffset >= beat.StartOffset && runeOffset < beat.EndOffset {
+				return flatIdx
+			}
+			// A boundary hit (runeOffset == beat.StartOffset) is included
+			// above (>=), so a trailing-edge match (runeOffset ==
+			// beat.EndOffset) belongs to the next beat in iteration order.
+		}
+	}
+	return 0
 }

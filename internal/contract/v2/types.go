@@ -72,9 +72,9 @@ type ScriptOutput struct {
 	SourceAttribution Attribution `json:"source_attribution"`
 }
 
-// Scene mirrors spec section 4.3 — note this is leaner than
-// domain.NarrationScene (no FactTags, ColorPalette, EntityVisible) and
-// adds EmotionCurve / SFXHint.
+// Scene mirrors spec section 4.3 — leaner than domain.BeatAnchor (no
+// FactTags, ColorPalette, EntityVisible) and adds EmotionCurve / SFXHint.
+// One contract Scene per source beat.
 type Scene struct {
 	SceneID         int    `json:"scene_id"`
 	Section         string `json:"section"`

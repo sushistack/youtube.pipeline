@@ -24,10 +24,11 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["scene_num", "issue", "suggestion"],
+        "required": ["act_id", "issue", "suggestion"],
         "additionalProperties": false,
         "properties": {
-          "scene_num": { "type": "integer", "minimum": 1 },
+          "act_id": { "type": "string", "minLength": 1 },
+          "rune_offset": { "type": "integer", "minimum": 0 },
           "issue": { "type": "string", "minLength": 1 },
           "suggestion": { "type": "string", "minLength": 1 }
         }
@@ -37,10 +38,11 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["scene_num", "reason"],
+        "required": ["act_id", "rune_offset", "reason"],
         "additionalProperties": false,
         "properties": {
-          "scene_num": { "type": "integer", "minimum": 1 },
+          "act_id": { "type": "string", "minLength": 1 },
+          "rune_offset": { "type": "integer", "minimum": 0 },
           "reason": { "type": "string", "minLength": 1 }
         }
       }
@@ -60,6 +62,6 @@
     },
     "critic_model": { "type": "string", "minLength": 1 },
     "critic_provider": { "type": "string", "minLength": 1 },
-    "source_version": { "const": "v1-critic-post-reviewer" }
+    "source_version": { "const": "v2-critic-post-reviewer" }
   }
 }

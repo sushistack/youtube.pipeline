@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
@@ -156,7 +157,7 @@ func NewPostWriterCritic(
 		} else if report.CriticProvider == "" {
 			report.CriticProvider = cfg.Provider
 		}
-		report.SourceVersion = domain.CriticSourceVersionV1
+		report.SourceVersion = domain.CriticSourceVersionV2
 		if !containsHangul(report.Feedback) {
 			return fmt.Errorf("critic: feedback must remain Korean: %w", domain.ErrValidation)
 		}
@@ -320,7 +321,7 @@ func NewPostReviewerCritic(
 		} else if report.CriticProvider == "" {
 			report.CriticProvider = cfg.Provider
 		}
-		report.SourceVersion = domain.CriticSourceVersionPostReviewerV1
+		report.SourceVersion = domain.CriticSourceVersionPostReviewerV2
 		if !containsHangul(report.Feedback) {
 			return fmt.Errorf("critic: feedback must remain Korean: %w", domain.ErrValidation)
 		}
@@ -333,14 +334,28 @@ func NewPostReviewerCritic(
 	}
 }
 
+// validateMinorPolicyFindings checks every LLM-emitted finding against the
+// script's act/monologue layout: ActID must match an existing
+// NarrationScript.Acts[i].ActID, RuneOffset must point inside that act's
+// monologue (0 ≤ RuneOffset ≤ utf8.RuneCount(monologue)), and Reason must
+// remain Korean. RuneOffset == 0 is always allowed (act-paragraph anchor).
+// An empty monologue (rune count 0) accepts only RuneOffset == 0; any
+// positive offset against an empty act fails validation.
 func validateMinorPolicyFindings(findings []domain.MinorPolicyFinding, script *domain.NarrationScript) error {
 	if len(findings) == 0 || script == nil {
 		return nil
 	}
-	sceneCount := len(script.LegacyScenes())
+	actMonoLen := make(map[string]int, len(script.Acts))
+	for _, act := range script.Acts {
+		actMonoLen[act.ActID] = utf8.RuneCountInString(act.Monologue)
+	}
 	for _, finding := range findings {
-		if finding.SceneNum < 1 || finding.SceneNum > sceneCount {
-			return fmt.Errorf("minor_policy_findings scene_num=%d out of range (1..%d): %w", finding.SceneNum, sceneCount, domain.ErrValidation)
+		monoLen, ok := actMonoLen[finding.ActID]
+		if !ok {
+			return fmt.Errorf("minor_policy_findings act_id=%q not in narration: %w", finding.ActID, domain.ErrValidation)
+		}
+		if finding.RuneOffset < 0 || finding.RuneOffset > monoLen {
+			return fmt.Errorf("minor_policy_findings act_id=%q rune_offset=%d out of range (0..%d): %w", finding.ActID, finding.RuneOffset, monoLen, domain.ErrValidation)
 		}
 		if !containsHangul(finding.Reason) {
 			return fmt.Errorf("minor_policy_findings reason must remain Korean: %w", domain.ErrValidation)

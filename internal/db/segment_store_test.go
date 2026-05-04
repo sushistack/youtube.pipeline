@@ -12,6 +12,29 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
+// scriptFromBeatTexts builds a v2 NarrationScript whose flat beat order
+// equals the supplied texts. Beats land in a single ActIncident act with
+// adjacent contiguous rune slices; segment_store seeding flattens them into
+// scene_index 0..N-1 unchanged.
+func scriptFromBeatTexts(beatTexts ...string) *domain.NarrationScript {
+	monologue := ""
+	anchors := make([]domain.BeatAnchor, 0, len(beatTexts))
+	offset := 0
+	for _, t := range beatTexts {
+		runes := []rune(t)
+		anchors = append(anchors, domain.BeatAnchor{StartOffset: offset, EndOffset: offset + len(runes)})
+		monologue += t
+		offset += len(runes)
+	}
+	return &domain.NarrationScript{
+		Acts: []domain.ActScript{{
+			ActID:     domain.ActIncident,
+			Monologue: monologue,
+			Beats:     anchors,
+		}},
+	}
+}
+
 func TestSegmentStore_SeedFromNarration_BulkInsertsRows(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	database := testutil.NewTestDB(t)
@@ -23,12 +46,8 @@ func TestSegmentStore_SeedFromNarration_BulkInsertsRows(t *testing.T) {
 		t.Fatalf("seed run: %v", err)
 	}
 
-	scenes := []domain.NarrationScene{
-		{SceneNum: 1, ActID: domain.ActIncident, Narration: "scene one"},
-		{SceneNum: 2, ActID: domain.ActIncident, Narration: "scene two"},
-		{SceneNum: 3, ActID: domain.ActMystery, Narration: "scene three"},
-	}
-	inserted, err := store.SeedFromNarration(ctx, "scp-049-run-1", scenes)
+	want := []string{"scene one", "scene two", "scene three"}
+	inserted, err := store.SeedFromNarration(ctx, "scp-049-run-1", scriptFromBeatTexts(want...))
 	if err != nil {
 		t.Fatalf("SeedFromNarration: %v", err)
 	}
@@ -47,8 +66,8 @@ func TestSegmentStore_SeedFromNarration_BulkInsertsRows(t *testing.T) {
 		if ep.SceneIndex != i {
 			t.Errorf("got[%d].SceneIndex = %d, want %d", i, ep.SceneIndex, i)
 		}
-		if ep.Narration == nil || *ep.Narration != scenes[i].Narration {
-			t.Errorf("got[%d].Narration = %v, want %q", i, ep.Narration, scenes[i].Narration)
+		if ep.Narration == nil || *ep.Narration != want[i] {
+			t.Errorf("got[%d].Narration = %v, want %q", i, ep.Narration, want[i])
 		}
 	}
 }
@@ -64,11 +83,7 @@ func TestSegmentStore_SeedFromNarration_IsIdempotentOnConflict(t *testing.T) {
 		t.Fatalf("seed run: %v", err)
 	}
 
-	scenes := []domain.NarrationScene{
-		{SceneNum: 1, Narration: "v1 narration"},
-		{SceneNum: 2, Narration: "v1 narration two"},
-	}
-	if _, err := store.SeedFromNarration(ctx, "scp-049-run-1", scenes); err != nil {
+	if _, err := store.SeedFromNarration(ctx, "scp-049-run-1", scriptFromBeatTexts("v1 narration", "v1 narration two")); err != nil {
 		t.Fatalf("SeedFromNarration first call: %v", err)
 	}
 	// Operator edits scene 0's narration after seeding.
@@ -77,8 +92,7 @@ func TestSegmentStore_SeedFromNarration_IsIdempotentOnConflict(t *testing.T) {
 	}
 	// Re-seed (e.g. Phase A retried). ON CONFLICT DO NOTHING must preserve
 	// the edited row.
-	scenes[0].Narration = "v2 reseed text"
-	inserted, err := store.SeedFromNarration(ctx, "scp-049-run-1", scenes)
+	inserted, err := store.SeedFromNarration(ctx, "scp-049-run-1", scriptFromBeatTexts("v2 reseed text", "v1 narration two"))
 	if err != nil {
 		t.Fatalf("SeedFromNarration second call: %v", err)
 	}

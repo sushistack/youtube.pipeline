@@ -18,7 +18,7 @@ func TestCriticOutput_JSONRoundTrip_BothCheckpoints(t *testing.T) {
 			},
 			Feedback: "도입은 강하지만 장면 전환의 감정 대비를 더 키우세요.",
 			SceneNotes: []CriticSceneNote{
-				{SceneNum: 1, Issue: "후크가 조금 길다", Suggestion: "첫 문장을 더 짧게 줄이세요."},
+				{ActID: ActIncident, Issue: "후크가 조금 길다", Suggestion: "첫 문장을 더 짧게 줄이세요."},
 			},
 			Precheck: CriticPrecheck{
 				SchemaValid:       true,
@@ -27,7 +27,7 @@ func TestCriticOutput_JSONRoundTrip_BothCheckpoints(t *testing.T) {
 			},
 			CriticModel:    "critic-model",
 			CriticProvider: "anthropic",
-			SourceVersion:  CriticSourceVersionV1,
+			SourceVersion:  CriticSourceVersionV2,
 		},
 		PostReviewer: &CriticCheckpointReport{
 			Checkpoint:   CriticCheckpointPostReviewer,
@@ -38,7 +38,7 @@ func TestCriticOutput_JSONRoundTrip_BothCheckpoints(t *testing.T) {
 			},
 			Feedback: "최종 검토까지 안정적입니다.",
 			SceneNotes: []CriticSceneNote{
-				{SceneNum: 2, Issue: "리듬이 약간 느리다", Suggestion: "장면 전환을 반 박자 더 빠르게 정리하세요."},
+				{ActID: ActMystery, RuneOffset: 42, Issue: "리듬이 약간 느리다", Suggestion: "장면 전환을 반 박자 더 빠르게 정리하세요."},
 			},
 			Precheck: CriticPrecheck{
 				SchemaValid:       true,
@@ -47,7 +47,7 @@ func TestCriticOutput_JSONRoundTrip_BothCheckpoints(t *testing.T) {
 			},
 			CriticModel:    "critic-model-2",
 			CriticProvider: "openai",
-			SourceVersion:  CriticSourceVersionV1,
+			SourceVersion:  CriticSourceVersionPostReviewerV2,
 		},
 	}
 	raw, err := json.Marshal(orig)
@@ -94,7 +94,7 @@ func TestCriticOutput_JSONOmitEmptyPostReviewer(t *testing.T) {
 			Precheck:       CriticPrecheck{SchemaValid: true, ForbiddenTermHits: []string{}, ShortCircuited: false},
 			CriticModel:    "critic",
 			CriticProvider: "provider",
-			SourceVersion:  CriticSourceVersionV1,
+			SourceVersion:  CriticSourceVersionV2,
 		},
 	})
 	if err != nil {
@@ -120,12 +120,12 @@ func TestCriticCheckpointReport_JSONRoundTrip_MinorPolicyFindings(t *testing.T) 
 		Feedback:     "좋습니다.",
 		SceneNotes:   []CriticSceneNote{},
 		MinorPolicyFindings: []MinorPolicyFinding{
-			{SceneNum: 2, Reason: "미성년자가 폭력에 노출됩니다."},
+			{ActID: ActRevelation, RuneOffset: 1234, Reason: "미성년자가 폭력에 노출됩니다."},
 		},
 		Precheck:       CriticPrecheck{SchemaValid: true},
 		CriticModel:    "critic",
 		CriticProvider: "provider",
-		SourceVersion:  CriticSourceVersionPostReviewerV1,
+		SourceVersion:  CriticSourceVersionPostReviewerV2,
 	}
 	raw, err := json.Marshal(orig)
 	if err != nil {

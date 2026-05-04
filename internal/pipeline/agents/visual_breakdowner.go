@@ -44,7 +44,7 @@ func NewVisualBreakdowner(
 	cfg TextAgentConfig,
 	prompts PromptAssets,
 	validator *Validator,
-	estimator SceneDurationEstimator,
+	estimator BeatDurationEstimator,
 ) AgentFunc {
 	return func(ctx context.Context, state *PipelineState) error {
 		switch {
@@ -408,27 +408,16 @@ func factTagSliceEqualNilSafe(a, b []domain.FactTag) bool {
 func buildVisualAct(
 	act domain.ActScript,
 	decoded visualBreakdownActResponse,
-	estimator SceneDurationEstimator,
+	estimator BeatDurationEstimator,
 ) domain.VisualAct {
-	// Estimate per-shot duration by treating each beat as a v1 NarrationScene
-	// with its rune slice as Narration text (the SceneDurationEstimator
-	// interface is v1-shaped; we compute one estimate per shot rather than
-	// dividing one act-level total). This matches the v1 "shot-as-tts-unit"
-	// formula but per beat instead of per scene. Offsets are pre-validated
-	// in the preflight at runVisualBreakdowner entry, so direct slicing is
-	// safe — any out-of-bounds slice here is a programmer error and SHOULD
-	// panic to surface bridge corruption immediately.
-	runes := []rune(act.Monologue)
+	// Per-beat duration estimation. Offsets are pre-validated in the
+	// preflight at runVisualBreakdowner entry, so the estimator's defensive
+	// rune-slice clamping is a safety net rather than the primary gate.
 	shots := make([]domain.VisualShot, 0, len(decoded.Shots))
 	for i, shot := range decoded.Shots {
 		descriptor := strings.TrimSpace(shot.VisualDescriptor)
 		anchor := act.Beats[i]
-		beatText := string(runes[anchor.StartOffset:anchor.EndOffset])
-		dur := estimator.Estimate(domain.NarrationScene{
-			SceneNum:  i + 1,
-			ActID:     act.ActID,
-			Narration: beatText,
-		})
+		dur := estimator.Estimate(act.ActID, act.Monologue, anchor)
 		shots = append(shots, domain.VisualShot{
 			ShotIndex:          i + 1,
 			VisualDescriptor:   descriptor,

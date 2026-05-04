@@ -29,13 +29,18 @@ type MinorSensitivePatterns struct {
 // ForbiddenTermHit records a single forbidden-term match against a
 // NarrationScript text field.
 //
-// SceneNum carries the scene number of the hit, with one sentinel:
-// SceneNum == 0 means the hit came from the top-level NarrationScript.Title
-// (title-level), not from any scene. In practice scene numbering starts at 1,
-// so 0 is safe as a "title" marker.
+// ActID == "" is the title-level sentinel — the hit came from
+// NarrationScript.Title, not from any per-act monologue. ActID matches
+// NarrationScript.Acts[i].ActID for per-act hits. RuneOffset is the rune
+// index of the match's leading rune within the parent act's Monologue (or 0
+// for ActID == ""); per-act metadata field hits (Mood, KeyPoints, Beats[*]
+// metadata) report the parent beat's StartOffset (or 0 if matched from an
+// act-level field outside any beat) so callers can still translate back to a
+// flat scene_index via NarrationScript.BeatIndexAt.
 type ForbiddenTermHit struct {
-	SceneNum int
-	Pattern  string
+	ActID      string
+	RuneOffset int
+	Pattern    string
 }
 
 type MinorRegexHit = domain.MinorRegexHit
@@ -78,13 +83,21 @@ func LoadMinorSensitivePatterns(projectRoot string) (*MinorSensitivePatterns, er
 }
 
 // MatchNarration scans every policy-relevant free-text field on the script
-// (Title, and each scene's Narration, Location, Atmosphere, Mood, and
-// FactTags[i].Content) for any forbidden-term regex. A single pattern that
-// matches multiple fields within the same scene is reported once per field.
+// (Title, and each act's Monologue, Mood, KeyPoints, plus per-beat
+// Location/Atmosphere/Mood/FactTags[i].Content) for any forbidden-term regex.
+// A single pattern that matches multiple fields within the same act/beat is
+// reported once per field.
 //
-// Results are returned sorted deterministically by (SceneNum asc, Pattern asc).
-// Title-level hits use the sentinel SceneNum = 0 (see ForbiddenTermHit) and
-// therefore sort before any scene.
+// Per the D plan ("v2 iterates acts[].Monologue"), the primary unit is the
+// act monologue; per-beat metadata scanning is retained from the v1 multi-
+// field policy because the regexes target arbitrary leakage surfaces, not
+// just narration text. RuneOffset for monologue-text matches is the
+// FindStringIndex byte offset converted to runes; for metadata-field
+// matches, RuneOffset is the parent beat's StartOffset (or 0 when matched
+// outside any beat, e.g. ActScript.Mood). ActID is empty for Title hits.
+//
+// Results are returned sorted deterministically by (ActID asc — empty first,
+// RuneOffset asc, Pattern asc).
 func (f *ForbiddenTerms) MatchNarration(script *domain.NarrationScript) []ForbiddenTermHit {
 	if f == nil || script == nil {
 		return nil
@@ -93,33 +106,62 @@ func (f *ForbiddenTerms) MatchNarration(script *domain.NarrationScript) []Forbid
 	for idx, re := range f.regexps {
 		if re.MatchString(script.Title) {
 			hits = append(hits, ForbiddenTermHit{
-				SceneNum: 0,
-				Pattern:  f.Raw[idx],
+				ActID:      "",
+				RuneOffset: 0,
+				Pattern:    f.Raw[idx],
 			})
 		}
 	}
-	for _, scene := range script.LegacyScenes() {
-		fields := []string{scene.Narration, scene.Location, scene.Atmosphere, scene.Mood}
-		for _, tag := range scene.FactTags {
-			fields = append(fields, tag.Content)
-		}
+	for _, act := range script.Acts {
+		// Monologue — primary scan unit. Find all (non-overlapping) match
+		// positions so distinct rune offsets are reported.
 		for idx, re := range f.regexps {
-			for _, field := range fields {
+			locs := re.FindAllStringIndex(act.Monologue, -1)
+			for _, loc := range locs {
+				runeOffset := utf8.RuneCountInString(act.Monologue[:loc[0]])
+				hits = append(hits, ForbiddenTermHit{
+					ActID:      act.ActID,
+					RuneOffset: runeOffset,
+					Pattern:    f.Raw[idx],
+				})
+			}
+		}
+		// Act-level metadata — Mood + KeyPoints. Reported with RuneOffset=0
+		// (start of act) so review_gate can still translate via BeatIndexAt
+		// to the act's first beat.
+		actLevelFields := []string{act.Mood}
+		actLevelFields = append(actLevelFields, act.KeyPoints...)
+		for idx, re := range f.regexps {
+			for _, field := range actLevelFields {
 				if re.MatchString(field) {
 					hits = append(hits, ForbiddenTermHit{
-						SceneNum: scene.SceneNum,
-						Pattern:  f.Raw[idx],
+						ActID:      act.ActID,
+						RuneOffset: 0,
+						Pattern:    f.Raw[idx],
 					})
 				}
 			}
 		}
-	}
-	sort.Slice(hits, func(i, j int) bool {
-		if hits[i].SceneNum == hits[j].SceneNum {
-			return hits[i].Pattern < hits[j].Pattern
+		// Per-beat metadata — Location, Atmosphere, Mood, FactTags[i].Content.
+		for _, beat := range act.Beats {
+			fields := []string{beat.Location, beat.Atmosphere, beat.Mood}
+			for _, tag := range beat.FactTags {
+				fields = append(fields, tag.Content)
+			}
+			for idx, re := range f.regexps {
+				for _, field := range fields {
+					if re.MatchString(field) {
+						hits = append(hits, ForbiddenTermHit{
+							ActID:      act.ActID,
+							RuneOffset: beat.StartOffset,
+							Pattern:    f.Raw[idx],
+						})
+					}
+				}
+			}
 		}
-		return hits[i].SceneNum < hits[j].SceneNum
-	})
+	}
+	sortForbiddenHits(hits)
 	return hits
 }
 
@@ -128,29 +170,58 @@ func (p *MinorSensitivePatterns) MatchNarration(script *domain.NarrationScript) 
 		return nil
 	}
 	hits := make([]MinorRegexHit, 0)
-	for _, scene := range script.LegacyScenes() {
-		fields := []string{scene.Narration, scene.Location, scene.Atmosphere, scene.Mood}
-		for _, tag := range scene.FactTags {
-			fields = append(fields, tag.Content)
-		}
+	for _, act := range script.Acts {
 		for idx, re := range p.regexps {
-			for _, field := range fields {
-				if re.MatchString(field) {
-					hits = append(hits, MinorRegexHit{
-						SceneNum: scene.SceneNum,
-						Pattern:  p.Raw[idx],
-					})
+			locs := re.FindAllStringIndex(act.Monologue, -1)
+			for _, loc := range locs {
+				runeOffset := utf8.RuneCountInString(act.Monologue[:loc[0]])
+				hits = append(hits, MinorRegexHit{
+					ActID:      act.ActID,
+					RuneOffset: runeOffset,
+					Pattern:    p.Raw[idx],
+				})
+			}
+		}
+		for _, beat := range act.Beats {
+			fields := []string{beat.Location, beat.Atmosphere, beat.Mood}
+			for _, tag := range beat.FactTags {
+				fields = append(fields, tag.Content)
+			}
+			for idx, re := range p.regexps {
+				for _, field := range fields {
+					if re.MatchString(field) {
+						hits = append(hits, MinorRegexHit{
+							ActID:      act.ActID,
+							RuneOffset: beat.StartOffset,
+							Pattern:    p.Raw[idx],
+						})
+					}
 				}
 			}
 		}
 	}
 	sort.Slice(hits, func(i, j int) bool {
-		if hits[i].SceneNum == hits[j].SceneNum {
-			return hits[i].Pattern < hits[j].Pattern
+		if hits[i].ActID != hits[j].ActID {
+			return hits[i].ActID < hits[j].ActID
 		}
-		return hits[i].SceneNum < hits[j].SceneNum
+		if hits[i].RuneOffset != hits[j].RuneOffset {
+			return hits[i].RuneOffset < hits[j].RuneOffset
+		}
+		return hits[i].Pattern < hits[j].Pattern
 	})
 	return hits
+}
+
+func sortForbiddenHits(hits []ForbiddenTermHit) {
+	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].ActID != hits[j].ActID {
+			return hits[i].ActID < hits[j].ActID
+		}
+		if hits[i].RuneOffset != hits[j].RuneOffset {
+			return hits[i].RuneOffset < hits[j].RuneOffset
+		}
+		return hits[i].Pattern < hits[j].Pattern
+	})
 }
 
 func loadPolicyRegexFile(path string, label string) ([]byte, []string, []*regexp.Regexp, error) {

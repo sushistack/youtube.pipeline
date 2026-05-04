@@ -45,8 +45,13 @@ type SegmentStore interface {
 // boundary. *db.SegmentStore satisfies this structurally via SeedFromNarration.
 // Without seeding, segments stays empty until Phase B runs, leaving the
 // scenario_review UI with no scenes to render.
+//
+// v2: SeedFromNarration consumes the full NarrationScript directly; flat
+// beat order is computed via NarrationScript.FlatBeats() so the seeder and
+// every downstream scene_index keyed consumer share one ordering source of
+// truth.
 type NarrationSeeder interface {
-	SeedFromNarration(ctx context.Context, runID string, scenes []domain.NarrationScene) (int64, error)
+	SeedFromNarration(ctx context.Context, runID string, narration *domain.NarrationScript) (int64, error)
 }
 
 // HITLSessionCleaner is the narrow persistence surface the Engine uses to
@@ -178,18 +183,18 @@ func (e *Engine) seedSegmentsAtScenarioReview(ctx context.Context, runID string,
 	if e.narrationSeed == nil || narration == nil {
 		return
 	}
-	legacyScenes := narration.LegacyScenes()
-	if len(legacyScenes) == 0 {
+	beats := narration.FlatBeats()
+	if len(beats) == 0 {
 		return
 	}
-	inserted, err := e.narrationSeed.SeedFromNarration(ctx, runID, legacyScenes)
+	inserted, err := e.narrationSeed.SeedFromNarration(ctx, runID, narration)
 	if err != nil {
 		e.logger.Warn("seed segments at scenario_review failed",
-			"run_id", runID, "scenes", len(legacyScenes), "error", err.Error())
+			"run_id", runID, "scenes", len(beats), "error", err.Error())
 		return
 	}
 	e.logger.Info("seeded segments from narration",
-		"run_id", runID, "rows_inserted", inserted, "scenes_total", len(legacyScenes))
+		"run_id", runID, "rows_inserted", inserted, "scenes_total", len(beats))
 }
 
 // SetHITLSessionStore wires the full HITL session store used to upsert

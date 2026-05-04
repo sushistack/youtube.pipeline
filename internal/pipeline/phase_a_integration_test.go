@@ -546,9 +546,10 @@ func samplePhaseAResearch() *domain.ResearcherOutput {
 }
 
 func samplePhaseANarration() *domain.NarrationScript {
-	// v2 shape: 4 acts × {2,3,3,2} beats = 10 beats total. LegacyScenes()
-	// returns 10 NarrationScenes numbered 1..10 in act order, matching what
-	// the integration test downstream stages expected from the v1 schema.
+	// v2 shape: 4 acts × {2,3,3,2} beats = 10 beats total. FlatBeats() yields
+	// NarrationBeatView with Index=1..10 in act order, matching the
+	// flat scene_index basis downstream stages key on (segments,
+	// image_track, scene_service).
 	mkAct := func(actID string, narrations []string) domain.ActScript {
 		monologue := strings.Join(narrations, " ")
 		anchors := make([]domain.BeatAnchor, 0, len(narrations))

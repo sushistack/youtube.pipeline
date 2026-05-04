@@ -84,7 +84,7 @@ func TestSceneService_RetryExhausted_AgreesAcross3Sites(t *testing.T) {
 
 		// ── Site 1: ListReviewItems ─────────────────────────────────────
 		const sceneIdx = 0
-		listScenarioPath := writeReviewScenarioFixture(t, []domain.NarrationScene{
+		listScenarioPath := writeReviewScenarioFixture(t, []v1SceneSpec{
 			{SceneNum: 1, ActID: "act_2", EntityVisible: false, CharactersPresent: []string{"연구원"}},
 		})
 		listRuns := &fakeRunStore{runs: map[string]*domain.Run{

@@ -1,8 +1,11 @@
 package domain
 
 const (
-	CriticSourceVersionV1             = "v1-critic-post-writer"
-	CriticSourceVersionPostReviewerV1 = "v1-critic-post-reviewer"
+	// CriticSourceVersionV2 / CriticSourceVersionPostReviewerV2 mark the
+	// monologue-mode critic emission. v1 (per-scene scene_num findings) is
+	// gone after D4 — the bridge died with the last consumer.
+	CriticSourceVersionV2             = "v2-critic-post-writer"
+	CriticSourceVersionPostReviewerV2 = "v2-critic-post-reviewer"
 
 	CriticVerdictPass            = "pass"
 	CriticVerdictRetry           = "retry"
@@ -46,8 +49,15 @@ type CriticRubricScores struct {
 	Immersion          int `json:"immersion"`
 }
 
+// CriticSceneNote is one act-level improvement note emitted by the critic
+// LLM. v2 keys notes on ActID (act-paragraph granularity per the D plan
+// "per-beat or per-act-paragraph" rule); per-beat notes were rejected as
+// over-dense for HITL surfacing. RuneOffset is optional and points into
+// ActScript.Monologue when the LLM wants to anchor a note to a specific
+// span; consumers MAY ignore it.
 type CriticSceneNote struct {
-	SceneNum   int    `json:"scene_num"`
+	ActID      string `json:"act_id"`
+	RuneOffset int    `json:"rune_offset,omitempty"`
 	Issue      string `json:"issue"`
 	Suggestion string `json:"suggestion"`
 }

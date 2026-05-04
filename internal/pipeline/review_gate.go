@@ -43,20 +43,36 @@ func DecideSceneGate(input SceneGateInput, threshold float64) (SceneGateResult, 
 	}, nil
 }
 
-// MergeMinorSignals returns a scene-index keyed union of regex and critic
-// signals. Input scene numbers are 1-based narration scene numbers; output
-// keys are 0-based segment scene_index values.
-func MergeMinorSignals(regexHits []agents.MinorRegexHit, criticFindings []domain.MinorPolicyFinding) map[int][]string {
-	if len(regexHits) == 0 && len(criticFindings) == 0 {
+// MergeMinorSignals returns a 0-based segments.scene_index keyed union of
+// regex and critic minor-protection signals. Inputs key on (ActID, RuneOffset)
+// inside NarrationScript.Acts[].Monologue (v2 monologue mode); the script
+// argument is required to translate those coordinates back to a flat
+// segments.scene_index via NarrationScript.BeatIndexAt.
+//
+// Hits whose (ActID, RuneOffset) does not resolve to a beat (act_id missing,
+// or offset outside any beat's [start_offset, end_offset)) are dropped — the
+// translation is best-effort and the v2 critic schema validator gates
+// upstream emissions, so a failure here means the script changed under the
+// hits or the LLM emitted an invalid offset that escaped validation.
+func MergeMinorSignals(
+	script *domain.NarrationScript,
+	regexHits []agents.MinorRegexHit,
+	criticFindings []domain.MinorPolicyFinding,
+) map[int][]string {
+	if (len(regexHits) == 0 && len(criticFindings) == 0) || script == nil {
 		return map[int][]string{}
 	}
 	out := make(map[int][]string)
 	seen := make(map[int]map[string]struct{})
-	add := func(sceneNum int, value string) {
-		if sceneNum <= 0 || value == "" {
+	add := func(actID string, runeOffset int, value string) {
+		if value == "" {
 			return
 		}
-		sceneIndex := sceneNum - 1
+		beatIdx := script.BeatIndexAt(actID, runeOffset)
+		if beatIdx <= 0 {
+			return
+		}
+		sceneIndex := beatIdx - 1
 		if seen[sceneIndex] == nil {
 			seen[sceneIndex] = make(map[string]struct{})
 		}
@@ -67,10 +83,10 @@ func MergeMinorSignals(regexHits []agents.MinorRegexHit, criticFindings []domain
 		out[sceneIndex] = append(out[sceneIndex], value)
 	}
 	for _, hit := range regexHits {
-		add(hit.SceneNum, hit.Pattern)
+		add(hit.ActID, hit.RuneOffset, hit.Pattern)
 	}
 	for _, finding := range criticFindings {
-		add(finding.SceneNum, finding.Reason)
+		add(finding.ActID, finding.RuneOffset, finding.Reason)
 	}
 	for idx := range out {
 		sort.Strings(out[idx])

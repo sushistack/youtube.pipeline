@@ -26,12 +26,12 @@ func TestCriticReportStore_InsertAndList(t *testing.T) {
 		RetryReason:    "emotional_variation",
 		OverallScore:   65,
 		Rubric:         domain.CriticRubricScores{Hook: 80, FactAccuracy: 75, EmotionalVariation: 50, Immersion: 55},
-		Feedback:       "감정 변주가 약합니다. Scene 3을 톤다운하고 Scene 5를 강하게.",
-		SceneNotes:     []domain.CriticSceneNote{{SceneNum: 3, Issue: "단조로움", Suggestion: "정적 추가"}},
+		Feedback:       "감정 변주가 약합니다. mystery act를 톤다운하고 revelation act를 강하게.",
+		SceneNotes:     []domain.CriticSceneNote{{ActID: domain.ActMystery, RuneOffset: 84, Issue: "단조로움", Suggestion: "정적 추가"}},
 		Precheck:       domain.CriticPrecheck{SchemaValid: true, ForbiddenTermHits: []string{}, ShortCircuited: false},
 		CriticModel:    "gemini-2.5-pro",
 		CriticProvider: "gemini",
-		SourceVersion:  domain.CriticSourceVersionPostReviewerV1,
+		SourceVersion:  domain.CriticSourceVersionPostReviewerV2,
 	}
 
 	if err := store.InsertCriticReport(context.Background(), "scp-049-run-1", 1, report); err != nil {
@@ -61,10 +61,10 @@ func TestCriticReportStore_InsertAndList(t *testing.T) {
 	if rec.Report.Rubric.EmotionalVariation != 50 {
 		t.Errorf("Rubric.EmotionalVariation = %d, want 50", rec.Report.Rubric.EmotionalVariation)
 	}
-	if len(rec.Report.SceneNotes) != 1 || rec.Report.SceneNotes[0].SceneNum != 3 {
+	if len(rec.Report.SceneNotes) != 1 || rec.Report.SceneNotes[0].ActID != domain.ActMystery || rec.Report.SceneNotes[0].RuneOffset != 84 {
 		t.Errorf("SceneNotes round-trip failed: %+v", rec.Report.SceneNotes)
 	}
-	if rec.Report.Feedback != "감정 변주가 약합니다. Scene 3을 톤다운하고 Scene 5를 강하게." {
+	if rec.Report.Feedback != "감정 변주가 약합니다. mystery act를 톤다운하고 revelation act를 강하게." {
 		t.Errorf("Feedback round-trip failed: %q", rec.Report.Feedback)
 	}
 	if rec.CreatedAt == "" {

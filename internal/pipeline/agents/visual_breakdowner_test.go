@@ -13,16 +13,18 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/testutil"
 )
 
-// fakeSceneDurationEstimator returns a per-scene duration override map, with
-// a fallback for scenes not in the map. The estimator is invoked per-shot in
-// v2 (one estimate per beat), so values are keyed on the rendered SceneNum.
-type fakeSceneDurationEstimator struct {
+// fakeBeatDurationEstimator returns a per-beat duration override map keyed
+// on the beat's StartOffset, with a fallback for beats not in the map. The
+// v2 estimator is invoked once per beat anchor; tests that need per-beat
+// duration variance pre-populate values keyed on the BeatAnchor.StartOffset
+// they emit (offsets are stable across response generation).
+type fakeBeatDurationEstimator struct {
 	values   map[int]float64
 	fallback float64
 }
 
-func (f fakeSceneDurationEstimator) Estimate(scene domain.NarrationScene) float64 {
-	if v, ok := f.values[scene.SceneNum]; ok {
+func (f fakeBeatDurationEstimator) Estimate(_ string, _ string, anchor domain.BeatAnchor) float64 {
+	if v, ok := f.values[anchor.StartOffset]; ok {
 		return v
 	}
 	if f.fallback > 0 {
@@ -31,8 +33,8 @@ func (f fakeSceneDurationEstimator) Estimate(scene domain.NarrationScene) float6
 	return 7.0
 }
 
-func uniformEstimator(duration float64) fakeSceneDurationEstimator {
-	return fakeSceneDurationEstimator{fallback: duration}
+func uniformEstimator(duration float64) fakeBeatDurationEstimator {
+	return fakeBeatDurationEstimator{fallback: duration}
 }
 
 // shotResp builds one v2 visual_breakdowner shot JSON object that echoes a

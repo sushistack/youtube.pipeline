@@ -212,11 +212,29 @@ func batchReviewRun(id string, scenarioPath string) *domain.Run {
 
 func narrationPtr(s string) *string { return &s }
 
-func writeReviewScenarioFixture(t *testing.T, scenes []domain.NarrationScene) string {
+// v1SceneSpec is a test-local shorthand for "a virtual v1 scene fed through
+// the v2 fixture writer." It carries only the fields review-scene tests
+// actually exercise; the writer below groups consecutive same-act specs
+// into one v2 Act and emits one BeatAnchor per spec over its rune slice
+// of the act's monologue.
+type v1SceneSpec struct {
+	SceneNum          int
+	ActID             string
+	Narration         string
+	Mood              string
+	Location          string
+	Atmosphere        string
+	ColorPalette      string
+	CharactersPresent []string
+	EntityVisible     bool
+	FactTags          []domain.FactTag
+}
+
+func writeReviewScenarioFixture(t *testing.T, specs []v1SceneSpec) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "scenario.json")
 	payload := map[string]any{
-		"narration": legacyScenesToV2Map(scenes),
+		"narration": v1SpecsToV2Map(specs),
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -228,17 +246,16 @@ func writeReviewScenarioFixture(t *testing.T, scenes []domain.NarrationScene) st
 	return path
 }
 
-// legacyScenesToV2Map renders a slice of v1 NarrationScene specs as a v2
-// NarrationScript JSON map. CONSECUTIVE same-act scenes group into one Act;
-// each scene becomes one BeatAnchor over its rune slice of the act monologue.
-// Used by review-scene fixture builders during the D1–D6 transition.
-func legacyScenesToV2Map(scenes []domain.NarrationScene) map[string]any {
+// v1SpecsToV2Map renders v1-shaped scene specs as a v2 NarrationScript JSON
+// map. CONSECUTIVE same-act specs group into one Act; each spec becomes one
+// BeatAnchor over its rune slice of the act monologue.
+func v1SpecsToV2Map(specs []v1SceneSpec) map[string]any {
 	type group struct {
-		actID    string
-		members  []domain.NarrationScene
+		actID   string
+		members []v1SceneSpec
 	}
 	var groups []group
-	for _, s := range scenes {
+	for _, s := range specs {
 		actID := s.ActID
 		if actID == "" {
 			actID = domain.ActIncident
@@ -246,7 +263,7 @@ func legacyScenesToV2Map(scenes []domain.NarrationScene) map[string]any {
 		if len(groups) > 0 && groups[len(groups)-1].actID == actID {
 			groups[len(groups)-1].members = append(groups[len(groups)-1].members, s)
 		} else {
-			groups = append(groups, group{actID: actID, members: []domain.NarrationScene{s}})
+			groups = append(groups, group{actID: actID, members: []v1SceneSpec{s}})
 		}
 	}
 	acts := make([]map[string]any, 0, len(groups))
@@ -291,7 +308,7 @@ func legacyScenesToV2Map(scenes []domain.NarrationScene) map[string]any {
 		"scp_id":         "049",
 		"title":          "Scenario",
 		"acts":           acts,
-		"metadata":       map[string]any{"language": "ko", "scene_count": len(scenes)},
+		"metadata":       map[string]any{"language": "ko", "scene_count": len(specs)},
 		"source_version": "v2-monologue",
 	}
 }
@@ -472,7 +489,7 @@ func TestSceneService_ListScenes_OverlayFromScenario(t *testing.T) {
 }
 
 func TestSceneService_ListReviewItems_ComputesHighLeverageAndQueueOrdering(t *testing.T) {
-	scenarioPath := writeReviewScenarioFixture(t, []domain.NarrationScene{
+	scenarioPath := writeReviewScenarioFixture(t, []v1SceneSpec{
 		{SceneNum: 1, ActID: "act_hook", EntityVisible: true, CharactersPresent: []string{"연구원"}},
 		{SceneNum: 2, ActID: "act_hook", EntityVisible: false, CharactersPresent: []string{"연구원"}},
 		{SceneNum: 3, ActID: "act_2", EntityVisible: false, CharactersPresent: []string{"연구원"}},
@@ -523,7 +540,7 @@ func TestSceneService_ListReviewItems_ResolvesRelativeScenarioPath(t *testing.T)
 		t.Fatalf("mkdir run dir: %v", err)
 	}
 	payload := map[string]any{
-		"narration": legacyScenesToV2Map([]domain.NarrationScene{
+		"narration": v1SpecsToV2Map([]v1SceneSpec{
 			{SceneNum: 1, ActID: "act_hook", Narration: "장면 1 내레이션"},
 		}),
 	}
@@ -561,7 +578,7 @@ func TestSceneService_ListReviewItems_RetryExhaustedAtCapBoundary(t *testing.T) 
 	// UI can swap the action bar for the manual-edit / skip-and-flag CTAs.
 	// Regression guard against the `>` vs `>=` inconsistency — if someone
 	// flips this to `>`, a cap-reached scene would render as still-retryable.
-	scenarioPath := writeReviewScenarioFixture(t, []domain.NarrationScene{
+	scenarioPath := writeReviewScenarioFixture(t, []v1SceneSpec{
 		{SceneNum: 1, ActID: "act_2", EntityVisible: false, CharactersPresent: []string{"연구원"}},
 		{SceneNum: 2, ActID: "act_2", EntityVisible: false, CharactersPresent: []string{"연구원"}},
 	})
@@ -1045,7 +1062,7 @@ func TestSceneService_DispatchSceneRegeneration_RejectsWhenDispatcherFails(t *te
 func TestSceneService_ApproveAllRemaining_StoresAggregateBatchAndRefreshesSession(t *testing.T) {
 	clk := clock.NewFakeClock(time.Date(2026, 4, 19, 12, 34, 56, 0, time.UTC))
 	runs := &fakeRunStore{runs: map[string]*domain.Run{
-		"run-1": batchReviewRun("run-1", writeReviewScenarioFixture(t, []domain.NarrationScene{
+		"run-1": batchReviewRun("run-1", writeReviewScenarioFixture(t, []v1SceneSpec{
 			{SceneNum: 1},
 			{SceneNum: 2},
 		})),

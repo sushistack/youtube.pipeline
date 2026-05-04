@@ -213,9 +213,9 @@ func newGoodScriptBuilder() *goodScriptBuilder {
 // build assembles the v2 NarrationScript by grouping CONSECUTIVE same-act
 // scenes into one Act in fixture order. This lets twist-position tests
 // reorder revelation scenes by changing per-scene actID — the resulting
-// LegacyScenes() walks fixture order, scene_num=1..9. Duplicate act IDs
+// FlatBeats() walks fixture order, beat-index=1..9. Duplicate act IDs
 // across non-adjacent groups are allowed here (the rubric only checks the
-// first scene tagged ActRevelation); production writer always emits canonical
+// first beat tagged ActRevelation); production writer always emits canonical
 // ActOrder via planWriterActs.
 func (b *goodScriptBuilder) build() *domain.NarrationScript {
 	type group struct {
@@ -276,7 +276,7 @@ func (b *goodScriptBuilder) setNarration(sceneIdx int, narration string) {
 
 // setActID reassigns a scene to a different act. Used by the
 // twist-position regression test to pull a revelation forward in the
-// LegacyScenes() output.
+// FlatBeats() output.
 func (b *goodScriptBuilder) setActID(sceneIdx int, actID string) {
 	b.scenes[sceneIdx].actID = actID
 }

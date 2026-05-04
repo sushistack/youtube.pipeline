@@ -292,23 +292,25 @@ func (s *SegmentStore) UpsertTTSArtifact(
 	return nil
 }
 
-// SeedFromNarration bulk-inserts a segments row per narration scene so that
-// scenario_review (and the per-scene EditNarration UPDATE path) have a
-// concrete row to read/update. Phase B's UpsertImageShots and
-// UpsertTTSArtifact already use ON CONFLICT(run_id, scene_index) DO UPDATE,
-// so seeding here does not collide with their later writes.
+// SeedFromNarration bulk-inserts a segments row per beat in the v2
+// NarrationScript so that scenario_review (and the per-beat EditNarration
+// UPDATE path) have a concrete row to read/update. Phase B's
+// UpsertImageShots and UpsertTTSArtifact already use ON CONFLICT(run_id,
+// scene_index) DO UPDATE, so seeding here does not collide with their later
+// writes.
 //
-// scene_index is 0-based (matches segments schema and FE expectations).
-// Existing rows are left untouched (ON CONFLICT DO NOTHING) so retries are
-// idempotent: re-running Phase A after a critic retry will not wipe edited
-// narration text from a previously-seeded row.
+// scene_index is 0-based and matches NarrationBeatView.Index - 1 (flat beat
+// order across all acts). Existing rows are left untouched (ON CONFLICT DO
+// NOTHING) so retries are idempotent: re-running Phase A after a critic
+// retry will not wipe edited narration text from a previously-seeded row.
 //
-// Empty scenes is a no-op (returns 0 rows inserted).
-func (s *SegmentStore) SeedFromNarration(ctx context.Context, runID string, scenes []domain.NarrationScene) (int64, error) {
+// Nil/empty narration is a no-op (returns 0 rows inserted).
+func (s *SegmentStore) SeedFromNarration(ctx context.Context, runID string, narration *domain.NarrationScript) (int64, error) {
 	if runID == "" {
 		return 0, fmt.Errorf("seed segments: %w: run_id is empty", domain.ErrValidation)
 	}
-	if len(scenes) == 0 {
+	beats := narration.FlatBeats()
+	if len(beats) == 0 {
 		return 0, nil
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -327,17 +329,15 @@ func (s *SegmentStore) SeedFromNarration(ctx context.Context, runID string, scen
 	defer stmt.Close()
 
 	var inserted int64
-	for i, scene := range scenes {
-		// Use the iteration index as scene_index (0-based); the narration
-		// schema's scene_num is 1-based and order-preserving, so the i-th
-		// scene maps to scene_index=i regardless of any gaps in scene_num.
-		res, err := stmt.ExecContext(ctx, runID, i, scene.Narration)
+	for _, beat := range beats {
+		sceneIndex := beat.Index - 1
+		res, err := stmt.ExecContext(ctx, runID, sceneIndex, beat.Text)
 		if err != nil {
-			return inserted, fmt.Errorf("seed segments %s[%d]: %w", runID, i, err)
+			return inserted, fmt.Errorf("seed segments %s[%d]: %w", runID, sceneIndex, err)
 		}
 		n, err := res.RowsAffected()
 		if err != nil {
-			return inserted, fmt.Errorf("seed segments %s[%d] rows affected: %w", runID, i, err)
+			return inserted, fmt.Errorf("seed segments %s[%d] rows affected: %w", runID, sceneIndex, err)
 		}
 		inserted += n
 	}

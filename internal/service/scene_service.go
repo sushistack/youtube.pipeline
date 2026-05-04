@@ -35,8 +35,12 @@ type NarrationUpdater interface {
 // Without a seeder, ListScenes returns the empty segment list and the UI
 // stays stuck on "scenes not yet available" for runs that transitioned
 // before Engine's segment-seed hook landed.
+//
+// v2: SeedFromNarration takes the full v2 NarrationScript so flat beat
+// order is computed once via NarrationScript.FlatBeats() rather than
+// recomputed at every call site.
 type NarrationSeeder interface {
-	SeedFromNarration(ctx context.Context, runID string, scenes []domain.NarrationScene) (int64, error)
+	SeedFromNarration(ctx context.Context, runID string, narration *domain.NarrationScript) (int64, error)
 }
 
 type SceneDecisionRecorder interface {
@@ -344,8 +348,8 @@ func (s *SceneService) ListScenes(ctx context.Context, runID string) ([]*domain.
 		return nil, fmt.Errorf("scene list: %w", err)
 	}
 
-	narrationScenes := s.loadRunNarrationScenes(run, runID)
-	if len(narrationScenes) == 0 {
+	narrationBeats := s.loadRunNarrationBeats(run, runID)
+	if len(narrationBeats) == 0 {
 		return segments, nil
 	}
 
@@ -354,16 +358,10 @@ func (s *SceneService) ListScenes(ctx context.Context, runID string) ([]*domain.
 		bySceneIndex[ep.SceneIndex] = ep
 	}
 
-	out := make([]*domain.Episode, 0, len(narrationScenes))
-	for i, scene := range narrationScenes {
-		// scene_num is 1-based and order-preserving per the narration schema;
-		// fall back to the iteration index so non-contiguous scene_num gaps
-		// still produce a 0-based scene_index that matches the segments PK.
-		sceneIndex := scene.SceneNum - 1
-		if sceneIndex < 0 {
-			sceneIndex = i
-		}
-		narrationText := scene.Narration
+	out := make([]*domain.Episode, 0, len(narrationBeats))
+	for _, beat := range narrationBeats {
+		sceneIndex := beat.Index - 1
+		narrationText := beat.Text
 		ep, ok := bySceneIndex[sceneIndex]
 		if !ok {
 			out = append(out, &domain.Episode{
@@ -385,19 +383,23 @@ func (s *SceneService) ListScenes(ctx context.Context, runID string) ([]*domain.
 	return out, nil
 }
 
-// loadRunNarrationScenes resolves and reads scenario.json's narration scenes
+// loadRunNarrationBeats resolves and reads scenario.json's flat beat view
 // for a run. Returns nil on any failure so callers can fall back to the
 // segments-table view without surfacing the error to the operator.
-func (s *SceneService) loadRunNarrationScenes(run *domain.Run, runID string) []domain.NarrationScene {
+func (s *SceneService) loadRunNarrationBeats(run *domain.Run, runID string) []domain.NarrationBeatView {
 	if s.outputDir == "" || run == nil || run.ScenarioPath == nil || *run.ScenarioPath == "" {
 		return nil
 	}
 	resolved := filepath.Join(s.outputDir, runID, *run.ScenarioPath)
-	scenes, err := loadNarrationScenes(resolved)
-	if err != nil || len(scenes) == 0 {
+	script, err := loadNarrationScript(resolved)
+	if err != nil || script == nil {
 		return nil
 	}
-	return scenes
+	beats := script.FlatBeats()
+	if len(beats) == 0 {
+		return nil
+	}
+	return beats
 }
 
 // ListReviewItems returns the batch-review surface payload.
@@ -422,10 +424,11 @@ func (s *SceneService) ListReviewItems(ctx context.Context, runID string) ([]*Re
 	if s.outputDir != "" && !filepath.IsAbs(scenarioOnDisk) {
 		scenarioOnDisk = filepath.Join(s.outputDir, runID, scenarioOnDisk)
 	}
-	scenarioScenes, err := loadNarrationScenes(scenarioOnDisk)
+	scenarioScript, err := loadNarrationScript(scenarioOnDisk)
 	if err != nil {
 		return nil, fmt.Errorf("review items: %w", err)
 	}
+	scenarioBeats := scenarioScript.FlatBeats()
 
 	segments, err := s.segments.ListByRunID(ctx, runID)
 	if err != nil {
@@ -434,16 +437,13 @@ func (s *SceneService) ListReviewItems(ctx context.Context, runID string) ([]*Re
 
 	classifications := computeHighLeverage(sceneHighLeverageInput{
 		runSCPID: run.SCPID,
-		scenes:   scenarioScenes,
+		beats:    scenarioBeats,
 	})
 
-	narrationByIndex := make(map[int]string, len(scenarioScenes))
-	for i, scene := range scenarioScenes {
-		idx := scene.SceneNum - 1
-		if idx < 0 {
-			idx = i
-		}
-		narrationByIndex[idx] = scene.Narration
+	narrationByIndex := make(map[int]string, len(scenarioBeats))
+	for _, beat := range scenarioBeats {
+		idx := beat.Index - 1
+		narrationByIndex[idx] = beat.Text
 	}
 
 	items := make([]*ReviewItem, 0, len(segments))
@@ -894,10 +894,12 @@ type reviewItemClassification struct {
 
 type sceneHighLeverageInput struct {
 	runSCPID string
-	scenes   []domain.NarrationScene
+	beats    []domain.NarrationBeatView
 }
 
-func loadNarrationScenes(path string) ([]domain.NarrationScene, error) {
+// loadNarrationScript reads and decodes scenario.json's narration payload.
+// Errors are wrapped with domain.ErrNotFound when the file is absent.
+func loadNarrationScript(path string) (*domain.NarrationScript, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -913,7 +915,7 @@ func loadNarrationScenes(path string) ([]domain.NarrationScene, error) {
 	if envelope.Narration == nil {
 		return nil, fmt.Errorf("scenario.json missing narration payload: %w", domain.ErrNotFound)
 	}
-	return envelope.Narration.LegacyScenes(), nil
+	return envelope.Narration, nil
 }
 
 func extractTimelineReason(contextSnapshot *string) *string {
@@ -937,20 +939,20 @@ func extractTimelineReason(contextSnapshot *string) *string {
 }
 
 func computeHighLeverage(input sceneHighLeverageInput) map[int]reviewItemClassification {
-	out := make(map[int]reviewItemClassification, len(input.scenes))
+	out := make(map[int]reviewItemClassification, len(input.beats))
 	seenActs := make(map[string]bool)
 	entityLabel := normalizeEntityLabel(input.runSCPID)
 	entityTitle := formatEntityTitle(input.runSCPID)
 	firstAppearanceAssigned := false
 
-	for _, scene := range input.scenes {
-		sceneIndex := scene.SceneNum - 1
+	for _, beat := range input.beats {
+		sceneIndex := beat.Index - 1
 		if sceneIndex < 0 {
 			continue
 		}
 		reasons := make([]reviewItemClassification, 0, 3)
 
-		if !firstAppearanceAssigned && sceneContainsPrimaryEntity(scene, entityLabel) {
+		if !firstAppearanceAssigned && beatContainsPrimaryEntity(beat, entityLabel) {
 			firstAppearanceAssigned = true
 			reasons = append(reasons, reviewItemClassification{
 				HighLeverage: true,
@@ -959,9 +961,9 @@ func computeHighLeverage(input sceneHighLeverageInput) map[int]reviewItemClassif
 			})
 		}
 
-		if !seenActs[scene.ActID] {
-			seenActs[scene.ActID] = true
-			if isHookAct(scene.ActID) || scene.SceneNum == 1 {
+		if !seenActs[beat.ActID] {
+			seenActs[beat.ActID] = true
+			if isHookAct(beat.ActID) || beat.Index == 1 {
 				reasons = append(reasons, reviewItemClassification{
 					HighLeverage: true,
 					ReasonCode:   "hook_scene",
@@ -971,7 +973,7 @@ func computeHighLeverage(input sceneHighLeverageInput) map[int]reviewItemClassif
 				reasons = append(reasons, reviewItemClassification{
 					HighLeverage: true,
 					ReasonCode:   "act_boundary",
-					Reason:       fmt.Sprintf("Act boundary: %s", scene.ActID),
+					Reason:       fmt.Sprintf("Act boundary: %s", beat.ActID),
 				})
 			}
 		}
@@ -994,11 +996,11 @@ func computeHighLeverage(input sceneHighLeverageInput) map[int]reviewItemClassif
 	return out
 }
 
-func sceneContainsPrimaryEntity(scene domain.NarrationScene, entityLabel string) bool {
-	if scene.EntityVisible {
+func beatContainsPrimaryEntity(beat domain.NarrationBeatView, entityLabel string) bool {
+	if beat.Anchor.EntityVisible {
 		return true
 	}
-	for _, character := range scene.CharactersPresent {
+	for _, character := range beat.Anchor.CharactersPresent {
 		if normalizeEntityLabel(character) == entityLabel {
 			return true
 		}

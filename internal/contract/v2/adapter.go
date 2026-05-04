@@ -6,29 +6,29 @@ import (
 	"github.com/sushistack/youtube.pipeline/internal/domain"
 )
 
-// FromNarration converts a v1 domain.NarrationScript into a v2
-// ScriptOutput. The conversion is lossy: v2-only fields (TitleCandidates
-// list, structured Attribution fields like WikiURL/License) are zero-
-// valued unless the caller fills them.
+// FromNarration converts a v2 domain.NarrationScript into a v2 contract
+// ScriptOutput. The conversion is best-effort: contract-only fields the
+// pipeline does not produce (TitleCandidates list, structured Attribution
+// fields like WikiURL/License) are zero-valued unless the caller fills them.
 //
-// Per the spec section 4 migration constraint, this lets v2-aware code
-// consume what the existing writer produces today without requiring the
-// writer to be rewritten.
+// Each beat in the source script becomes one Scene in the output, indexed
+// 1..N in flat beat order across all acts. NarrationKO carries the beat's
+// rune-slice text from its parent act's Monologue.
 func FromNarration(in *domain.NarrationScript) ScriptOutput {
 	if in == nil {
 		return ScriptOutput{}
 	}
-	legacy := in.LegacyScenes()
-	scenes := make([]Scene, len(legacy))
-	for i, s := range legacy {
+	beats := in.FlatBeats()
+	scenes := make([]Scene, len(beats))
+	for i, beat := range beats {
 		scenes[i] = Scene{
-			SceneID:         s.SceneNum,
-			Section:         s.ActID,
-			DurationSeconds: 0, // v1 does not carry per-scene duration
-			NarrationKO:     s.Narration,
-			VisualDirection: composeVisualDirection(s),
-			EmotionCurve:    s.Mood,
-			SFXHint:         s.Atmosphere,
+			SceneID:         beat.Index,
+			Section:         beat.ActID,
+			DurationSeconds: 0,
+			NarrationKO:     beat.Text,
+			VisualDirection: composeVisualDirection(beat.Anchor),
+			EmotionCurve:    firstNonEmptyAdapter(beat.Anchor.Mood, beat.ActMood),
+			SFXHint:         beat.Anchor.Atmosphere,
 		}
 	}
 	titles := []string{}
@@ -38,7 +38,7 @@ func FromNarration(in *domain.NarrationScript) ScriptOutput {
 	out := ScriptOutput{
 		TitleCandidates: titles,
 		Scenes:          scenes,
-		OutroHookKO:     extractOutroHook(legacy),
+		OutroHookKO:     extractOutroHook(beats),
 		SourceAttribution: Attribution{
 			SCPNumber: in.SCPID,
 			License:   "CC BY-SA 3.0",
@@ -102,32 +102,40 @@ func FromStructurer(in *domain.StructurerOutput) StructureOutput {
 }
 
 // composeVisualDirection assembles a single visual direction string from
-// v1 NarrationScene's scattered fields (Location, ColorPalette,
-// CharactersPresent, EntityVisible). v2 wants a single composed
-// direction string.
-func composeVisualDirection(s domain.NarrationScene) string {
+// the v2 BeatAnchor metadata fields (Location, ColorPalette, CharactersPresent,
+// EntityVisible). v2 contract Scene wants a single composed direction string.
+func composeVisualDirection(b domain.BeatAnchor) string {
 	parts := []string{}
-	if s.Location != "" {
-		parts = append(parts, "loc="+s.Location)
+	if b.Location != "" {
+		parts = append(parts, "loc="+b.Location)
 	}
-	if s.ColorPalette != "" {
-		parts = append(parts, "palette="+s.ColorPalette)
+	if b.ColorPalette != "" {
+		parts = append(parts, "palette="+b.ColorPalette)
 	}
-	if len(s.CharactersPresent) > 0 {
-		parts = append(parts, "chars="+strings.Join(s.CharactersPresent, ","))
+	if len(b.CharactersPresent) > 0 {
+		parts = append(parts, "chars="+strings.Join(b.CharactersPresent, ","))
 	}
-	if s.EntityVisible {
+	if b.EntityVisible {
 		parts = append(parts, "entity_visible=true")
 	}
 	return strings.Join(parts, "; ")
 }
 
-// extractOutroHook returns the last scene's narration as the outro hook.
+// extractOutroHook returns the last beat's narration as the outro hook.
 // The structurer guarantees the final act is "unresolved", so the last
-// scene's narration is by construction the closing hook.
-func extractOutroHook(scenes []domain.NarrationScene) string {
-	if len(scenes) == 0 {
+// beat's text is by construction the closing hook.
+func extractOutroHook(beats []domain.NarrationBeatView) string {
+	if len(beats) == 0 {
 		return ""
 	}
-	return scenes[len(scenes)-1].Narration
+	return beats[len(beats)-1].Text
+}
+
+func firstNonEmptyAdapter(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
