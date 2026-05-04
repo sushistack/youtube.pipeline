@@ -304,35 +304,34 @@ func renderVisualBreakdownActPrompt(
 	return replacer.Replace(prompts.VisualBreakdownTemplate), nil
 }
 
-// renderBeatsTable produces a compact human-readable list of the ordered
-// BeatAnchors, surfacing every load-bearing field to the LLM. The LLM is
-// instructed to echo each beat's metadata byte-for-byte into its output's
-// `narration_anchor` block; the post-response validator enforces equality.
+// renderBeatsTable surfaces each ordered BeatAnchor as one line whose
+// payload is the beat's exact JSON representation. The LLM is instructed
+// to echo the JSON byte-for-byte into its output's `narration_anchor`
+// block; the post-response validator enforces equality.
+//
+// JSON (not %v / `key=value`) is load-bearing: the legacy free-text format
+// rendered `[]string{"Observer-2", "Dr. Aris Thorne"}` as
+// `[Observer-2 Dr. Aris Thorne]` and the LLM rebuilt it as a single string,
+// failing byte-for-byte equality. JSON preserves the array boundary, the
+// FactTags object shape, and any value commas/equals embedded in content.
+//
+// The `[beat N]` index prefix is unchanged — the prompt instructions
+// reference it ("shots[i].narration_anchor MUST be the i-th beat above"),
+// and tests / human readers anchor on it.
 func renderBeatsTable(beats []domain.BeatAnchor) string {
 	if len(beats) == 0 {
 		return "(none)"
 	}
 	lines := make([]string, 0, len(beats))
 	for i, beat := range beats {
-		factTags := "[]"
-		if len(beat.FactTags) > 0 {
-			parts := make([]string, 0, len(beat.FactTags))
-			for _, ft := range beat.FactTags {
-				parts = append(parts, fmt.Sprintf("%s=%s", ft.Key, ft.Content))
-			}
-			factTags = "[" + strings.Join(parts, ", ") + "]"
+		body, err := json.Marshal(beat)
+		if err != nil {
+			// json.Marshal of a fixed struct of primitives + slices is
+			// effectively infallible; surface the error literally so a
+			// hypothetical refactor doesn't fall through to a corrupt prompt.
+			body = []byte(fmt.Sprintf("(marshal error: %v)", err))
 		}
-		lines = append(lines, fmt.Sprintf(
-			"- [beat %d] start_offset=%d end_offset=%d mood=%q location=%q characters_present=%v entity_visible=%v color_palette=%q atmosphere=%q fact_tags=%s",
-			i,
-			beat.StartOffset, beat.EndOffset,
-			beat.Mood, beat.Location,
-			beat.CharactersPresent,
-			beat.EntityVisible,
-			beat.ColorPalette,
-			beat.Atmosphere,
-			factTags,
-		))
+		lines = append(lines, fmt.Sprintf("- [beat %d] %s", i, string(body)))
 	}
 	return strings.Join(lines, "\n")
 }
