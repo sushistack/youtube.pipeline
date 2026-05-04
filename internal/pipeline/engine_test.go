@@ -251,6 +251,119 @@ func TestEngineAdvance_PhaseAHappyPath_MovesToScenarioReview(t *testing.T) {
 	}
 }
 
+// TestEngineAdvance_PostWriterRetry_StaysAtWriteFailed locks the cycle-C
+// resume.go classification fix (commit 2ef1d3c) carried into v2: when
+// post_writer_critic returns a retry verdict, post_writer short-circuits
+// the rest of Phase A (PostReviewer is therefore nil), and engine.Advance
+// must classify the run as Stage=write/Status=failed with the
+// PostWriter.RetryReason — NOT fail with a misleading "post_reviewer
+// missing" validation error and NOT advance to scenario_review. Without
+// this freeze, a refactor that demanded both checkpoints to be non-nil
+// (or that fell through to the PostReviewer branch) would silently
+// regress the resume flow for failed-hook narrations.
+func TestEngineAdvance_PostWriterRetry_StaysAtWriteFailed(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outDir := t.TempDir()
+	runs := &engineTestRunStore{
+		run: &domain.Run{ID: "run-pw-retry", SCPID: "SCP-TEST", Stage: domain.StagePending, Status: domain.StatusPending},
+	}
+	engine := NewEngine(runs, engineTestSegmentStore{}, nil, clock.RealClock{}, outDir, slog.Default())
+	engine.SetPhaseAExecutor(fakePhaseAExecutor{run: func(ctx context.Context, state *agents.PipelineState) error {
+		// Mirror phase_a.go's post_writer short-circuit: PostWriter present
+		// with retry verdict, PostReviewer left nil, downstream stages skipped.
+		state.Critic = &domain.CriticOutput{
+			PostWriter: &domain.CriticCheckpointReport{
+				Checkpoint:   domain.CriticCheckpointPostWriter,
+				Verdict:      domain.CriticVerdictRetry,
+				RetryReason:  "weak_hook",
+				OverallScore: 52,
+				Feedback:     "훅이 약합니다.",
+			},
+		}
+		return nil
+	}})
+
+	err := engine.Advance(context.Background(), "run-pw-retry")
+	if !errors.Is(err, domain.ErrStageFailed) {
+		t.Fatalf("expected ErrStageFailed for post_writer retry, got %v", err)
+	}
+	// Cycle-C bug symptom freeze: the original failure mode mis-classified
+	// the retry as a "post_reviewer missing" validation error. A regression
+	// that fell through to the PostReviewer branch would leak that string.
+	if strings.Contains(err.Error(), "post_reviewer") {
+		t.Errorf("error must not blame post_reviewer (cycle-C regression symptom): %v", err)
+	}
+	testutil.AssertEqual(t, runs.run.Stage, domain.StageWrite)
+	testutil.AssertEqual(t, runs.run.Status, domain.StatusFailed)
+	if runs.run.RetryReason == nil || *runs.run.RetryReason != "weak_hook" {
+		t.Fatalf("expected retry_reason=weak_hook, got %v", runs.run.RetryReason)
+	}
+	// CriticScore must round-trip through the cycle-C path: resume.go
+	// normalizes PostWriter.OverallScore into the 0..1 ratio when the
+	// precheck did not short-circuit. Without this assertion, a regression
+	// that dropped the score would silently pass.
+	if runs.run.CriticScore == nil {
+		t.Errorf("expected critic_score persisted on post_writer retry, got nil")
+	} else {
+		want := 0.52 // NormalizeCriticScore(52) = 52/100
+		if delta := *runs.run.CriticScore - want; delta < -1e-6 || delta > 1e-6 {
+			t.Errorf("critic_score=%v, want %v (NormalizeCriticScore(52))", *runs.run.CriticScore, want)
+		}
+	}
+	if runs.run.ScenarioPath != nil {
+		t.Errorf("expected no scenario_path on post_writer retry, got %q", *runs.run.ScenarioPath)
+	}
+	if _, err := os.Stat(ScenarioPath(outDir, "run-pw-retry")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected no scenario.json on post_writer retry, got %v", err)
+	}
+}
+
+// TestNextStage_NoPolisherTransition freezes the v2 state machine per
+// D6: polisher is a runner-internal sub-stage (PipelineStage), never a
+// domain.Stage. Walk every (stage, event) pair across NextStage,
+// IsHITLStage, and StatusForStage, and assert no domain.Stage carries a
+// polisher identity. Without this freeze, a future regression that
+// added domain.StagePolisher to ANY of the three surfaces (perhaps when
+// D7 reintroduces the polisher agent) would silently drift the
+// run-level state machine off the documented v2 chain.
+func TestNextStage_NoPolisherTransition(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// Bug-bait: if a refactor inadvertently breaks NextStage so every
+	// (stage, event) pair errors out, the inner `continue` would skip every
+	// check. Count successful transitions and require we saw at least the
+	// 15 valid ones documented in TestNextStage_ValidTransitions.
+	successfulTransitions := 0
+
+	for _, stage := range domain.AllStages() {
+		if strings.Contains(string(stage), "polish") {
+			t.Errorf("domain.Stage %q contains 'polish' — v2 must not introduce a polisher domain stage (it is a PipelineStage sub-stage only)", stage)
+		}
+		// Symmetric freeze: a polisher stage that bypassed NextStage but
+		// surfaced via IsHITLStage / StatusForStage would still be a
+		// regression.
+		if IsHITLStage(stage) && strings.Contains(string(stage), "polish") {
+			t.Errorf("IsHITLStage(%s)=true with polisher-named stage", stage)
+		}
+		_ = StatusForStage(stage) // pure call; included so any panic surfaces here
+		for _, event := range domain.AllEvents() {
+			next, err := NextStage(stage, event)
+			if err != nil {
+				continue
+			}
+			successfulTransitions++
+			if strings.Contains(string(next), "polish") {
+				t.Errorf("NextStage(%s,%s)=%s — v2 must have no polisher transition", stage, event, next)
+			}
+		}
+	}
+
+	if successfulTransitions < 15 {
+		t.Errorf("walked only %d successful transitions; expected ≥15 (one per documented valid (stage,event)) — table may be broken", successfulTransitions)
+	}
+}
+
 func TestEngineAdvance_PhaseARetry_MovesBackToWriteWithoutScenarioJSON(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 

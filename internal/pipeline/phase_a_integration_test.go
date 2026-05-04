@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -516,6 +518,273 @@ func TestPhaseARunner_ReviewOutputValidatedBeforeCritic(t *testing.T) {
 	}
 	if _, statErr := os.Stat(ScenarioPath(outputDir, state.RunID)); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("expected no scenario artifact, got stat err=%v", statErr)
+	}
+}
+
+// TestPhaseAIntegration_WriterMidStageFailure_AtomicNarration locks the
+// D6 atomic boundary at the PhaseARunner integration level: when the
+// writer agent returns an error, the runner does NOT synthesize a
+// state.Narration on its own, FinishedAt stays empty, scenario.json is
+// not produced, and downstream stages (post_writer_critic, visual,
+// reviewer, critic) are not reached. The writer agent's own atomic
+// boundary (state.Narration unset on per-stage / script-level failure)
+// is unit-tested in writer_test.go via TestWriter_MidCascadeFailure_*
+// and TestWriter_FullCascadeOk_ScriptValidatorFailure_*; this test
+// covers the runner's complementary contract.
+func TestPhaseAIntegration_WriterMidStageFailure_AtomicNarration(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outputDir := t.TempDir()
+	writerErr := fmt.Errorf("writer: act mystery segmenter: end_offset=99999 > monologue_rune_count=80: %w", domain.ErrValidation)
+
+	// Per-stage call counters — `t.Fatal` from inside an agent stub would
+	// be reached on a goroutine the runner could in principle move work to;
+	// counting + post-Run assertion keeps the test failure clean and pins
+	// not just "downstream stages skipped" but "upstream stages did run".
+	var (
+		researcherCalls   atomic.Int32
+		structurerCalls   atomic.Int32
+		writerCalls       atomic.Int32
+		polisherCalls     atomic.Int32
+		postWriterCalls   atomic.Int32
+		visualCalls       atomic.Int32
+		reviewerCalls     atomic.Int32
+		criticCalls       atomic.Int32
+	)
+
+	r, err := NewPhaseARunner(
+		func(ctx context.Context, state *agents.PipelineState) error {
+			researcherCalls.Add(1)
+			state.Research = samplePhaseAResearch()
+			return nil
+		},
+		func(ctx context.Context, state *agents.PipelineState) error {
+			structurerCalls.Add(1)
+			state.Structure = &domain.StructurerOutput{SCPID: state.SCPID, TargetSceneCount: 10, SourceVersion: domain.SourceVersionV1}
+			return nil
+		},
+		// Writer fails WITHOUT setting state.Narration — mirrors the real
+		// writer's contract (writer.go: state.Narration is the final write,
+		// gated on every act × stage + script-level validation succeeding).
+		func(ctx context.Context, state *agents.PipelineState) error {
+			writerCalls.Add(1)
+			return writerErr
+		},
+		func(ctx context.Context, state *agents.PipelineState) error {
+			polisherCalls.Add(1)
+			return nil
+		},
+		func(ctx context.Context, state *agents.PipelineState) error { postWriterCalls.Add(1); return nil },
+		func(ctx context.Context, state *agents.PipelineState) error { visualCalls.Add(1); return nil },
+		func(ctx context.Context, state *agents.PipelineState) error { reviewerCalls.Add(1); return nil },
+		func(ctx context.Context, state *agents.PipelineState) error { criticCalls.Add(1); return nil },
+		"openai", "anthropic", outputDir,
+		clock.NewFakeClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("NewPhaseARunner: %v", err)
+	}
+
+	state := &agents.PipelineState{RunID: "writer-mid-stage-fail", SCPID: "SCP-TEST"}
+	gotErr := r.Run(context.Background(), state)
+	if gotErr == nil {
+		t.Fatal("expected writer-mid-stage failure, got nil")
+	}
+	if !errors.Is(gotErr, domain.ErrValidation) {
+		t.Fatalf("error chain must include ErrValidation, got: %v", gotErr)
+	}
+	if !strings.Contains(gotErr.Error(), "stage=writer") {
+		t.Fatalf("error message must wrap with stage=writer, got: %v", gotErr)
+	}
+	if state.Narration != nil {
+		t.Fatalf("state.Narration must be nil after writer mid-stage failure: %+v", state.Narration)
+	}
+	// StartedAt is stamped BEFORE the chain runs (phase_a.go); FinishedAt is
+	// only stamped on a fully-finalized success. Pinning both sides keeps a
+	// future refactor that swaps the timestamp ordering from passing.
+	if state.StartedAt == "" {
+		t.Errorf("state.StartedAt must be stamped before chain runs, got empty")
+	}
+	if state.FinishedAt != "" {
+		t.Errorf("state.FinishedAt must remain empty on failure, got %q", state.FinishedAt)
+	}
+	if _, statErr := os.Stat(ScenarioPath(outputDir, state.RunID)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("expected no scenario.json after writer failure, got stat err=%v", statErr)
+	}
+	// Pin the chain shape: upstream of writer ran exactly once; writer ran
+	// exactly once; everything downstream of writer never ran.
+	if got := researcherCalls.Load(); got != 1 {
+		t.Errorf("researcher calls=%d, want 1 (must run before writer)", got)
+	}
+	if got := structurerCalls.Load(); got != 1 {
+		t.Errorf("structurer calls=%d, want 1 (must run before writer)", got)
+	}
+	if got := writerCalls.Load(); got != 1 {
+		t.Errorf("writer calls=%d, want 1", got)
+	}
+	for _, c := range []struct {
+		name  string
+		count int32
+	}{
+		{"polisher", polisherCalls.Load()},
+		{"post_writer_critic", postWriterCalls.Load()},
+		{"visual_breakdowner", visualCalls.Load()},
+		{"reviewer", reviewerCalls.Load()},
+		{"critic", criticCalls.Load()},
+	} {
+		if c.count != 0 {
+			t.Errorf("%s must not run after writer failure, got %d calls", c.name, c.count)
+		}
+	}
+}
+
+// TestPhaseAIntegration_ResumeAfterWriterFailure_RunsWriterFromScratch
+// locks the D6 resume invariant: a writer-failed run leaves no on-disk
+// narration artifact, so a subsequent invocation re-enters the writer
+// from a clean state.Narration nil — there is intentionally no narration
+// cache analogous to research/structure caches. The test runs the
+// runner twice on the same run dir to actually exercise the resume
+// boundary (not just "first run starts with Narration nil"): attempt 1
+// fails at writer, attempt 2 succeeds, and the writer observes
+// Narration=nil on entry both times. Catches a regression that would
+// introduce a narration cache, leak state across attempts, or reuse a
+// stale Narration.
+func TestPhaseAIntegration_ResumeAfterWriterFailure_RunsWriterFromScratch(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outputDir := t.TempDir()
+	runID := "resume-after-writer-fail"
+	var writerCalls atomic.Int32
+	// writerShouldFail toggles per attempt: first invocation fails (mirrors
+	// the post-writer-mid-stage atomic boundary — Narration stays nil),
+	// second invocation succeeds.
+	var writerShouldFail atomic.Bool
+	writerShouldFail.Store(true)
+	writerErr := fmt.Errorf("writer: act mystery segmenter exhausted retries: %w", domain.ErrValidation)
+
+	mkRunner := func(now time.Time) *PhaseARunner {
+		r, err := NewPhaseARunner(
+			func(ctx context.Context, state *agents.PipelineState) error { state.Research = samplePhaseAResearch(); return nil },
+			func(ctx context.Context, state *agents.PipelineState) error {
+				state.Structure = &domain.StructurerOutput{SCPID: state.SCPID, TargetSceneCount: 10, SourceVersion: domain.SourceVersionV1}
+				return nil
+			},
+			func(ctx context.Context, state *agents.PipelineState) error {
+				writerCalls.Add(1)
+				// Writer must observe state.Narration nil on entry — the
+				// previous failed attempt is not allowed to leak partial
+				// state across the resume boundary, and there is no on-disk
+				// narration cache to rehydrate from.
+				if state.Narration != nil {
+					t.Errorf("writer entered with non-nil state.Narration on attempt %d: %+v", writerCalls.Load(), state.Narration)
+				}
+				if writerShouldFail.Load() {
+					return writerErr
+				}
+				state.Narration = samplePhaseANarration()
+				return nil
+			},
+			agents.NoopAgent(),
+			func(ctx context.Context, state *agents.PipelineState) error {
+				state.Critic = &domain.CriticOutput{PostWriter: &domain.CriticCheckpointReport{Checkpoint: domain.CriticCheckpointPostWriter, Verdict: domain.CriticVerdictPass, OverallScore: 80, Feedback: "좋습니다."}}
+				return nil
+			},
+			func(ctx context.Context, state *agents.PipelineState) error { state.VisualScript = samplePhaseAVisualBreakdown(); return nil },
+			func(ctx context.Context, state *agents.PipelineState) error {
+				state.Review = &domain.ReviewReport{OverallPass: true, CoveragePct: 100, Issues: []domain.ReviewIssue{}, Corrections: []domain.ReviewCorrection{}, ReviewerModel: "review-model", ReviewerProvider: "anthropic", SourceVersion: domain.ReviewSourceVersionV1}
+				return nil
+			},
+			func(ctx context.Context, state *agents.PipelineState) error {
+				state.Critic.PostReviewer = &domain.CriticCheckpointReport{Checkpoint: domain.CriticCheckpointPostReviewer, Verdict: domain.CriticVerdictPass, OverallScore: 88, Feedback: "최종 검토까지 안정적입니다."}
+				return nil
+			},
+			"openai", "anthropic", outputDir,
+			clock.NewFakeClock(now), nil,
+		)
+		if err != nil {
+			t.Fatalf("NewPhaseARunner: %v", err)
+		}
+		return r
+	}
+
+	// --- Attempt 1: writer fails. ----------------------------------------
+	state1 := &agents.PipelineState{RunID: runID, SCPID: "SCP-TEST"}
+	r1 := mkRunner(time.Date(2026, 5, 4, 12, 5, 0, 0, time.UTC))
+	if err := r1.Run(context.Background(), state1); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("attempt 1 must fail at writer with ErrValidation, got %v", err)
+	}
+	if state1.Narration != nil {
+		t.Fatalf("attempt 1: state.Narration must remain nil after writer failure, got %+v", state1.Narration)
+	}
+	if state1.FinishedAt != "" {
+		t.Errorf("attempt 1: FinishedAt must remain empty on failure, got %q", state1.FinishedAt)
+	}
+	// After attempt 1, the run dir contains only deterministic-agent caches
+	// (research_cache.json, structure_cache.json) — NEVER any narration- or
+	// writer-stage cache. Inverting the freeze (allowlist instead of
+	// denylist) catches any cache filename a future regression might pick.
+	assertNoNarrationCache(t, outputDir, runID, "after attempt 1 (writer failed)")
+
+	// --- Attempt 2: writer succeeds (resume). ----------------------------
+	writerShouldFail.Store(false)
+	state2 := &agents.PipelineState{RunID: runID, SCPID: "SCP-TEST"}
+	r2 := mkRunner(time.Date(2026, 5, 4, 12, 6, 0, 0, time.UTC))
+	if err := r2.Run(context.Background(), state2); err != nil {
+		t.Fatalf("attempt 2 (resume) must succeed, got %v", err)
+	}
+	if state2.Narration == nil || len(state2.Narration.Acts) != 4 {
+		t.Fatalf("attempt 2: state.Narration must be fully populated, got %+v", state2.Narration)
+	}
+	if state2.StartedAt == "" || state2.FinishedAt == "" {
+		t.Errorf("attempt 2: timestamps must both be set on success, started=%q finished=%q", state2.StartedAt, state2.FinishedAt)
+	}
+	if _, err := os.Stat(ScenarioPath(outputDir, runID)); err != nil {
+		t.Errorf("attempt 2: scenario.json must exist on success, stat err=%v", err)
+	}
+	// Writer was invoked twice (once per attempt) — proving no partial
+	// reuse path bypassed the writer on resume.
+	if got := writerCalls.Load(); got != 2 {
+		t.Errorf("writer must be invoked once per attempt; got %d total, want 2", got)
+	}
+	// Final freeze: even after success, the run dir holds nothing that
+	// would let a future resume skip the writer.
+	assertNoNarrationCache(t, outputDir, runID, "after attempt 2 (success)")
+}
+
+// assertNoNarrationCache walks the per-run output dir and fails the test
+// if it finds any file whose name suggests a narration / writer-stage
+// cache. The allowlist (research_cache.json, structure_cache.json,
+// scenario.json) is the canonical set of D6-permitted artifacts; an
+// inverted check catches any future cache filename a regression might
+// introduce — `narration_cache.json`, `writer_stage1.json`,
+// `writer_partial.json`, `acts_cache.json`, etc. — without enumerating
+// every possible drift up front.
+func assertNoNarrationCache(t *testing.T, outputDir, runID, when string) {
+	t.Helper()
+	runDir := filepath.Join(outputDir, runID)
+	entries, err := os.ReadDir(runDir)
+	if err != nil {
+		t.Fatalf("read run dir %q: %v", runDir, err)
+	}
+	allowed := map[string]bool{
+		"research_cache.json":  true,
+		"structure_cache.json": true,
+		"scenario.json":        true,
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if allowed[name] {
+			continue
+		}
+		// Anything narration- or writer-stage flavored is forbidden by D6.
+		// Include broad substring matches so a renamed cache also surfaces.
+		lower := strings.ToLower(name)
+		for _, marker := range []string{"narration", "writer_stage", "writer_cache", "act_cache", "monologue", "beats_cache"} {
+			if strings.Contains(lower, marker) {
+				t.Errorf("forbidden narration/writer cache %q in run dir %s: per D6 atomic boundary, no mid-writer on-disk artifact is allowed", name, when)
+			}
+		}
 	}
 }
 

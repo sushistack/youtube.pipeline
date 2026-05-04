@@ -407,6 +407,124 @@ func TestWriter_Stage1OkThenStage2Fails_AtomicFailure(t *testing.T) {
 	}
 }
 
+// --- D6: mid-cascade atomicity (writer fails after partial work) -------
+
+// TestWriter_MidCascadeFailure_LeavesNarrationNil locks the v2 writer
+// atomicity invariant (D6 spec: state.Narration is set ONLY after all 4
+// acts × 2 stages succeed). Act 1 succeeds end-to-end; Act 2 stage 2
+// exhausts its retry budget. The writer must abort the cascade — Acts 3
+// and 4 never run — and must NOT persist Act 1's monologue/beats into
+// state.Narration. Without this freeze, a future refactor that
+// optimistically pre-fills state.Narration.Acts inside the per-act loop
+// would silently break resume semantics by leaving a half-populated
+// NarrationScript on disk.
+func TestWriter_MidCascadeFailure_LeavesNarrationNil(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	gen := newTwoStageFakeGen()
+	// Act 1 (incident): both stages succeed.
+	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, validBeatsResponse(domain.ActIncident), "")
+	// Act 2 (mystery): stage 1 succeeds; stage 2 exhausts its retry budget
+	// (writerPerStageRetryBudget+1 total attempts) with out-of-range offsets.
+	// Sourcing the count from the production constant means a future budget
+	// tweak does not silently break this atomicity freeze.
+	gen.enqueue(stageKeyWriter, domain.ActMystery, validMonologueResponse(domain.ActMystery), "")
+	bad := badBeatsResponse(domain.ActMystery, 99999)
+	for i := 0; i < writerPerStageRetryBudget+1; i++ {
+		gen.enqueue(stageKeySegmenter, domain.ActMystery, bad, "")
+	}
+	// Acts 3/4: NO responses queued. The cascade must not reach them; if
+	// it does, twoStageFakeGen.Generate returns an error mentioning the
+	// missing queue, which would surface as a different error string.
+
+	state := freshWriterState()
+	err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err == nil {
+		t.Fatal("expected mid-cascade failure, got nil")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("error=%v, want ErrValidation chain", err)
+	}
+	if state.Narration != nil {
+		t.Fatalf("state.Narration must remain unset on mid-cascade failure (Act 1 succeeded but Act 2 stage 2 failed): %+v", state.Narration)
+	}
+	// Acts 1 and 2 are reached; Acts 3 and 4 are NOT.
+	if got := gen.callCount(stageKeyWriter, domain.ActIncident); got != 1 {
+		t.Errorf("incident stage-1 calls=%d, want 1", got)
+	}
+	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 1 {
+		t.Errorf("incident stage-2 calls=%d, want 1", got)
+	}
+	if got := gen.callCount(stageKeyWriter, domain.ActMystery); got != 1 {
+		t.Errorf("mystery stage-1 calls=%d, want 1", got)
+	}
+	if got, want := gen.callCount(stageKeySegmenter, domain.ActMystery), writerPerStageRetryBudget+1; got != want {
+		t.Errorf("mystery stage-2 calls=%d, want %d (retry exhausted: budget=%d ⇒ %d total)", got, want, writerPerStageRetryBudget, want)
+	}
+	for _, a := range []string{domain.ActRevelation, domain.ActUnresolved} {
+		if got := gen.callCount(stageKeyWriter, a); got != 0 {
+			t.Errorf("act %s stage-1 must not be reached after Act 2 failure, got %d calls", a, got)
+		}
+		if got := gen.callCount(stageKeySegmenter, a); got != 0 {
+			t.Errorf("act %s stage-2 must not be reached after Act 2 failure, got %d calls", a, got)
+		}
+	}
+}
+
+// TestWriter_FullCascadeOk_ScriptValidatorFailure_LeavesNarrationNil
+// closes the second post-cascade atomicity branch the mid-cascade test
+// can't reach: every per-act per-stage call succeeds, but the assembled
+// NarrationScript is rejected by the script-level forbidden-terms check
+// (writer.go: terms.MatchNarration(&script) at line 168). The atomic
+// invariant says state.Narration is set ONLY after BOTH per-stage AND
+// script-level validation pass — moving the assignment above the
+// terms-check or validator.Validate would silently leak a forbidden
+// monologue into resume's "valid stage artifact" pathway. Without this
+// test, that regression would pass the per-stage atomicity test (which
+// fails before assembly) and the integration test (which uses a stub
+// agent that never assigns Narration).
+func TestWriter_FullCascadeOk_ScriptValidatorFailure_LeavesNarrationNil(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// Craft a stage-1 response for Act 1 whose monologue contains the
+	// forbidden term "wiki" (loaded into mustTerms via policyRoot's
+	// "# comment\nwiki\n" file). Other acts get clean monologues. The
+	// per-stage validators do NOT scan forbidden terms — that check fires
+	// at script level, after all 4 acts complete.
+	mkPoisonedMonologueResponse := func(actID string) string {
+		// Append " wiki " to a normal monologue. Still well under any per-act
+		// rune cap (validMonologueForAct = 80 runes; minimum cap is 480).
+		raw := []byte(`{"act_id":"` + actID + `","monologue":"` + strings.Repeat("가", 80) + ` wiki ","mood":"tense","key_points":["first","second"]}`)
+		return string(raw)
+	}
+
+	gen := newTwoStageFakeGen()
+	for i, a := range domain.ActOrder {
+		if i == 0 {
+			gen.enqueue(stageKeyWriter, a, mkPoisonedMonologueResponse(a), "")
+		} else {
+			gen.enqueue(stageKeyWriter, a, validMonologueResponse(a), "")
+		}
+		gen.enqueue(stageKeySegmenter, a, validBeatsResponse(a), "")
+	}
+
+	state := freshWriterState()
+	err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err == nil {
+		t.Fatal("expected forbidden-term failure after full cascade, got nil")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("error chain must include ErrValidation, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "wiki") {
+		t.Errorf("error should surface the offending forbidden term, got: %v", err)
+	}
+	if state.Narration != nil {
+		t.Fatalf("state.Narration must remain unset on script-level rejection (post-cascade atomicity branch): %+v", state.Narration)
+	}
+}
+
 // --- cascade serial behavior + prior-tail injection ---------------------
 
 func TestWriter_Stage1Cascade_SerialAndInjectsPriorTail(t *testing.T) {
