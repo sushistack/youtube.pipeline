@@ -447,6 +447,12 @@ func runWriterActBeats(
 			finalErr = fmt.Errorf("writer: act %s segmenter: %w", spec.Act.ID, err)
 			return result{}, retryReasonJSONDecode, finalErr
 		}
+		// Snap LLM offsets to sentence terminals BEFORE validation: qwen-plus
+		// repeatedly emits mid-sentence cuts even after the prompt's hard
+		// instruction (observed across 3 retries, all rejected). ±25 rune
+		// post-process absorbs the typical drift so the validator's hard fail
+		// only triggers when the monologue genuinely lacks a clean cut in range.
+		snapBeatBoundariesToSentences(decoded.Beats, []rune(mono.Monologue), 25)
 		if err := validateWriterSegmenterResponse(spec, decoded, mono.Monologue, monologueRuneCount); err != nil {
 			finalErr = err
 			return result{}, retryReasonSchemaValidation, err
@@ -540,12 +546,123 @@ func isTrailingSkipRune(r rune) bool {
 	return false
 }
 
+// snapBeatBoundariesToSentences nudges each inter-beat boundary to land just
+// after the nearest sentence-terminal rune (within ±radius). The LLM
+// segmenter (qwen-plus) reliably ignores the prompt's "cut on '.', '?',
+// '!', '…', '\n'" rule and emits mid-sentence offsets even after multiple
+// retries — backend post-processing is the only path that converges.
+//
+// Only inter-beat boundaries move; beats[0].start (0) and beats[len-1].end
+// (rune_count) are anchored to the act bounds. Adjacency is preserved
+// (beats[i+1].start = beats[i].end). Boundaries already on a clean cut
+// are left alone. Boundaries with no terminal in range are NOT snapped —
+// validateWriterSegmenterResponse will reject them, surfacing as an
+// honest "no clean cut available" failure rather than a silent corruption.
+//
+// radius is chosen empirically: 25 runes covers the typical Korean
+// sentence (~15–40 runes) without crossing into the next/previous beat's
+// territory at common per-beat budgets.
+func snapBeatBoundariesToSentences(beats []domain.BeatAnchor, monologueRunes []rune, radius int) {
+	if len(beats) < 2 || radius <= 0 {
+		return
+	}
+	runeLen := len(monologueRunes)
+	for i := 0; i < len(beats)-1; i++ {
+		boundary := beats[i].EndOffset
+		if boundary <= 0 || boundary >= runeLen {
+			continue
+		}
+		if isCleanBoundary(monologueRunes, boundary, beats[i].StartOffset) {
+			continue
+		}
+		// Clamp search range to NOT cross into adjacent beats' territory.
+		// snap must satisfy beats[i].start < snap < beats[i+1].end.
+		minP := boundary - radius
+		if minP <= beats[i].StartOffset {
+			minP = beats[i].StartOffset + 1
+		}
+		maxP := boundary + radius
+		if maxP >= beats[i+1].EndOffset {
+			maxP = beats[i+1].EndOffset - 1
+		}
+		snap := nearestCleanBoundary(monologueRunes, boundary, minP, maxP)
+		if snap < 0 {
+			continue
+		}
+		beats[i].EndOffset = snap
+		beats[i+1].StartOffset = snap
+	}
+}
+
+// isCleanBoundary reports whether boundary is a valid "just-after-terminal"
+// position in monologueRunes. Mirrors validateBeatSentenceBoundary's walk-
+// back over trailing whitespace + closer runes so snap and validate agree.
+func isCleanBoundary(runes []rune, boundary, lowerBound int) bool {
+	end := boundary
+	for end > lowerBound {
+		r := runes[end-1]
+		if isTrailingSkipRune(r) {
+			end--
+			continue
+		}
+		_, ok := sentenceTerminalRunes[r]
+		return ok
+	}
+	return false
+}
+
+// nearestCleanBoundary scans [minP, maxP] for the position p whose preceding
+// rune is a sentence terminal AND is closest to target. Returns -1 if no
+// terminal exists in range. After landing on a terminal at index t, the
+// returned position skips trailing whitespace runes so the next beat does
+// not begin with leading space.
+func nearestCleanBoundary(runes []rune, target, minP, maxP int) int {
+	if minP < 1 {
+		minP = 1
+	}
+	if maxP > len(runes) {
+		maxP = len(runes)
+	}
+	if minP > maxP {
+		return -1
+	}
+	best := -1
+	bestDist := maxP - minP + 1
+	for p := minP; p <= maxP; p++ {
+		if _, ok := sentenceTerminalRunes[runes[p-1]]; !ok {
+			continue
+		}
+		// Skip trailing whitespace after the terminal: a snap of 35 ("…텐데요.")
+		// followed by " 이 개체는…" should land at 36 ("이"), not 35 (" ").
+		snap := p
+		for snap < len(runes) && unicode.IsSpace(runes[snap]) {
+			snap++
+		}
+		dist := abs(snap - target)
+		if dist < bestDist {
+			bestDist = dist
+			best = snap
+		}
+	}
+	return best
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 // validateBeatSentenceBoundary rejects beats whose `end_offset` does not
 // land immediately after a sentence-terminal rune (or paragraph break). The
 // last meaningful rune in the slice is found by walking back over trailing
 // whitespace before checking — TTS artifacts ("…때의 [pause] 기록입니다") arise
 // when the segmenter cuts mid-sentence, so a hard validator forces retries
-// until the LLM picks a clean cut.
+// until the LLM picks a clean cut. snapBeatBoundariesToSentences runs
+// before this in the segmenter pipeline and absorbs the typical ±25 rune
+// LLM drift; this validator catches the residual cases where no terminal
+// exists in range.
 func validateBeatSentenceBoundary(actID string, idx int, beat domain.BeatAnchor, monologueRunes []rune) error {
 	end := beat.EndOffset
 	for end > beat.StartOffset {

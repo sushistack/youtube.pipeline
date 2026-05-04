@@ -599,14 +599,20 @@ func TestWriter_RejectsMissingSegmenterModel(t *testing.T) {
 	}
 }
 
-// --- I/O matrix: stage-2 mid-sentence cut ------------------------------
+// --- I/O matrix: stage-2 mid-sentence cut → snap ----------------------
 
-func TestWriter_Stage2_MidSentenceCut_RetriesThenFails(t *testing.T) {
+// TestWriter_Stage2_MidSentenceCut_SnappedAndAccepted verifies the
+// snapBeatBoundariesToSentences post-process: when the LLM emits beat
+// offsets that land mid-syllable, the runner shifts each inter-beat
+// boundary to the nearest sentence terminal within ±25 runes and accepts
+// the result on the first attempt instead of burning retries.
+func TestWriter_Stage2_MidSentenceCut_SnappedAndAccepted(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	// Build a beats response whose end_offsets land mid-syllable (i*10 + 5)
-	// — every cut lands on `가`, never on `.`. The sentence-boundary
-	// validator must reject every attempt.
+	// validMonologueForAct ends every 10th rune with `.` (positions
+	// 9, 19, 29, ..., 79). Our bad cuts land at 5, 15, 25, ... — each
+	// boundary is exactly 5 runes off the nearest terminal, well within
+	// the 25-rune snap radius.
 	mkBadCuts := func(actID string) string {
 		beats := []map[string]any{}
 		for i := 0; i < 8; i++ {
@@ -632,30 +638,35 @@ func TestWriter_Stage2_MidSentenceCut_RetriesThenFails(t *testing.T) {
 	}
 
 	gen := newTwoStageFakeGen()
-	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
-	bad := mkBadCuts(domain.ActIncident)
-	// budget=2 → up to 3 attempts.
-	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
-	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
-	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
+	for _, a := range domain.ActOrder {
+		gen.enqueue(stageKeyWriter, a, validMonologueResponse(a), "")
+		gen.enqueue(stageKeySegmenter, a, mkBadCuts(a), "")
+	}
 
 	state := freshWriterState()
-	err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
-	if err == nil {
-		t.Fatal("expected mid-sentence cut failure, got nil")
+	if err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state); err != nil {
+		t.Fatalf("expected snap to recover bad cuts on first attempt, got: %v", err)
 	}
-	if !errors.Is(err, domain.ErrValidation) {
-		t.Fatalf("error chain must include ErrValidation, got %v", err)
+	if state.Narration == nil || len(state.Narration.Acts) != 4 {
+		t.Fatalf("state.Narration not populated: %+v", state.Narration)
 	}
-	if !strings.Contains(err.Error(), "mid-sentence") {
-		t.Fatalf("error should mention mid-sentence cut, got: %v", err)
+	// Each act's first inter-beat boundary should have snapped from 5 → 10.
+	for _, act := range state.Narration.Acts {
+		if len(act.Beats) < 2 {
+			continue
+		}
+		if got := act.Beats[0].EndOffset; got != 10 {
+			t.Errorf("act %s beat[0].end_offset=%d, want 10 (snapped from 5)", act.ActID, got)
+		}
+		if got := act.Beats[1].StartOffset; got != 10 {
+			t.Errorf("act %s beat[1].start_offset=%d, want 10 (snapped from 5)", act.ActID, got)
+		}
 	}
-	if state.Narration != nil {
-		t.Fatalf("state.Narration must remain unset on failure: %+v", state.Narration)
-	}
-	// Retry budget = 2 → 3 total attempts.
-	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 3 {
-		t.Fatalf("segmenter call count=%d, want 3 (1 + 2 retries)", got)
+	// Snap converges in one attempt — no retries burned.
+	for _, a := range domain.ActOrder {
+		if got := gen.callCount(stageKeySegmenter, a); got != 1 {
+			t.Errorf("act %s segmenter call count=%d, want 1 (snap should accept on first try)", a, got)
+		}
 	}
 }
 
@@ -838,4 +849,77 @@ func (f *fakeTextGenerator) Generate(_ context.Context, _ domain.TextRequest) (d
 		return domain.TextResponse{}, f.err
 	}
 	return f.resp, nil
+}
+
+// --- snapBeatBoundariesToSentences edge cases --------------------------
+
+func TestSnapBeatBoundariesToSentences_TableDriven(t *testing.T) {
+	mkBeats := func(offsets ...int) []domain.BeatAnchor {
+		out := make([]domain.BeatAnchor, len(offsets)-1)
+		for i := 0; i < len(offsets)-1; i++ {
+			out[i] = domain.BeatAnchor{StartOffset: offsets[i], EndOffset: offsets[i+1]}
+		}
+		return out
+	}
+
+	cases := []struct {
+		name      string
+		monologue string
+		input     []domain.BeatAnchor
+		radius    int
+		wantEnds  []int // expected EndOffset for each beat (last beat unchanged)
+	}{
+		{
+			// "abc. def." → terminal at index 3, snap from 5 → 4 (just after `.`).
+			name:      "snap_to_nearest_terminal",
+			monologue: "abc. def.",
+			input:     mkBeats(0, 5, 9),
+			radius:    10,
+			wantEnds:  []int{5, 9}, // 5 stays — `.` at idx 3, post-skip-space lands at 5.
+		},
+		{
+			// "abcdef." — boundary 3 with no terminal in [1,6]. Last beat ends at 7.
+			// Boundary 3 has no terminal in range → not snapped.
+			name:      "no_terminal_in_range_left_alone",
+			monologue: "abcdef.",
+			input:     mkBeats(0, 3, 7),
+			radius:    2,
+			wantEnds:  []int{3, 7}, // boundary 3 unchanged
+		},
+		{
+			// Already-clean boundary stays: "abc. def." — boundary at 5 already
+			// after `.` (skipping space). Should not move.
+			name:      "already_clean_boundary",
+			monologue: "abc. def.",
+			input:     mkBeats(0, 5, 9),
+			radius:    10,
+			wantEnds:  []int{5, 9},
+		},
+		{
+			// Two-beat input: only beats[0].end is an inter-beat boundary; last
+			// beat's end is anchored to monologue length and never moves.
+			name:      "anchored_last_end_never_moves",
+			monologue: "abc. def.",
+			input:     mkBeats(0, 7, 9),
+			radius:    10,
+			// boundary 7 → snap back to 5 (just after `.` at idx 3, +space).
+			wantEnds: []int{5, 9},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			beats := append([]domain.BeatAnchor(nil), tc.input...)
+			snapBeatBoundariesToSentences(beats, []rune(tc.monologue), tc.radius)
+			for i, want := range tc.wantEnds {
+				if got := beats[i].EndOffset; got != want {
+					t.Errorf("beat[%d].EndOffset=%d, want %d", i, got, want)
+				}
+				// Adjacency invariant: beats[i+1].start must equal beats[i].end.
+				if i+1 < len(beats) && beats[i+1].StartOffset != beats[i].EndOffset {
+					t.Errorf("adjacency broken: beat[%d].end=%d, beat[%d].start=%d",
+						i, beats[i].EndOffset, i+1, beats[i+1].StartOffset)
+				}
+			}
+		})
+	}
 }
