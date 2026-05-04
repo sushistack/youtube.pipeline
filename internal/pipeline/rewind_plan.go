@@ -230,8 +230,12 @@ type RewindPlan struct {
 	FSRemoveMetadata  bool
 	FSRemoveManifest  bool
 	// FSRemoveCacheDir removes {runDir}/_cache/ (deterministic-agent envelopes).
-	// Set only for full-restart rewinds (StageNodeScenario) so resumed runs do
-	// not retain stale research/structure caches from the prior attempt.
+	// No StageNodeKey sets this true: every rewind preserves the cache dir so
+	// the pending-screen drop_caches panel can surface the entries and the
+	// operator decides per-cache before clicking Start run. Cache validity is
+	// enforced by tryLoadCache fingerprint comparison, so a preserved dir
+	// cannot leak stale outputs into a re-run. Field is retained on the plan
+	// type as a kill switch in case future rewind targets ever need it.
 	FSRemoveCacheDir bool
 	// FSRemoveTracesDir removes {runDir}/traces/ (per-attempt LLM debug traces).
 	// Set for full-restart rewinds alongside FSRemoveCacheDir; traces from the
@@ -257,6 +261,11 @@ func PlanRewind(node StageNodeKey) (RewindPlan, error) {
 		// Restart from the very beginning. The operator's next action is
 		// "Start run" (POST /api/runs/{id}/advance from pending/pending),
 		// which the existing UI surface already exposes.
+		//
+		// _cache/ is deliberately preserved (FSRemoveCacheDir stays false) so
+		// the pending-screen drop_caches panel sees the entries and lets the
+		// operator decide per-cache. tryLoadCache fingerprint invalidation is
+		// the safety net — a stale envelope is rejected on load.
 		p.FinalStage = domain.StagePending
 		p.FinalStatus = domain.StatusPending
 		p.DeleteSegments = true
@@ -271,7 +280,6 @@ func PlanRewind(node StageNodeKey) (RewindPlan, error) {
 		p.FSRemoveOutputMP4 = true
 		p.FSRemoveMetadata = true
 		p.FSRemoveManifest = true
-		p.FSRemoveCacheDir = true
 		p.FSRemoveTracesDir = true
 	case StageNodeCharacter:
 		// Re-enter at Cast HITL. Phase A artifacts (scenario.json + segments

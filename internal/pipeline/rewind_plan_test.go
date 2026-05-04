@@ -150,8 +150,8 @@ func TestPlanRewind_Scenario(t *testing.T) {
 			break
 		}
 	}
-	if !plan.FSRemoveCacheDir {
-		t.Errorf("scenario rewind must set FSRemoveCacheDir (wipes _cache/ before Phase A re-runs): %+v", plan)
+	if plan.FSRemoveCacheDir {
+		t.Errorf("scenario rewind must NOT set FSRemoveCacheDir — _cache/ is preserved so the pending-screen drop_caches panel can surface entries; tryLoadCache fingerprinting handles staleness: %+v", plan)
 	}
 	if !plan.FSRemoveTracesDir {
 		t.Errorf("scenario rewind must set FSRemoveTracesDir (stale traces irrelevant after full restart): %+v", plan)

@@ -21,6 +21,7 @@ import { ComplianceGate } from '../production/ComplianceGate'
 import { CompletionReward } from '../production/CompletionReward'
 import { useNewRunCoordinator } from '../production/useNewRunCoordinator'
 import { ScenarioInspector } from '../production/ScenarioInspector'
+import { CachePanel } from '../shared/CachePanel'
 import { ContinuityBanner } from '../shared/ContinuityBanner'
 import { DetailPanel } from '../shared/DetailPanel'
 import { FailureBanner } from '../shared/FailureBanner'
@@ -66,31 +67,6 @@ function snapshotsMatch(
     previous.stage === current.stage &&
     previous.status === current.status
   )
-}
-
-// formatRelativeMtime renders an RFC3339 modified_at timestamp as a short
-// relative string ("3m ago", "2h ago", "5d ago") for the cache panel
-// metadata line. Falls back to the raw input on parse failure so the operator
-// always sees something rather than a silent empty cell.
-function formatRelativeMtime(iso: string): string {
-  const parsed_ms = Date.parse(iso)
-  if (Number.isNaN(parsed_ms)) {
-    return iso
-  }
-  const delta_seconds = Math.max(0, Math.floor((Date.now() - parsed_ms) / 1000))
-  if (delta_seconds < 60) {
-    return `${delta_seconds}s ago`
-  }
-  const delta_minutes = Math.floor(delta_seconds / 60)
-  if (delta_minutes < 60) {
-    return `${delta_minutes}m ago`
-  }
-  const delta_hours = Math.floor(delta_minutes / 60)
-  if (delta_hours < 24) {
-    return `${delta_hours}h ago`
-  }
-  const delta_days = Math.floor(delta_hours / 24)
-  return `${delta_days}d ago`
 }
 
 export function ProductionShell() {
@@ -289,46 +265,11 @@ export function ProductionShell() {
           {' '}to begin Phase A.
         </p>
 
-        {cache_entries.length > 0 ? (
-          <div
-            className="pending-cache-panel"
-            aria-label="Cached artifacts"
-          >
-            <p className="production-dashboard__eyebrow">Cached artifacts</p>
-            <ul className="pending-cache-panel__list">
-              {cache_entries.map((entry) => {
-                const is_kept = !dropped_cache_stages.has(entry.stage)
-                const checkbox_id = `cache-keep-${entry.stage}`
-                return (
-                  <li
-                    key={entry.stage}
-                    className="pending-cache-panel__row"
-                  >
-                    <input
-                      id={checkbox_id}
-                      type="checkbox"
-                      checked={is_kept}
-                      onChange={() => toggle_drop_cache(entry.stage)}
-                    />
-                    <label
-                      htmlFor={checkbox_id}
-                      className="pending-cache-panel__label"
-                    >
-                      <span className="pending-cache-panel__stage">
-                        {entry.stage}
-                      </span>
-                      <span className="pending-cache-panel__meta">
-                        {entry.source_version || 'unknown version'}
-                        {' · '}
-                        {formatRelativeMtime(entry.modified_at)}
-                      </span>
-                    </label>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        ) : null}
+        <CachePanel
+          entries={cache_entries}
+          dropped_stages={dropped_cache_stages}
+          on_toggle={toggle_drop_cache}
+        />
 
         <div className="production__pending-state-actions">
           <button
@@ -564,6 +505,7 @@ export function ProductionShell() {
   const cache_query = useRunCache(
     current_run?.id ?? null,
     current_run?.status ?? null,
+    current_run?.stage ?? null,
   )
   const cache_entries = cache_query.data ?? []
   // Bind the keep/drop selection to a specific run_id so switching to a new
@@ -615,6 +557,7 @@ export function ProductionShell() {
 
       {current_run && (current_run.status === 'failed' || current_run.status === 'cancelled') && !is_failure_banner_dismissed ? (
         <FailureBanner
+          key={current_run.id}
           on_dismiss={() => set_dismissed_run_id(current_run.id)}
           run={current_run}
         />

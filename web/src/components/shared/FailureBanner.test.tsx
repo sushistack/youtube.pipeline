@@ -6,7 +6,7 @@ import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RunSummary } from '../../contracts/runContracts'
 import { KeyboardShortcutsProvider } from '../../hooks/useKeyboardShortcuts'
-import { resumeRun } from '../../lib/apiClient'
+import { fetchRunCache, resumeRun } from '../../lib/apiClient'
 import { queryKeys } from '../../lib/queryKeys'
 import { renderWithProviders } from '../../test/renderWithProviders'
 import { FailureBanner } from './FailureBanner'
@@ -18,11 +18,13 @@ vi.mock('../../lib/apiClient', async () => {
 
   return {
     ...actual,
+    fetchRunCache: vi.fn(async () => []),
     resumeRun: vi.fn(),
   }
 })
 
 const mocked_resume_run = vi.mocked(resumeRun)
+const mocked_fetch_run_cache = vi.mocked(fetchRunCache)
 
 const failed_run: RunSummary = {
   cost_usd: 3.75,
@@ -190,5 +192,153 @@ describe('FailureBanner', () => {
 
     expect(on_dismiss).toHaveBeenCalledTimes(1)
     expect(mocked_resume_run).not.toHaveBeenCalled()
+  })
+
+  // --- Cache panel surfacing (spec: rewind-preserve-cache) ---
+
+  it('does not render the cache panel for a Phase B failure and falls back to single-arg resume', async () => {
+    // failed_run.stage === 'image' (Phase B). _cache/ is not consulted there,
+    // so the panel must stay hidden AND clicking Resume must call the legacy
+    // single-arg shape (no body) — matching the I/O matrix's Phase B row.
+    const user = userEvent.setup()
+    mocked_fetch_run_cache.mockResolvedValue([
+      {
+        stage: 'research',
+        filename: '_cache/research_cache.json',
+        size_bytes: 200,
+        modified_at: new Date().toISOString(),
+        source_version: 'v1-deterministic',
+      },
+    ])
+    mocked_resume_run.mockResolvedValue({
+      ...failed_run,
+      status: 'running',
+    })
+
+    render_failure_banner()
+
+    // Primary assertion: the panel never renders for Phase B regardless of
+    // any cache data the server might return. useRunCache's gate prevents
+    // the fetch in the first place, but the visible-DOM check is what the
+    // user actually sees.
+    expect(screen.queryByLabelText('Cached artifacts')).not.toBeInTheDocument()
+    expect(mocked_fetch_run_cache).not.toHaveBeenCalled()
+
+    const resume_button = screen.getByRole('button', { name: /\[enter\]\s*resume/i })
+    await user.click(resume_button)
+    await waitFor(() => {
+      expect(mocked_resume_run).toHaveBeenCalledWith('scp-173-run-9')
+    })
+  })
+
+  it('renders the cache panel for a Phase A failure with cache entries', async () => {
+    mocked_fetch_run_cache.mockResolvedValue([
+      {
+        stage: 'research',
+        filename: '_cache/research_cache.json',
+        size_bytes: 200,
+        modified_at: new Date().toISOString(),
+        source_version: 'v1-deterministic',
+      },
+      {
+        stage: 'structure',
+        filename: '_cache/structure_cache.json',
+        size_bytes: 350,
+        modified_at: new Date().toISOString(),
+        source_version: 'v1-deterministic',
+      },
+    ])
+
+    render_failure_banner({
+      ...failed_run,
+      stage: 'write',
+    })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Cached artifacts')).toBeInTheDocument()
+    })
+    expect(screen.getByText('research')).toBeInTheDocument()
+    expect(screen.getByText('structure')).toBeInTheDocument()
+  })
+
+  it('sends drop_caches body for unchecked rows on Resume', async () => {
+    const user = userEvent.setup()
+    mocked_fetch_run_cache.mockResolvedValue([
+      {
+        stage: 'research',
+        filename: '_cache/research_cache.json',
+        size_bytes: 200,
+        modified_at: new Date().toISOString(),
+        source_version: 'v1-deterministic',
+      },
+      {
+        stage: 'structure',
+        filename: '_cache/structure_cache.json',
+        size_bytes: 350,
+        modified_at: new Date().toISOString(),
+        source_version: 'v1-deterministic',
+      },
+    ])
+    mocked_resume_run.mockResolvedValue({
+      ...failed_run,
+      stage: 'write',
+      status: 'running',
+    })
+
+    render_failure_banner({
+      ...failed_run,
+      stage: 'write',
+    })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Cached artifacts')).toBeInTheDocument()
+    })
+
+    // Uncheck "research" — that row's stage flows into drop_caches.
+    const research_checkbox = screen.getByLabelText(/^research/i)
+    await user.click(research_checkbox)
+
+    const resume_button = screen.getByRole('button', { name: /\[enter\]\s*resume/i })
+    await user.click(resume_button)
+
+    await waitFor(() => {
+      expect(mocked_resume_run).toHaveBeenCalledWith('scp-173-run-9', {
+        drop_caches: ['research'],
+      })
+    })
+  })
+
+  it('sends single-arg resume call when no row is unchecked', async () => {
+    const user = userEvent.setup()
+    mocked_fetch_run_cache.mockResolvedValue([
+      {
+        stage: 'research',
+        filename: '_cache/research_cache.json',
+        size_bytes: 200,
+        modified_at: new Date().toISOString(),
+        source_version: 'v1-deterministic',
+      },
+    ])
+    mocked_resume_run.mockResolvedValue({
+      ...failed_run,
+      stage: 'write',
+      status: 'running',
+    })
+
+    render_failure_banner({
+      ...failed_run,
+      stage: 'write',
+    })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Cached artifacts')).toBeInTheDocument()
+    })
+
+    const resume_button = screen.getByRole('button', { name: /\[enter\]\s*resume/i })
+    await user.click(resume_button)
+
+    await waitFor(() => {
+      expect(mocked_resume_run).toHaveBeenCalledWith('scp-173-run-9')
+    })
   })
 })

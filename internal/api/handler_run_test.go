@@ -1028,3 +1028,123 @@ func TestRunHandler_Advance_EmptyBody_BackwardCompatible(t *testing.T) {
 
 	testutil.AssertEqual(t, rec.Code, http.StatusAccepted)
 }
+
+// --- Resume drop_caches tests (spec: rewind-preserve-cache) ---
+//
+// Mirror the Advance drop_caches matrix on Resume so a failed Phase A run can
+// selectively wipe `_cache/` entries before re-execution. The contract is
+// identical to Advance: synchronous deletion BEFORE the goroutine, idempotent
+// on missing files, whole-request rejection on unknown stages.
+
+func TestRunHandler_Resume_DropCaches_Existing_DeletedBeforeGoroutine(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, outDir := newTestRunHandlerWithEngine(t, "049", "write", "failed")
+
+	runID := "scp-049-run-1"
+	researchPath := writeCacheEnvelope(t, outDir, runID, "research", "v1-deterministic")
+	structurePath := writeCacheEnvelope(t, outDir, runID, "structure", "v1-deterministic")
+	if _, err := os.Stat(researchPath); err != nil {
+		t.Fatalf("seed research cache not present: %v", err)
+	}
+	if _, err := os.Stat(structurePath); err != nil {
+		t.Fatalf("seed structure cache not present: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"drop_caches": []string{"research"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/resume", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", runID)
+	rec := httptest.NewRecorder()
+	h.Resume(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusAccepted)
+
+	if _, err := os.Stat(researchPath); !os.IsNotExist(err) {
+		t.Fatalf("_cache/research_cache.json should be gone after Resume returns; stat err = %v", err)
+	}
+	// AC #4: Resume drops the listed cache only — sibling caches must survive
+	// so the operator's per-row keep/drop intent is honored exactly.
+	if _, err := os.Stat(structurePath); err != nil {
+		t.Errorf("_cache/structure_cache.json must survive when not in drop_caches; stat err = %v", err)
+	}
+}
+
+func TestRunHandler_Resume_DropCaches_Missing_NoError(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, outDir := newTestRunHandlerWithEngine(t, "049", "write", "failed")
+	runID := "scp-049-run-1"
+
+	cachePath := filepath.Join(outDir, runID, "_cache", "research_cache.json")
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Fatalf("precondition: cache file should not exist; stat err = %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"drop_caches": []string{"research"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/resume", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", runID)
+	rec := httptest.NewRecorder()
+	h.Resume(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusAccepted)
+}
+
+// TestRunHandler_Resume_DropCaches_ScenarioRejected pins the contract that
+// drop_caches=["scenario"] is rejected on Resume — scenario.json is a Phase A
+// output that downstream stages depend on, not a deterministic-agent envelope.
+// Operators wanting a clean slate must use POST /rewind to scenario instead.
+func TestRunHandler_Resume_DropCaches_ScenarioRejected(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, outDir := newTestRunHandlerWithEngine(t, "049", "image", "failed")
+	runID := "scp-049-run-1"
+
+	scenarioPath := filepath.Join(outDir, runID, "scenario.json")
+	if err := os.MkdirAll(filepath.Dir(scenarioPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scenarioPath, []byte(`{"scp_id":"049"}`), 0o644); err != nil {
+		t.Fatalf("seed scenario.json: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"drop_caches": []string{"scenario"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/resume", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", runID)
+	rec := httptest.NewRecorder()
+	h.Resume(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusBadRequest)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	testutil.AssertEqual(t, env.Error.Code, "VALIDATION_ERROR")
+
+	if _, err := os.Stat(scenarioPath); err != nil {
+		t.Errorf("scenario.json must survive a rejected drop_caches[\"scenario\"] resume: %v", err)
+	}
+}
+
+func TestRunHandler_Resume_DropCaches_UnknownStage_Rejected(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, outDir := newTestRunHandlerWithEngine(t, "049", "write", "failed")
+	runID := "scp-049-run-1"
+
+	researchPath := writeCacheEnvelope(t, outDir, runID, "research", "v1-deterministic")
+	structurePath := writeCacheEnvelope(t, outDir, runID, "structure", "v1-deterministic")
+
+	body, _ := json.Marshal(map[string]any{"drop_caches": []string{"research", "typo"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/resume", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", runID)
+	rec := httptest.NewRecorder()
+	h.Resume(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusBadRequest)
+	env := testutil.ReadJSON[runEnvelope](t, rec.Body)
+	testutil.AssertEqual(t, env.Error.Code, "VALIDATION_ERROR")
+
+	if _, err := os.Stat(researchPath); err != nil {
+		t.Errorf("research cache was deleted despite validation failure: %v", err)
+	}
+	if _, err := os.Stat(structurePath); err != nil {
+		t.Errorf("structure cache was deleted despite validation failure: %v", err)
+	}
+}

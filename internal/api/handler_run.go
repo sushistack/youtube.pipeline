@@ -351,15 +351,29 @@ func (h *RunHandler) Rewind(w http.ResponseWriter, r *http.Request) {
 // resumeRequest is the optional request body for POST /api/runs/{id}/resume.
 // confirm_inconsistent mirrors the CLI --force flag: when true, the server
 // proceeds with the resume even if a filesystem/DB mismatch is detected.
+// drop_caches lists the deterministic-agent caches to delete BEFORE the
+// resume goroutine dispatches; mirrors Advance's body shape so the operator
+// can selectively wipe Phase A caches before re-execution from a failed
+// Phase A entry stage. Empty / missing → no deletions.
 type resumeRequest struct {
-	ConfirmInconsistent bool `json:"confirm_inconsistent"`
+	ConfirmInconsistent bool     `json:"confirm_inconsistent"`
+	DropCaches          []string `json:"drop_caches"`
 }
 
 // Resume handles POST /api/runs/{id}/resume.
-// Body is optional. Empty body → confirm_inconsistent defaults to false.
+// Body is optional. Empty body → confirm_inconsistent defaults to false and
+// drop_caches stays nil.
 // Malformed, too-large, or unknown-field bodies are rejected with 400 so
 // clients do not silently fall back to default behavior on typos
 // (e.g. {"force":true} instead of {"confirm_inconsistent":true}).
+//
+// Optional drop_caches: each entry must be a key of cacheFiles; the listed
+// cache files are deleted SYNCHRONOUSLY between PrepareResume and the
+// goroutine launch so the engine sees a clean slate. Validation rejects the
+// whole request on an unknown stage — no partial deletions on bad input.
+// Missing files are not errors. This mirrors Advance's drop_caches contract
+// so a single client implementation handles both pending start and failed
+// Phase A resume.
 //
 // Resume runs Phase B (TTS/image, minutes-long) which exceeds the server's
 // 30s WriteTimeout. The handler runs PrepareResume synchronously (validation,
@@ -376,11 +390,53 @@ func (h *RunHandler) Resume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate every requested drop stage BEFORE we touch the run or the
+	// filesystem. An unknown stage is a typo, not a partial-success scenario;
+	// reject the entire request so no files are deleted on bad input.
+	//
+	// "scenario" is intentionally rejected on Resume: scenario.json is the
+	// Phase A *output*, not a deterministic-agent envelope cache, and Phase
+	// B/C reads it as input. Allowing a Resume to drop scenario.json would
+	// silently corrupt downstream stages. Pending-start deletions still allow
+	// "scenario" via Advance because the run is restarting from zero.
+	for _, stage := range body.DropCaches {
+		if _, ok := cacheFiles[stage]; !ok {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR",
+				fmt.Sprintf("drop_caches contains unknown stage %q (valid: %s)", stage, strings.Join(cacheStageOrder, ", ")),
+				false)
+			return
+		}
+		if stage == "scenario" {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR",
+				"drop_caches[\"scenario\"] is not allowed on resume — scenario.json is a Phase A output that downstream stages depend on; use POST /api/runs/{id}/rewind to scenario for a full restart",
+				false)
+			return
+		}
+	}
+
 	run, report, err := h.svc.PrepareResume(r.Context(), id, body.ConfirmInconsistent)
 	if err != nil {
 		h.logger.Error("resume run", "run_id", id, "error", err)
 		writeDomainError(w, err)
 		return
+	}
+
+	// Synchronous deletion BEFORE the goroutine: guarantees the executor sees
+	// the post-delete state and lets tests observe deletions immediately
+	// after the handler returns. Missing file → not an error (idempotent).
+	// Non-ENOENT errors abort with 500 — silently swallowing would defeat the
+	// operator's "drop" intent and leave a stale envelope in place.
+	for _, stage := range body.DropCaches {
+		filename := cacheFiles[stage]
+		full := filepath.Join(h.outputDir, id, filename)
+		if err := os.Remove(full); err != nil && !errors.Is(err, os.ErrNotExist) {
+			h.logger.Error("drop cache failed", "run_id", id, "stage", stage, "error", err.Error())
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+				fmt.Sprintf("failed to drop cache %q: %s", stage, err.Error()),
+				false)
+			return
+		}
+		h.logger.Info("cache dropped", "run_id", id, "stage", stage, "filename", filename)
 	}
 
 	go func() {
@@ -555,12 +611,17 @@ func (h *RunHandler) Advance(w http.ResponseWriter, r *http.Request) {
 	// Synchronous deletion BEFORE the goroutine: guarantees the engine sees
 	// the post-delete state and lets tests observe deletions immediately
 	// after the handler returns. Missing file → not an error (idempotent).
+	// Non-ENOENT errors abort with 500 — silently swallowing would defeat the
+	// operator's "drop" intent and leave a stale envelope in place.
 	for _, stage := range body.DropCaches {
 		filename := cacheFiles[stage]
 		full := filepath.Join(h.outputDir, id, filename)
 		if err := os.Remove(full); err != nil && !errors.Is(err, os.ErrNotExist) {
-			h.logger.Warn("drop cache failed", "run_id", id, "stage", stage, "error", err.Error())
-			continue
+			h.logger.Error("drop cache failed", "run_id", id, "stage", stage, "error", err.Error())
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+				fmt.Sprintf("failed to drop cache %q: %s", stage, err.Error()),
+				false)
+			return
 		}
 		h.logger.Info("cache dropped", "run_id", id, "stage", stage, "filename", filename)
 	}

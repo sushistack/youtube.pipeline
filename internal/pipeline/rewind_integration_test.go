@@ -264,6 +264,45 @@ func TestEngineRewind_ToScenario_FullReset(t *testing.T) {
 	}
 }
 
+// TestEngineRewind_ToScenario_PreservesCacheDir pins the contract that scenario
+// rewind preserves {runDir}/_cache/ so the pending-screen drop_caches panel can
+// surface the entries on the next mount. tryLoadCache fingerprint invalidation
+// is the safety net for staleness; this test only asserts the bytes survive.
+func TestEngineRewind_ToScenario_PreservesCacheDir(t *testing.T) {
+	h := newRewindHarness(t)
+	h.seedRunAtMetadataAckWithArtifacts()
+
+	runDir := filepath.Join(h.outDir, h.runID)
+	cacheDir := filepath.Join(runDir, "_cache")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("mkdir _cache: %v", err)
+	}
+	researchPath := filepath.Join(cacheDir, "research_cache.json")
+	structurePath := filepath.Join(cacheDir, "structure_cache.json")
+	if err := os.WriteFile(researchPath, []byte(`{"envelope_version":1,"fingerprint":"r"}`), 0644); err != nil {
+		t.Fatalf("write research cache: %v", err)
+	}
+	if err := os.WriteFile(structurePath, []byte(`{"envelope_version":1,"fingerprint":"s"}`), 0644); err != nil {
+		t.Fatalf("write structure cache: %v", err)
+	}
+
+	if _, err := h.engine.Rewind(context.Background(), h.runID, pipeline.StageNodeScenario); err != nil {
+		t.Fatalf("Rewind(scenario): %v", err)
+	}
+
+	if !h.fileExists("_cache/research_cache.json") {
+		t.Errorf("research cache must survive scenario rewind so the pending panel can surface it")
+	}
+	if !h.fileExists("_cache/structure_cache.json") {
+		t.Errorf("structure cache must survive scenario rewind so the pending panel can surface it")
+	}
+	// scenario.json (Phase A output, not a deterministic-agent envelope cache)
+	// must still be removed alongside the other artifacts.
+	if h.fileExists("scenario.json") {
+		t.Errorf("scenario rewind must still remove scenario.json — only _cache/ is preserved")
+	}
+}
+
 func TestEngineRewind_ToCharacter_PreservesPhaseA(t *testing.T) {
 	h := newRewindHarness(t)
 	h.seedRunAtMetadataAckWithArtifacts()

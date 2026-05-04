@@ -682,3 +682,23 @@ Spec: `_bmad-output/implementation-artifacts/spec-polisher-whole-scenario-polish
 **Dequeue trigger.** First time a CI parallelism bump or operator concurrency causes a corrupted manifest in trunk.
 
 **Files.** `internal/critic/eval/manifest.go:saveManifest` (atomic write via `os.Rename`), optional flock around load+save.
+
+---
+
+## Phase A cache-control follow-ups (deferred from spec-rewind-preserve-cache review, 2026-05-04)
+
+**What.** Edge-case + acceptance review on the uniform-Phase-A-cache-control spec surfaced 5 items not in this story's scope but worth tracking:
+
+1. **`confirm_inconsistent` is not surfaced from `apiClient.resumeRun`.** Backend accepts both `confirm_inconsistent` and `drop_caches`; the JS wrapper only sends `drop_caches`. A run flagged by the orphan reconciler auto-bypasses the consistency gate, but a normal failed run with FS/DB mismatches will return 400 with no UI escape hatch matching the CLI's `--force`. Not a regression — this is pre-existing behavior — but the panel work made the gap more visible.
+2. **CancelRegistry race in `Resume` drop_caches.** The handler deletes `_cache/x.json` after `PrepareResume` but a still-running prior Phase A goroutine could re-write the envelope between deletion and the new `ExecuteResume` goroutine starting. Move drop_caches deletion under the same registry/lock that protects `PrepareResume`'s state transitions. Single-operator usage makes the race essentially unreachable today.
+3. **Goroutine launched even if run was cancelled in the gap.** `Resume` and `Advance` both kick off goroutines on `context.Background()`; if the operator cancels in another tab between `PrepareResume` and the `go func()`, the engine still re-runs Phase A. Pre-existing pattern, not specific to drop_caches.
+4. **Duplicate `drop_caches` entries are silently de-duplicated by ENOENT.** A `drop_caches=["research","research"]` body double-removes the same file, second call returns ENOENT and is swallowed; two "cache dropped" Info lines are emitted. Harmless idempotent but worth dedup-validating to surface client typos.
+5. **Scenario rewind does not clear `runs.retry_reason`.** Spec `Always: Only the cache-dir flag changes` keeps the rewind plan minimal, but the stale `retry_reason` from the prior failed attempt persists into the post-rewind run summary, where `getFailureMessage` could surface misleading copy on a future failure. Add `ClearRetryReason` to `RewindPlan` for `StageNodeScenario` (and audit other rewind nodes too).
+6. **End-to-end test: post-scenario-rewind Advance reuses cached envelopes.** Spec AC #2 calls for verifying cache hits on the next Advance after rewind via the `agent cache hit` log line. Current integration test only proves files survive rewind. A fuller agent-stub spy in `rewind_integration_test.go` would close the gap.
+7. **Rewind confirmation modal copy audit.** Spec design notes flag a search for "cache will" / "캐시" in `web/src/`; a follow-up should run `git grep -i "cache will\|캐시" web/src/` and either patch any rewind-modal hit or note the no-hit result.
+
+**Why deferred.** Items 1–4 are pre-existing patterns or edge cases unrelated to the cache-control gap this story closed. Item 5 is explicitly out-of-scope per the spec's `Always: Only the cache-dir flag changes` constraint and would need its own renegotiation. Item 6 requires nontrivial test-harness wiring of agent stubs across rewind+advance and was scope-bounded out. Item 7 is an optional copy follow-up that the spec called out as conditional on a grep hit.
+
+**Dequeue trigger.** Item 1: any operator hits a 400 on resume with FS mismatch and no `--force` UI option. Item 2: multi-operator usage or a real prior-attempt-still-running race observed. Item 5: stale retry_reason text confuses an operator post-rewind. Item 6: someone changes Phase A caching semantics and wants regression coverage. Item 7: trivially run `git grep` on next pass.
+
+**Files.** Item 1: `web/src/lib/apiClient.ts:resumeRun`, FailureBanner. Item 2: `internal/api/handler_run.go:Resume`, `internal/pipeline/resume.go:PrepareResume`. Item 5: `internal/pipeline/rewind_plan.go`, `internal/pipeline/rewind.go:applyRewindFS`+ApplyRewindReset, `internal/db/runstore.go`. Item 6: `internal/pipeline/rewind_integration_test.go`. Item 7: `web/src/components/**`.

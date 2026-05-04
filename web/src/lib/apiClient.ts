@@ -143,12 +143,25 @@ export function fetchRunStatus(run_id: string) {
   );
 }
 
-export function resumeRun(run_id: string) {
+// resumeRun re-enters a failed or waiting run at its current stage.
+//
+// Optional drop_caches: list of deterministic-agent stages whose cached
+// artifacts the operator unchecked in the failure-banner cache panel. Sent as
+// `{"drop_caches": [...]}` body ONLY when the array is non-empty — keeping
+// the legacy resume call shape (empty body object) for callers that don't
+// pass options. Mirrors advanceRun's contract so the same UI panel composes
+// against either endpoint depending on the run's status surface.
+export function resumeRun(
+  run_id: string,
+  options?: { drop_caches?: string[] },
+) {
+  const drop_caches = options?.drop_caches ?? [];
+  const body = drop_caches.length > 0 ? { drop_caches } : {};
   return apiRequest(
     `/runs/${encodeURIComponent(run_id)}/resume`,
     runResumeResponseSchema,
     {
-      body: JSON.stringify({}),
+      body: JSON.stringify(body),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     },

@@ -158,6 +158,50 @@ export function isRunPollable(status: RunStatus) {
   return isRunLive(status) || status === 'pending'
 }
 
+// Mirrors the backend's pipeline.isPhaseAEntryStage. Phase A entry stages are
+// the deterministic-agent + writer chain that runs before scenario_review;
+// they are the only stages where _cache/research_cache.json and
+// _cache/structure_cache.json are consulted, so the cache panel only makes
+// sense for runs failed at one of these stages.
+const PHASE_A_ENTRY_STAGES: ReadonlySet<RunStage> = new Set<RunStage>([
+  'pending',
+  'research',
+  'structure',
+  'write',
+  'visual_break',
+  'review',
+  'critic',
+])
+
+export function isPhaseAEntryStage(stage: RunStage | null | undefined) {
+  return stage != null && PHASE_A_ENTRY_STAGES.has(stage)
+}
+
+// formatRelativeMtime renders an RFC3339 modified_at timestamp as a short
+// relative string ("3m ago", "2h ago", "5d ago") for the cache-panel metadata
+// line. Falls back to the raw input on parse failure so the operator always
+// sees something rather than a silent empty cell.
+export function formatRelativeMtime(iso: string): string {
+  const parsed_ms = Date.parse(iso)
+  if (Number.isNaN(parsed_ms)) {
+    return iso
+  }
+  const delta_seconds = Math.max(0, Math.floor((Date.now() - parsed_ms) / 1000))
+  if (delta_seconds < 60) {
+    return `${delta_seconds}s ago`
+  }
+  const delta_minutes = Math.floor(delta_seconds / 60)
+  if (delta_minutes < 60) {
+    return `${delta_minutes}m ago`
+  }
+  const delta_hours = Math.floor(delta_minutes / 60)
+  if (delta_hours < 24) {
+    return `${delta_hours}h ago`
+  }
+  const delta_days = Math.floor(delta_hours / 24)
+  return `${delta_days}d ago`
+}
+
 export function formatCurrency(cost_usd: number) {
   return new Intl.NumberFormat('en-US', {
     currency: 'USD',
