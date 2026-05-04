@@ -74,7 +74,7 @@ type actCallMeta struct {
 }
 
 const (
-	writerPerStageRetryBudget = 1   // one retry per stage on schema/validation failure
+	writerPerStageRetryBudget = 2   // up to two retries per stage on schema/validation failure (segmenter sentence-boundary rule benefits from a second nudge)
 	priorActTailRuneCap       = 240 // bound on the prior-act monologue tail injected into the next act's stage-1 prompt
 	beatCountMin              = 8   // plan resolution P2: 8–10 beats per act
 	beatCountMax              = 10

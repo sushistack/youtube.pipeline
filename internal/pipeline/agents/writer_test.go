@@ -269,8 +269,10 @@ func TestWriter_Stage2_OffsetsOutOfRange_RetriesThenFails(t *testing.T) {
 	gen := newTwoStageFakeGen()
 	// Act 1 stage-1 OK
 	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
-	// Act 1 stage-2 produces an out-of-range end_offset, then again on retry.
+	// Act 1 stage-2 produces an out-of-range end_offset on every attempt.
+	// budget=2 → up to 3 attempts.
 	bad := badBeatsResponse(domain.ActIncident, 99999)
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 
@@ -288,9 +290,9 @@ func TestWriter_Stage2_OffsetsOutOfRange_RetriesThenFails(t *testing.T) {
 	if state.Narration != nil {
 		t.Fatalf("state.Narration must remain unset on failure: %+v", state.Narration)
 	}
-	// Retry budget = 1 → 2 total attempts.
-	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 2 {
-		t.Fatalf("segmenter call count=%d, want 2 (1 + 1 retry)", got)
+	// Retry budget = 2 → 3 total attempts.
+	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 3 {
+		t.Fatalf("segmenter call count=%d, want 3 (1 + 2 retries)", got)
 	}
 }
 
@@ -300,6 +302,8 @@ func TestWriter_Stage2_OverlappingOffsets_RetriesThenFails(t *testing.T) {
 	gen := newTwoStageFakeGen()
 	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
 	bad := overlappingBeatsResponse(domain.ActIncident)
+	// budget=2 → up to 3 attempts.
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 
@@ -324,6 +328,8 @@ func TestWriter_Stage2_BeatCountOutOfRange_FailsAfterRetry(t *testing.T) {
 	gen := newTwoStageFakeGen()
 	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
 	bad := nBeatsResponse(domain.ActIncident, 5) // 5 beats — below the 8 floor
+	// budget=2 → up to 3 attempts; queue one bad response per attempt.
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 
@@ -373,6 +379,8 @@ func TestWriter_Stage2_TruncationRetryExhausted_AtomicFailure(t *testing.T) {
 
 	gen := newTwoStageFakeGen()
 	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
+	// budget=2 → up to 3 attempts.
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, "{garbage}", "length")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, "{garbage}", "length")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, "{garbage}", "length")
 
@@ -626,6 +634,8 @@ func TestWriter_Stage2_MidSentenceCut_RetriesThenFails(t *testing.T) {
 	gen := newTwoStageFakeGen()
 	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
 	bad := mkBadCuts(domain.ActIncident)
+	// budget=2 → up to 3 attempts.
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
 
@@ -643,9 +653,9 @@ func TestWriter_Stage2_MidSentenceCut_RetriesThenFails(t *testing.T) {
 	if state.Narration != nil {
 		t.Fatalf("state.Narration must remain unset on failure: %+v", state.Narration)
 	}
-	// Retry budget = 1 → 2 total attempts.
-	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 2 {
-		t.Fatalf("segmenter call count=%d, want 2 (1 + 1 retry)", got)
+	// Retry budget = 2 → 3 total attempts.
+	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 3 {
+		t.Fatalf("segmenter call count=%d, want 3 (1 + 2 retries)", got)
 	}
 }
 
