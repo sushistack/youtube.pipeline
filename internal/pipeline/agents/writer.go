@@ -449,10 +449,14 @@ func runWriterActBeats(
 		}
 		// Snap LLM offsets to sentence terminals BEFORE validation: qwen-plus
 		// repeatedly emits mid-sentence cuts even after the prompt's hard
-		// instruction (observed across 3 retries, all rejected). ±25 rune
-		// post-process absorbs the typical drift so the validator's hard fail
-		// only triggers when the monologue genuinely lacks a clean cut in range.
-		snapBeatBoundariesToSentences(decoded.Beats, []rune(mono.Monologue), 25)
+		// instruction (observed across 3 retries, all rejected). ±50 rune
+		// window: empirically, dense-paragraph regions have terminals every
+		// ~12 runes (snap to nearest, e.g. +12 wins), while
+		// sparse-monologue paragraphs (one ~80-rune sentence) need up to
+		// ~30+ rune drift to land on a clean cut. 25 was tight enough that
+		// SCP-049 act 3 paragraph 2 hit no terminal in range; 50 absorbs
+		// observed worst case (+31) with headroom.
+		snapBeatBoundariesToSentences(decoded.Beats, []rune(mono.Monologue), 50)
 		if err := validateWriterSegmenterResponse(spec, decoded, mono.Monologue, monologueRuneCount); err != nil {
 			finalErr = err
 			return result{}, retryReasonSchemaValidation, err
