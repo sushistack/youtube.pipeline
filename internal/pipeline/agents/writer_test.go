@@ -181,12 +181,14 @@ func mustTerms(t *testing.T) *ForbiddenTerms {
 
 // validMonologueForAct returns a placeholder monologue exactly at the per-act
 // rune cap floor so tests stay green even after rune-cap rescales. The string
-// is composed of a single repeating Korean syllable so rune count is
-// predictable.
+// is composed of 8 nine-syllable Korean clauses each terminated with `.`,
+// totalling 80 runes — predictable for offset math, and every 10-rune
+// boundary lands on a `.` so the segmenter sentence-boundary validator
+// accepts the canonical 8-beat × 10-rune fixture.
 func validMonologueForAct(actID string) string {
-	// Use ~80 runes for any act — well under all caps (480/1600/2080/1120),
-	// well over zero. Same length across acts so tests can share offset math.
-	return strings.Repeat("가", 80)
+	// Each clause is `가가가가가가가가가.` = 10 runes ending in a sentence
+	// terminal. 8 clauses × 10 runes = 80 runes total.
+	return strings.Repeat(strings.Repeat("가", 9)+".", 8)
 }
 
 func validMonologueResponse(actID string) string {
@@ -493,9 +495,12 @@ func TestWriter_FullCascadeOk_ScriptValidatorFailure_LeavesNarrationNil(t *testi
 	// per-stage validators do NOT scan forbidden terms — that check fires
 	// at script level, after all 4 acts complete.
 	mkPoisonedMonologueResponse := func(actID string) string {
-		// Append " wiki " to a normal monologue. Still well under any per-act
-		// rune cap (validMonologueForAct = 80 runes; minimum cap is 480).
-		raw := []byte(`{"act_id":"` + actID + `","monologue":"` + strings.Repeat("가", 80) + ` wiki ","mood":"tense","key_points":["first","second"]}`)
+		// Append " wiki " to a sentence-terminated monologue. Still well under
+		// any per-act rune cap (validMonologueForAct = 80 runes; minimum cap
+		// is 480). Reuses the canonical 8-clause-with-period pattern so the
+		// segmenter sentence-boundary validator accepts the standard 8-beat
+		// fixture.
+		raw := []byte(`{"act_id":"` + actID + `","monologue":"` + validMonologueForAct(actID) + ` wiki ","mood":"tense","key_points":["first","second"]}`)
 		return string(raw)
 	}
 
@@ -583,6 +588,64 @@ func TestWriter_RejectsMissingSegmenterModel(t *testing.T) {
 		mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
 	if err == nil || !strings.Contains(err.Error(), "stage-2 model") {
 		t.Fatalf("expected stage-2 model error, got %v", err)
+	}
+}
+
+// --- I/O matrix: stage-2 mid-sentence cut ------------------------------
+
+func TestWriter_Stage2_MidSentenceCut_RetriesThenFails(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// Build a beats response whose end_offsets land mid-syllable (i*10 + 5)
+	// — every cut lands on `가`, never on `.`. The sentence-boundary
+	// validator must reject every attempt.
+	mkBadCuts := func(actID string) string {
+		beats := []map[string]any{}
+		for i := 0; i < 8; i++ {
+			start := i * 10
+			end := i*10 + 5
+			if i == 7 {
+				end = 80
+			}
+			beats = append(beats, map[string]any{
+				"start_offset":       start,
+				"end_offset":         end,
+				"mood":               "tense",
+				"location":           "site-19",
+				"characters_present": []string{"SCP-TEST"},
+				"entity_visible":     true,
+				"color_palette":      "gray",
+				"atmosphere":         "subdued",
+				"fact_tags":          []map[string]string{},
+			})
+		}
+		resp, _ := json.Marshal(map[string]any{"act_id": actID, "beats": beats})
+		return string(resp)
+	}
+
+	gen := newTwoStageFakeGen()
+	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
+	bad := mkBadCuts(domain.ActIncident)
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, bad, "")
+
+	state := freshWriterState()
+	err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err == nil {
+		t.Fatal("expected mid-sentence cut failure, got nil")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("error chain must include ErrValidation, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "mid-sentence") {
+		t.Fatalf("error should mention mid-sentence cut, got: %v", err)
+	}
+	if state.Narration != nil {
+		t.Fatalf("state.Narration must remain unset on failure: %+v", state.Narration)
+	}
+	// Retry budget = 1 → 2 total attempts.
+	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 2 {
+		t.Fatalf("segmenter call count=%d, want 2 (1 + 1 retry)", got)
 	}
 }
 
@@ -692,12 +755,20 @@ func badBeatsResponse(actID string, badEnd int) string {
 }
 
 func overlappingBeatsResponse(actID string) string {
+	// Both end_offsets land on sentence-terminal `.` boundaries (10, 20)
+	// so the sentence-boundary validator passes; the overlap is the first
+	// failure mode and the only one this fixture is intended to exercise.
+	// Beats: (0,20), (10,30), (20,40), (30,50), (40,60), (50,70), (60,80), (70,80)
+	// — beat[1].start_offset (10) < beat[0].end_offset (20) → overlap on beat[1].
 	beats := []map[string]any{}
 	for i := 0; i < 8; i++ {
-		// start at 0..70 step 10, but each beat ends at +15 → adjacent beats overlap by 5.
+		end := i*10 + 20
+		if end > 80 {
+			end = 80
+		}
 		beats = append(beats, map[string]any{
 			"start_offset":       i * 10,
-			"end_offset":         i*10 + 15,
+			"end_offset":         end,
 			"mood":               "tense",
 			"location":           "site-19",
 			"characters_present": []string{"SCP-TEST"},

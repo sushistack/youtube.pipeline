@@ -51,8 +51,8 @@ cost_cap_research: 1.25
 		t.Errorf("CostCapResearch = %f, want 1.25", cfg.CostCapResearch)
 	}
 	// Unset fields keep defaults.
-	if cfg.DashScopeRegion != "cn-beijing" {
-		t.Errorf("DashScopeRegion = %q, want default %q", cfg.DashScopeRegion, "cn-beijing")
+	if cfg.ImageProvider != "comfyui" {
+		t.Errorf("ImageProvider = %q, want default %q", cfg.ImageProvider, "comfyui")
 	}
 }
 

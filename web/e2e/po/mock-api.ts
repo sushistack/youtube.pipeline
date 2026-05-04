@@ -233,7 +233,6 @@ function defaultSettings(): SettingsFixture {
       tts_model: 'sambert-zhichu-v1',
       tts_voice: 'zhichu',
       tts_audio_format: 'mp3',
-      dashscope_region: 'cn-beijing',
       cost_cap_research: 0.05,
       cost_cap_write: 0.1,
       cost_cap_image: 0.2,

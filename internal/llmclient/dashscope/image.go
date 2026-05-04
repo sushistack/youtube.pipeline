@@ -20,14 +20,10 @@ var _ domain.ImageGenerator = (*ImageClient)(nil)
 
 const (
 	// DefaultImageEndpointIntl is the Singapore (international) sync
-	// multimodal-generation base URL. Use this when the API key was issued at
-	// modelstudio.console.alibabacloud.com.
+	// multimodal-generation base URL. This is the only supported region —
+	// China (Beijing) endpoints are not reachable from this deployment, so
+	// the region toggle was removed.
 	DefaultImageEndpointIntl = "https://dashscope-intl.aliyuncs.com"
-
-	// DefaultImageEndpointCN is the China (Beijing) base URL. Use this when
-	// the API key was issued at bailian.console.alibabacloud.com. API keys
-	// for the two regions are not interchangeable.
-	DefaultImageEndpointCN = "https://dashscope.aliyuncs.com"
 
 	// imagePath is the synchronous multimodal-generation surface used by
 	// qwen-image-2.0 / qwen-image-edit. Older async text2image endpoints have
@@ -53,13 +49,13 @@ const (
 // ImageClientConfig carries the construction-time parameters for ImageClient.
 type ImageClientConfig struct {
 	// Endpoint overrides the default DashScope base URL. When empty the
-	// international (Singapore) endpoint is used. Region-aware callers should
-	// pass DefaultImageEndpointCN explicitly when targeting Beijing.
+	// international (Singapore) endpoint is used. Tests may override; production
+	// always lands on DefaultImageEndpointIntl.
 	Endpoint string
 
-	// APIKey is the DashScope access key. Required. Must match the region
-	// of Endpoint — keys issued for Singapore are rejected by the Beijing
-	// endpoint with HTTP 401 InvalidApiKey, and vice versa.
+	// APIKey is the DashScope access key. Required. Must be a Singapore key —
+	// Beijing keys return HTTP 401 InvalidApiKey against the international
+	// endpoint.
 	APIKey string
 
 	// Clock is the clock used for elapsed-time accounting. nil means real time.

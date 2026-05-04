@@ -41,32 +41,6 @@ import (
 
 const viteDevServerURL = "http://localhost:5173"
 
-// ttsEndpointForRegion maps a DashScopeRegion config value to the qwen3-tts
-// MultiModalConversation endpoint. API keys are region-bound: a Singapore key
-// rejected by the Beijing endpoint surfaces as 401 InvalidApiKey, so callers
-// must pass the region that matches their issued key. Unknown values fall back
-// to the international endpoint to match the most common deployment outside
-// mainland China.
-func ttsEndpointForRegion(region string) string {
-	switch region {
-	case "cn-beijing":
-		return dashscope.DefaultTTSEndpointCN
-	default:
-		return dashscope.DefaultTTSEndpointIntl
-	}
-}
-
-// imageEndpointForRegion mirrors ttsEndpointForRegion for the qwen-image /
-// qwen-image-edit text2image surface. Same key-region binding applies.
-func imageEndpointForRegion(region string) string {
-	switch region {
-	case "cn-beijing":
-		return dashscope.DefaultImageEndpointCN
-	default:
-		return dashscope.DefaultImageEndpointIntl
-	}
-}
-
 // buildPhaseBRunner constructs a PhaseBRunner with real DashScope-backed
 // image and TTS tracks. Returns an error if the API key is missing or any
 // construction step fails; the caller decides how to handle the absence
@@ -138,7 +112,7 @@ func buildPhaseBRunner(
 		// this branch only swaps the image client (and its limiter).
 		realTTS, err := dashscope.NewTTSClient(httpClient, dashscope.TTSClientConfig{
 			APIKey:       dashScopeAPIKey,
-			Endpoint:     ttsEndpointForRegion(cfg.DashScopeRegion),
+			Endpoint:     dashscope.DefaultTTSEndpointIntl,
 			LanguageType: "Korean",
 		})
 		if err != nil {
@@ -168,7 +142,7 @@ func buildPhaseBRunner(
 	} else {
 		realTTS, err := dashscope.NewTTSClient(httpClient, dashscope.TTSClientConfig{
 			APIKey:       dashScopeAPIKey,
-			Endpoint:     ttsEndpointForRegion(cfg.DashScopeRegion),
+			Endpoint:     dashscope.DefaultTTSEndpointIntl,
 			LanguageType: "Korean",
 		})
 		if err != nil {
@@ -176,14 +150,14 @@ func buildPhaseBRunner(
 		}
 		realImage, err := dashscope.NewImageClient(httpClient, dashscope.ImageClientConfig{
 			APIKey:   dashScopeAPIKey,
-			Endpoint: imageEndpointForRegion(cfg.DashScopeRegion),
+			Endpoint: dashscope.DefaultImageEndpointIntl,
 			Clock:    clock.RealClock{},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("build image client: %w", err)
 		}
 		logger.Info("phase b image provider: dashscope",
-			"endpoint", imageEndpointForRegion(cfg.DashScopeRegion),
+			"endpoint", dashscope.DefaultImageEndpointIntl,
 			"generate_model", cfg.ImageModel,
 			"edit_model", cfg.ImageEditModel,
 		)
@@ -258,9 +232,10 @@ func makeTextGenerator(
 	switch provider {
 	case "dashscope":
 		return dashscope.NewTextClient(httpClient, dashscope.TextClientConfig{
-			APIKey:  apiKey,
-			Limiter: limiterFactory.DashScopeText(),
-			Logger:  logger,
+			APIKey:   apiKey,
+			Endpoint: dashscope.DefaultChatEndpointIntl,
+			Limiter:  limiterFactory.DashScopeText(),
+			Logger:   logger,
 		})
 	case "deepseek":
 		return deepseek.NewTextClient(httpClient, deepseek.TextClientConfig{
@@ -352,17 +327,11 @@ func buildPhaseARunner(
 	if err != nil {
 		return nil, fmt.Errorf("build phase a runner: writer generator (%s): %w", cfg.WriterProvider, err)
 	}
-	// Segmenter often runs against a different provider than the writer
-	// (qwen-plus on dashscope vs deepseek-v4-flash on deepseek). Reusing
-	// writerGen would route SegmenterModel to the wrong API and 400.
-	// Reuse the writer client only when both providers match, to avoid
-	// duplicating limiter+circuit state.
-	segmenterGen := writerGen
-	if cfg.SegmenterProvider != "" && cfg.SegmenterProvider != cfg.WriterProvider {
-		segmenterGen, err = makeTextGenerator(cfg.SegmenterProvider, segmenterKey, limiterFactory, httpClient, logger)
-		if err != nil {
-			return nil, fmt.Errorf("build phase a runner: segmenter generator (%s): %w", cfg.SegmenterProvider, err)
-		}
+	// Segmenter routed to its own provider (qwen-plus on dashscope vs
+	// deepseek on writer). Same-provider reuses the limiter via factory.
+	segmenterGen, err := makeTextGenerator(cfg.SegmenterProvider, segmenterKey, limiterFactory, httpClient, logger)
+	if err != nil {
+		return nil, fmt.Errorf("build phase a runner: segmenter generator (%s): %w", cfg.SegmenterProvider, err)
 	}
 	criticGen, err := makeTextGenerator(cfg.CriticProvider, criticKey, limiterFactory, httpClient, logger)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
@@ -83,13 +84,18 @@ const (
 // is unset for parallel agents.
 const defaultAgentConcurrency = 4
 
-// NewWriter constructs the v2 two-stage writer agent. Stage 1 (writerCfg,
-// qwen-max in serve.go) writes the act monologue; stage 2 (segmenterCfg,
-// qwen-plus) segments it into BeatAnchors. Per-act fan-out: stage 1 cascades
-// serially (Act N sees Act N-1's monologue tail for continuity), and each
-// act's stage 2 runs immediately after that act's stage 1 completes.
+// NewWriter constructs the v2 two-stage writer agent. Stage 1 (writerGen +
+// writerCfg, qwen-max in serve.go) writes the act monologue; stage 2
+// (segmenterGen + segmenterCfg, qwen-plus on DashScope) segments it into
+// BeatAnchors. Two distinct generators because stage 1 and stage 2 may live
+// on different providers (e.g. writer on deepseek for cost, segmenter on
+// dashscope so qwen-plus is callable).
 //
-// gen drives stage 1; segmenterGen drives stage 2. Both must be non-nil.
+// Per-act fan-out: stage 1 cascades serially (Act N sees Act N-1's monologue
+// tail for continuity), and each act's stage 2 runs immediately after that
+// act's stage 1 completes.
+//
+// writerGen drives stage 1; segmenterGen drives stage 2. Both must be non-nil.
 // They may be the same client when WriterProvider == SegmenterProvider, but
 // when the providers differ (e.g. deepseek writer + dashscope segmenter)
 // passing one client routes the segmenter model to the wrong API and
@@ -99,7 +105,7 @@ const defaultAgentConcurrency = 4
 // succeeds. A partial result (some acts have monologue but no beats) NEVER
 // persists. D6 owns resume implications.
 func NewWriter(
-	gen domain.TextGenerator,
+	writerGen domain.TextGenerator,
 	segmenterGen domain.TextGenerator,
 	writerCfg TextAgentConfig,
 	segmenterCfg TextAgentConfig,
@@ -123,7 +129,7 @@ func NewWriter(
 			return fmt.Errorf("writer: %w: stage-2 model is empty", domain.ErrValidation)
 		case segmenterCfg.Provider == "":
 			return fmt.Errorf("writer: %w: stage-2 provider is empty", domain.ErrValidation)
-		case gen == nil:
+		case writerGen == nil:
 			return fmt.Errorf("writer: %w: stage-1 generator is nil", domain.ErrValidation)
 		case segmenterGen == nil:
 			return fmt.Errorf("writer: %w: stage-2 generator is nil", domain.ErrValidation)
@@ -147,7 +153,7 @@ func NewWriter(
 		var firstMeta actCallMeta
 		priorTail := ""
 		for i, spec := range specs {
-			monoResp, monoMeta, err := runWriterActMonologue(ctx, gen, writerCfg, prompts, terms, state, spec, priorTail, qualityFeedback)
+			monoResp, monoMeta, err := runWriterActMonologue(ctx, writerGen, writerCfg, prompts, terms, state, spec, priorTail, qualityFeedback)
 			if err != nil {
 				return err
 			}
@@ -441,7 +447,7 @@ func runWriterActBeats(
 			finalErr = fmt.Errorf("writer: act %s segmenter: %w", spec.Act.ID, err)
 			return result{}, retryReasonJSONDecode, finalErr
 		}
-		if err := validateWriterSegmenterResponse(spec, decoded, monologueRuneCount); err != nil {
+		if err := validateWriterSegmenterResponse(spec, decoded, mono.Monologue, monologueRuneCount); err != nil {
 			finalErr = err
 			return result{}, retryReasonSchemaValidation, err
 		}
@@ -454,7 +460,7 @@ func runWriterActBeats(
 	return out.decoded, out.meta, nil
 }
 
-func validateWriterSegmenterResponse(spec writerActSpec, decoded writerSegmenterResponse, monologueRuneCount int) error {
+func validateWriterSegmenterResponse(spec writerActSpec, decoded writerSegmenterResponse, monologue string, monologueRuneCount int) error {
 	if decoded.ActID != spec.Act.ID {
 		return fmt.Errorf("writer: act %s segmenter: response act_id=%q: %w", spec.Act.ID, decoded.ActID, domain.ErrValidation)
 	}
@@ -463,6 +469,7 @@ func validateWriterSegmenterResponse(spec writerActSpec, decoded writerSegmenter
 		return fmt.Errorf("writer: act %s segmenter: beat count=%d outside [%d, %d]: %w",
 			spec.Act.ID, n, beatCountMin, beatCountMax, domain.ErrValidation)
 	}
+	monologueRunes := []rune(monologue)
 	prevEnd := 0
 	for i, beat := range decoded.Beats {
 		if beat.StartOffset < 0 {
@@ -480,6 +487,9 @@ func validateWriterSegmenterResponse(spec writerActSpec, decoded writerSegmenter
 		if beat.StartOffset < prevEnd {
 			return fmt.Errorf("writer: act %s segmenter: beat[%d] start_offset=%d overlaps prev end_offset=%d: %w",
 				spec.Act.ID, i, beat.StartOffset, prevEnd, domain.ErrValidation)
+		}
+		if err := validateBeatSentenceBoundary(spec.Act.ID, i, beat, monologueRunes); err != nil {
+			return err
 		}
 		if strings.TrimSpace(beat.Mood) == "" {
 			return fmt.Errorf("writer: act %s segmenter: beat[%d] mood is empty: %w", spec.Act.ID, i, domain.ErrValidation)
@@ -499,6 +509,63 @@ func validateWriterSegmenterResponse(spec writerActSpec, decoded writerSegmenter
 		prevEnd = beat.EndOffset
 	}
 	return nil
+}
+
+// sentenceTerminalRunes are the runes that legitimately end a beat slice. The
+// Korean predicate enders 다/요/죠/세요/네요 always carry a trailing `.`, so the
+// `.` carries the sentence-end signal, not the syllable. `…` is included for
+// the single-codepoint horizontal ellipsis (writers commonly emit this rather
+// than three dots). `\n` covers paragraph breaks. The closing-quote runes
+// cover beats that legitimately end after dialogue.
+var sentenceTerminalRunes = map[rune]struct{}{
+	'.':  {},
+	'?':  {},
+	'!':  {},
+	'…':  {},
+	'\n': {},
+}
+
+// isTrailingSkipRune is true for runes that may legitimately appear after
+// the sentence-terminal rune at the end of a beat: whitespace plus closing
+// quote / bracket characters (e.g. `안녕!"` — the `!` is the terminal, the
+// `"` is a wrapper).
+func isTrailingSkipRune(r rune) bool {
+	if unicode.IsSpace(r) {
+		return true
+	}
+	switch r {
+	case '"', '\'', '」', '』', '】', ')', '）':
+		return true
+	}
+	return false
+}
+
+// validateBeatSentenceBoundary rejects beats whose `end_offset` does not
+// land immediately after a sentence-terminal rune (or paragraph break). The
+// last meaningful rune in the slice is found by walking back over trailing
+// whitespace before checking — TTS artifacts ("…때의 [pause] 기록입니다") arise
+// when the segmenter cuts mid-sentence, so a hard validator forces retries
+// until the LLM picks a clean cut.
+func validateBeatSentenceBoundary(actID string, idx int, beat domain.BeatAnchor, monologueRunes []rune) error {
+	end := beat.EndOffset
+	for end > beat.StartOffset {
+		r := monologueRunes[end-1]
+		if isTrailingSkipRune(r) {
+			end--
+			continue
+		}
+		if _, ok := sentenceTerminalRunes[r]; ok {
+			return nil
+		}
+		return fmt.Errorf(
+			"writer: act %s segmenter: beat[%d] ends mid-sentence at rune %q (end_offset=%d) — beat slices must end on '.', '?', '!', '…', or paragraph break: %w",
+			actID, idx, r, beat.EndOffset, domain.ErrValidation,
+		)
+	}
+	return fmt.Errorf(
+		"writer: act %s segmenter: beat[%d] is whitespace-only: %w",
+		actID, idx, domain.ErrValidation,
+	)
 }
 
 func renderWriterActPrompt(
@@ -601,21 +668,31 @@ func renderForbiddenTermsSection(patterns []string) string {
 }
 
 // renderFactTagCatalog distills the researcher output into the canonical
-// fact-tag catalog the segmenter can reference. Listed as `key: content`
-// lines so the LLM picks unique keys for `fact_tags[].key`.
+// fact-tag catalog the segmenter can reference. Each entry is rendered as a
+// JSON-shaped `{"key": "...", "content": "..."}` line so the LLM mimics the
+// exact object shape expected by `domain.FactTag`. Earlier plain-text
+// (`- key: content`) rendering led qwen-plus to emit `fact_tags` as flat
+// string arrays, which fails JSON decode against `[]FactTag`.
 func renderFactTagCatalog(r *domain.ResearcherOutput) string {
 	if r == nil {
 		return "(none)"
 	}
 	lines := []string{}
+	add := func(key, content string) {
+		raw, err := json.Marshal(domain.FactTag{Key: key, Content: content})
+		if err != nil {
+			return
+		}
+		lines = append(lines, "- "+string(raw))
+	}
 	if r.ObjectClass != "" {
-		lines = append(lines, fmt.Sprintf("- object_class: %s", r.ObjectClass))
+		add("object_class", r.ObjectClass)
 	}
 	for i, prop := range r.AnomalousProperties {
-		lines = append(lines, fmt.Sprintf("- anomaly_%d: %s", i+1, prop))
+		add(fmt.Sprintf("anomaly_%d", i+1), prop)
 	}
 	if r.OriginAndDiscovery != "" {
-		lines = append(lines, fmt.Sprintf("- origin: %s", r.OriginAndDiscovery))
+		add("origin", r.OriginAndDiscovery)
 	}
 	if len(lines) == 0 {
 		return "(none)"

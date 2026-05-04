@@ -11,7 +11,6 @@ export const settingsConfigSchema = z.object({
   critic_provider: z.string().min(1),
   image_provider: z.string().min(1),
   tts_provider: z.string().min(1),
-  dashscope_region: z.string().min(1),
   cost_cap_research: z.number().nonnegative(),
   cost_cap_write: z.number().nonnegative(),
   cost_cap_image: z.number().nonnegative(),

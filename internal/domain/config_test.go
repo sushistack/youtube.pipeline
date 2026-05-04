@@ -39,9 +39,6 @@ func TestDefaultConfig_AllFieldsPopulated(t *testing.T) {
 	if cfg.TTSProvider == "" {
 		t.Error("TTSProvider is empty")
 	}
-	if cfg.DashScopeRegion == "" {
-		t.Error("DashScopeRegion is empty")
-	}
 	if cfg.DataDir == "" {
 		t.Error("DataDir is empty")
 	}

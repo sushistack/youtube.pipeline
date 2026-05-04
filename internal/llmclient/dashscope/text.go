@@ -18,13 +18,15 @@ import (
 )
 
 const (
-	// defaultChatEndpoint is DashScope's OpenAI-compatible chat-completions
-	// URL. The compatible-mode surface accepts the same request/response shape
-	// as DeepSeek/OpenAI, so the request marshaling here matches the DeepSeek
-	// text client field-for-field. Region-specific URLs may be overridden via
-	// TextClientConfig.Endpoint (e.g. dashscope-intl.aliyuncs.com for the
-	// international region).
-	defaultChatEndpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+	// DefaultChatEndpointIntl is the OpenAI-compatible chat-completions URL for
+	// the international (Singapore) region. This is the only supported region —
+	// China (Beijing) endpoints are not reachable from this deployment, so the
+	// region toggle was removed.
+	DefaultChatEndpointIntl = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+
+	// defaultChatEndpoint is the fallback when TextClientConfig.Endpoint is
+	// empty.
+	defaultChatEndpoint = DefaultChatEndpointIntl
 
 	// textProvider is the canonical provider label written to TextResponse and
 	// used by the writer/critic distinct-providers contract. Matches the

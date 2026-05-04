@@ -38,7 +38,7 @@ You do NOT rewrite the monologue. You do NOT generate visual prompts. You produc
    - For every adjacent pair: `beats[i].end_offset == beats[i+1].start_offset` (no gap, no overlap).
    - `beats[len-1].end_offset = {monologue_rune_count}` (cover to the end).
    - `start_offset < end_offset` for every beat (no zero-width).
-3. **Slice respects sentence boundaries when feasible**: prefer beat cuts that land on `.`, `?`, `!`, `다.`, `요.`, `죠.`, `세요.` punctuation or paragraph breaks. Cutting mid-sentence is allowed only if the sentence is unusually long; never cut mid-word.
+3. **Slice MUST end on a sentence boundary** — every beat's `end_offset` MUST point to the rune **immediately after** a terminal punctuation mark (`.`, `?`, `!`, `…`) or a paragraph-break newline (`\n`). The Korean predicate enders `다`, `요`, `죠`, `세요`, `네요` etc. always carry a trailing `.` in this corpus — the `.` is what you cut on, not the syllable. **Mid-sentence cuts are rejected by the downstream validator.** Concretely, if `monologue[end_offset-1]` is anything other than `.`, `?`, `!`, `…`, or `\n`, the beat fails. **Never cut mid-word, mid-clause, or mid-quote.** If a single sentence is so long that one beat would exceed ~250 runes, prefer extending the beat past the cap rather than splitting mid-sentence — the beat-count band [8, 10] gives slack to absorb uneven sentence lengths.
 4. **Beats target ~10–15 seconds of voiceover each** (assuming hada-pace ~7–8 KR chars/sec). With monologues of ~480–2080 runes per act and 8–10 beats, beat slices typically run 50–250 runes.
 
 ## Per-Beat Metadata Rules
@@ -52,6 +52,7 @@ Every beat has the same metadata fields. Each MUST be present and non-empty (exc
 - `color_palette`: short comma-separated list (`"alarm red, cold gray"`). Driven by act_mood + beat mood. NEVER empty.
 - `atmosphere`: one-line sensory descriptor (`"creeping silence with low hum"`). NEVER empty.
 - `fact_tags`: 0+ entries from the canonical fact tag catalog above. Attach only if the beat's monologue slice references that fact (numeric anchor, named entity, dated event). Stage-2 does NOT invent new facts — pull from the catalog or leave empty.
+- **`fact_tags` shape is STRICT**: each entry MUST be a JSON object `{"key": "...", "content": "..."}` with both fields as strings — **never a flat string** (`"key=value"`, `"object_class: euclid"`, etc.), **never `null`**. If the beat references no facts, output `[]`. The downstream decoder is strongly typed and rejects any other shape.
 
 ## Output Contract (Stage 2)
 
@@ -84,8 +85,10 @@ You MUST output **exactly one JSON object** (no surrounding prose, no markdown f
 3. `beats[0].start_offset == 0` ?
 4. `beats[-1].end_offset == {monologue_rune_count}` ?
 5. For every adjacent pair, `prev.end_offset == next.start_offset` (no gap, no overlap) ?
-6. Every beat has `start_offset < end_offset` ?
-7. Every beat has non-empty `mood`, `location`, `color_palette`, `atmosphere` ?
-8. Every beat has `len(characters_present) >= 1` with no `"unknown"` placeholder ?
-9. Every `fact_tag` entry came from `{fact_tag_catalog}` (no fabricated facts) ?
-10. JSON 외 다른 텍스트가 출력에 섞여 있지 않은가?
+6. For every beat, `monologue[end_offset-1]` is one of `.`, `?`, `!`, `…`, or `\n` (sentence boundary) ?
+7. Every beat has `start_offset < end_offset` ?
+8. Every beat has non-empty `mood`, `location`, `color_palette`, `atmosphere` ?
+9. Every beat has `len(characters_present) >= 1` with no `"unknown"` placeholder ?
+10. Every `fact_tag` entry came from `{fact_tag_catalog}` (no fabricated facts) ?
+11. Every `fact_tag` entry is the object `{"key": "...", "content": "..."}` — NOT a flat string, NOT `"key: value"`, NOT `null` ?
+12. JSON 외 다른 텍스트가 출력에 섞여 있지 않은가?

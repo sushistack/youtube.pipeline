@@ -28,7 +28,6 @@ type SettingsConfigInput struct {
 	CriticProvider           string  `json:"critic_provider"`
 	ImageProvider            string  `json:"image_provider"`
 	TTSProvider              string  `json:"tts_provider"`
-	DashScopeRegion          string  `json:"dashscope_region"`
 	ComfyUIEndpoint          string  `json:"comfyui_endpoint"`
 	ComfyUILoRAName          string  `json:"comfyui_lora_name"`
 	ComfyUILoRAStrengthModel float64 `json:"comfyui_lora_strength_model"`

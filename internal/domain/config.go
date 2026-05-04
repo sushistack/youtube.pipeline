@@ -58,9 +58,6 @@ type PipelineConfig struct {
 	// TTSProvider is the provider for TTS synthesis ("dashscope" default).
 	TTSProvider string `yaml:"tts_provider" mapstructure:"tts_provider"`
 
-	// DashScope
-	DashScopeRegion string `yaml:"dashscope_region" mapstructure:"dashscope_region"`
-
 	// ComfyUIEndpoint is the local ComfyUI HTTP base URL used when
 	// ImageProvider == "comfyui". The default points at the standard ComfyUI
 	// 0.12.3 listener; operators on a non-default port override this through
@@ -195,7 +192,6 @@ func DefaultConfig() PipelineConfig {
 		CriticProvider:           "gemini",
 		ImageProvider:            "comfyui",
 		TTSProvider:              "dashscope",
-		DashScopeRegion:          "cn-beijing",
 		ComfyUIEndpoint:          "http://127.0.0.1:8188",
 		ComfyUILoRAName:          "",
 		ComfyUILoRAStrengthModel: 1.0,

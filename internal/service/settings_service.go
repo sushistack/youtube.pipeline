@@ -307,9 +307,6 @@ func validateSettingsConfig(cfg domain.PipelineConfig, env map[string]string, fi
 			fieldErrors[field] = "required"
 		}
 	}
-	if cfg.DashScopeRegion == "" {
-		fieldErrors["config.dashscope_region"] = "required"
-	}
 	if cfg.WriterProvider == cfg.CriticProvider && cfg.WriterProvider != "" {
 		fieldErrors["config.writer_provider"] = "Writer and Critic must use different LLM providers"
 		fieldErrors["config.critic_provider"] = "Writer and Critic must use different LLM providers"
@@ -355,7 +352,6 @@ func normalizeSettingsConfig(cfg domain.PipelineConfig) SettingsConfigInput {
 		CriticProvider:           cfg.CriticProvider,
 		ImageProvider:            cfg.ImageProvider,
 		TTSProvider:              cfg.TTSProvider,
-		DashScopeRegion:          cfg.DashScopeRegion,
 		ComfyUIEndpoint:          cfg.ComfyUIEndpoint,
 		ComfyUILoRAName:          cfg.ComfyUILoRAName,
 		ComfyUILoRAStrengthModel: cfg.ComfyUILoRAStrengthModel,
@@ -396,7 +392,6 @@ func applyEditableConfig(cfg *domain.PipelineConfig, input SettingsConfigInput) 
 	cfg.CriticProvider = input.CriticProvider
 	cfg.ImageProvider = input.ImageProvider
 	cfg.TTSProvider = input.TTSProvider
-	cfg.DashScopeRegion = input.DashScopeRegion
 	cfg.ComfyUIEndpoint = input.ComfyUIEndpoint
 	cfg.ComfyUILoRAName = input.ComfyUILoRAName
 	cfg.ComfyUILoRAStrengthModel = input.ComfyUILoRAStrengthModel

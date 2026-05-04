@@ -42,7 +42,6 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("image_edit_model", cfg.ImageEditModel)
 	v.SetDefault("writer_provider", cfg.WriterProvider)
 	v.SetDefault("critic_provider", cfg.CriticProvider)
-	v.SetDefault("dashscope_region", cfg.DashScopeRegion)
 	v.SetDefault("comfyui_endpoint", cfg.ComfyUIEndpoint)
 	v.SetDefault("comfyui_lora_name", cfg.ComfyUILoRAName)
 	v.SetDefault("comfyui_lora_strength_model", cfg.ComfyUILoRAStrengthModel)

@@ -41,7 +41,6 @@ export function ProviderConfigPanel({
           ['tts_model', 'TTS model'],
           ['tts_voice', 'TTS voice'],
           ['tts_audio_format', 'Audio format'],
-          ['dashscope_region', 'DashScope region'],
         ].map(([field, label]) => (
           <label key={field} className='settings-form__field'>
             <span>{label}</span>

@@ -151,7 +151,6 @@ describe('App', () => {
                 critic_provider: 'gemini',
                 image_provider: 'dashscope',
                 tts_provider: 'dashscope',
-                dashscope_region: 'cn-beijing',
                 cost_cap_research: 0.5,
                 cost_cap_write: 0.5,
                 cost_cap_image: 2,

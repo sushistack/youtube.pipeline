@@ -8,7 +8,6 @@ writer_provider: deepseek
 critic_provider: gemini
 image_provider: comfyui
 tts_provider: dashscope
-dashscope_region: intl
 data_dir: /mnt/data/raw
 output_dir: ./output
 db_path: ./pipeline.db

@@ -23,7 +23,6 @@ function defaultConfig(): SettingsConfig {
     critic_provider: '',
     image_provider: '',
     tts_provider: '',
-    dashscope_region: '',
     cost_cap_research: 0,
     cost_cap_write: 0,
     cost_cap_image: 0,
@@ -47,7 +46,6 @@ function validateSettings(config: SettingsConfig) {
     'tts_model',
     'tts_voice',
     'tts_audio_format',
-    'dashscope_region',
   ]
 
   for (const field of required_fields) {

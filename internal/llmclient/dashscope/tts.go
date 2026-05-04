@@ -14,13 +14,9 @@ import (
 
 const (
 	// DefaultTTSEndpointIntl is the Singapore (international) qwen3-tts URL.
-	// Use this when the API key was issued at modelstudio.console.alibabacloud.com.
+	// This is the only supported region — China (Beijing) endpoints are not
+	// reachable from this deployment, so the region toggle was removed.
 	DefaultTTSEndpointIntl = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
-
-	// DefaultTTSEndpointCN is the China (Beijing) qwen3-tts URL.
-	// Use this when the API key was issued at bailian.console.alibabacloud.com.
-	// API keys for the two regions are not interchangeable.
-	DefaultTTSEndpointCN = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
 	ttsProvider = "dashscope"
 
@@ -38,13 +34,13 @@ const (
 // TTSClientConfig carries the construction-time parameters for TTSClient.
 type TTSClientConfig struct {
 	// Endpoint overrides the default DashScope TTS URL. When empty the
-	// international (Singapore) endpoint is used. Region-aware callers should
-	// pass DefaultTTSEndpointCN explicitly when targeting Beijing.
+	// international (Singapore) endpoint is used. Tests may override; production
+	// always lands on DefaultTTSEndpointIntl.
 	Endpoint string
 
-	// APIKey is the DashScope access key. Required. Must match the region
-	// of Endpoint — keys issued for Singapore are rejected by the Beijing
-	// endpoint with HTTP 401 InvalidApiKey, and vice versa.
+	// APIKey is the DashScope access key. Required. Must be a Singapore key —
+	// Beijing keys return HTTP 401 InvalidApiKey against the international
+	// endpoint.
 	APIKey string
 
 	// LanguageType is forwarded as input.language_type. Empty means omit
