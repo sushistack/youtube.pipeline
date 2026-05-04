@@ -34,6 +34,15 @@ type PipelineConfig struct {
 	// Defaults to "wav" to match existing test fixtures.
 	TTSAudioFormat string `yaml:"tts_audio_format" mapstructure:"tts_audio_format"`
 
+	// TTSMaxInputBytes is the per-call UTF-8 byte cap the TTS chunker enforces
+	// when splitting the merged monologue into provider-sized chunks. Korean
+	// glyphs are 3 bytes each, so the qwen3-tts cap of 600 bytes ≈ 200 KR
+	// runes; D3 defaults to 560 for safety. Raising this widens chunks (fewer
+	// seams, larger per-call latency) up to whatever the provider currently
+	// accepts; the chunker degrades gracefully — a value larger than the
+	// merged monologue's byte length yields a single-call synthesis.
+	TTSMaxInputBytes int `yaml:"tts_max_input_bytes" mapstructure:"tts_max_input_bytes"`
+
 	// Provider names (for Writer ≠ Critic enforcement)
 	WriterProvider string `yaml:"writer_provider" mapstructure:"writer_provider"`
 	// SegmenterProvider names the provider for the v2 stage-2 segmenter.
@@ -161,6 +170,7 @@ func DefaultConfig() PipelineConfig {
 		TTSModel:                 "qwen3-tts-flash-2025-09-18",
 		TTSVoice:                 "Ethan",
 		TTSAudioFormat:           "wav",
+		TTSMaxInputBytes:         560,
 		ImageModel:               "qwen-image",
 		ImageEditModel:           "qwen-image-edit",
 		WriterProvider:           "deepseek",

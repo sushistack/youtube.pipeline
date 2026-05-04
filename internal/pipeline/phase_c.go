@@ -467,6 +467,13 @@ func validateProbedDuration(path string, dur float64) error {
 // yields a non-positive duration so callers cannot silently accept a
 // zero-duration artifact (R-10).
 func (r *PhaseCRunner) probeDuration(ctx context.Context, path string) (float64, error) {
+	return probeMediaDuration(ctx, path)
+}
+
+// probeMediaDuration is the package-level ffprobe helper. PhaseCRunner.probeDuration
+// is a method shell so existing call sites and tests stay stable; new callers
+// (TTS track's run-audio probe) use this free function directly.
+func probeMediaDuration(ctx context.Context, path string) (float64, error) {
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "quiet",
 		"-print_format", "json",

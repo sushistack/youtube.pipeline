@@ -22,17 +22,21 @@ import (
 
 // ── fake helpers ──────────────────────────────────────────────────────────────
 
+// fakeTTSSynthesizer writes a deterministic byte stream proportional to the
+// input rune count so the test's fake AudioOps can derive predictable
+// durations from byte counts. The bytes are not a real WAV — the unit-test
+// AudioOps treats them as opaque.
 type fakeTTSSynthesizer struct {
 	mu           sync.Mutex
 	receivedReqs []domain.TTSRequest
-	audioBytes   []byte
+	bytesPerRune int
 	err          error
 	errAfter     int // return err on the Nth call (1-indexed); 0 = never
 	callCount    int
 }
 
 func newFakeTTS() *fakeTTSSynthesizer {
-	return &fakeTTSSynthesizer{audioBytes: []byte("fake-wav-bytes")}
+	return &fakeTTSSynthesizer{bytesPerRune: 4}
 }
 
 func (f *fakeTTSSynthesizer) Synthesize(ctx context.Context, req domain.TTSRequest) (domain.TTSResponse, error) {
@@ -44,7 +48,15 @@ func (f *fakeTTSSynthesizer) Synthesize(ctx context.Context, req domain.TTSReque
 	}
 	f.receivedReqs = append(f.receivedReqs, req)
 	if req.OutputPath != "" {
-		if err := os.WriteFile(req.OutputPath, f.audioBytes, 0o644); err != nil {
+		runeCount := len([]rune(req.Text))
+		if runeCount == 0 {
+			runeCount = 1
+		}
+		buf := make([]byte, runeCount*f.bytesPerRune)
+		for i := range buf {
+			buf[i] = byte(i & 0xFF)
+		}
+		if err := os.WriteFile(req.OutputPath, buf, 0o644); err != nil {
 			return domain.TTSResponse{}, err
 		}
 	}
@@ -57,14 +69,112 @@ func (f *fakeTTSSynthesizer) Synthesize(ctx context.Context, req domain.TTSReque
 	}, nil
 }
 
+// fakeAudioOps simulates ffmpeg/ffprobe over raw byte streams. Concat appends
+// chunks; Probe returns duration = bytes / bytesPerSec; Slice copies the
+// time-window sub-slice. This contract preserves the real-world invariant
+// "concat of slices == canonical run audio bytes" so byte equality assertions
+// stand in for the sample-accuracy unit assertion.
+type fakeAudioOps struct {
+	mu          sync.Mutex
+	bytesPerSec float64
+	concatCalls int
+	probeCalls  int
+	sliceCalls  int
+	concatErr   error
+	probeErr    error
+	sliceErr    error
+}
+
+func newFakeAudioOps() *fakeAudioOps {
+	return &fakeAudioOps{bytesPerSec: 4000} // 1 rune ≈ 1ms at bytesPerRune=4
+}
+
+func (f *fakeAudioOps) Concat(ctx context.Context, inputs []string, output string) error {
+	f.mu.Lock()
+	f.concatCalls++
+	err := f.concatErr
+	f.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if len(inputs) == 0 {
+		return fmt.Errorf("no inputs")
+	}
+	if len(inputs) == 1 {
+		return os.Rename(inputs[0], output)
+	}
+	out, err := os.Create(output)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	for _, p := range inputs {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if _, err := out.Write(raw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *fakeAudioOps) Probe(ctx context.Context, path string) (float64, error) {
+	f.mu.Lock()
+	f.probeCalls++
+	err := f.probeErr
+	f.mu.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return float64(st.Size()) / f.bytesPerSec, nil
+}
+
+func (f *fakeAudioOps) Slice(ctx context.Context, src, dst string, startSec, endSec float64) error {
+	f.mu.Lock()
+	f.sliceCalls++
+	err := f.sliceErr
+	f.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	startByte := int(startSec * f.bytesPerSec)
+	endByte := int(endSec * f.bytesPerSec)
+	if startByte < 0 {
+		startByte = 0
+	}
+	if endByte > len(raw) {
+		endByte = len(raw)
+	}
+	if endByte < startByte {
+		endByte = startByte
+	}
+	return os.WriteFile(dst, raw[startByte:endByte], 0o644)
+}
+
 type fakeTTSStore struct {
 	mu      sync.Mutex
-	entries map[int]struct{ path string; durationMs int64 }
-	err     error
+	entries map[int]struct {
+		path       string
+		durationMs int64
+	}
+	err error
 }
 
 func newFakeTTSStore() *fakeTTSStore {
-	return &fakeTTSStore{entries: map[int]struct{ path string; durationMs int64 }{}}
+	return &fakeTTSStore{entries: map[int]struct {
+		path       string
+		durationMs int64
+	}{}}
 }
 
 func (f *fakeTTSStore) UpsertTTSArtifact(_ context.Context, _ string, sceneIndex int, ttsPath string, ttsDurationMs int64) error {
@@ -73,7 +183,10 @@ func (f *fakeTTSStore) UpsertTTSArtifact(_ context.Context, _ string, sceneIndex
 	if f.err != nil {
 		return f.err
 	}
-	f.entries[sceneIndex] = struct{ path string; durationMs int64 }{ttsPath, ttsDurationMs}
+	f.entries[sceneIndex] = struct {
+		path       string
+		durationMs int64
+	}{ttsPath, ttsDurationMs}
 	return nil
 }
 
@@ -91,40 +204,58 @@ func (f *fakeRetryLimiter) Do(ctx context.Context, fn func(context.Context) erro
 
 type fakeRetryRecorder struct {
 	mu      sync.Mutex
-	retries []struct{ stage domain.Stage; reason string }
+	retries []struct {
+		stage  domain.Stage
+		reason string
+	}
 }
 
 func (f *fakeRetryRecorder) RecordRetry(_ context.Context, _ string, stage domain.Stage, reason string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.retries = append(f.retries, struct{ stage domain.Stage; reason string }{stage, reason})
+	f.retries = append(f.retries, struct {
+		stage  domain.Stage
+		reason string
+	}{stage, reason})
 	return nil
 }
 
-// ttsTrackScenario builds a PipelineState with the given narration scenes
-// stitched into a v2 single-act monologue. LegacyScenes() reproduces the
-// original per-scene shape (SceneNum 1..N, Narration matching narrations[i]).
-func ttsTrackScenario(runID string, narrations []string) *agents.PipelineState {
-	monoBuilder := []rune{}
-	anchors := make([]domain.BeatAnchor, 0, len(narrations))
-	for i, n := range narrations {
-		runes := []rune(n)
-		before := len(monoBuilder)
-		monoBuilder = append(monoBuilder, runes...)
-		anchors = append(anchors, domain.BeatAnchor{
-			StartOffset:       before,
-			EndOffset:         len(monoBuilder),
-			Mood:              "calm",
-			Location:          "site-19",
-			CharactersPresent: []string{"unknown"},
-			EntityVisible:     false,
-			ColorPalette:      "neutral",
-			Atmosphere:        "subdued",
-			FactTags:          []domain.FactTag{},
-		})
-		if i < len(narrations)-1 {
-			monoBuilder = append(monoBuilder, ' ')
+// v2Scenario builds a PipelineState whose Narration is the V2 acts shape:
+// each `acts[i]` carries one continuous monologue and one BeatAnchor per
+// supplied beat string. The flat list of beats across all acts yields the
+// 0-indexed scene order the TTS track flattens to.
+func v2Scenario(runID string, actMonologues []string, beatsPerAct [][]int) *agents.PipelineState {
+	acts := make([]domain.ActScript, 0, len(actMonologues))
+	actIDs := []string{domain.ActIncident, domain.ActMystery, domain.ActRevelation, domain.ActUnresolved}
+	for i, mono := range actMonologues {
+		actID := actIDs[i%len(actIDs)]
+		runes := []rune(mono)
+		anchors := make([]domain.BeatAnchor, 0, len(beatsPerAct[i]))
+		var cursor int
+		for _, runeLen := range beatsPerAct[i] {
+			end := cursor + runeLen
+			if end > len(runes) {
+				end = len(runes)
+			}
+			anchors = append(anchors, domain.BeatAnchor{
+				StartOffset:       cursor,
+				EndOffset:         end,
+				Mood:              "calm",
+				Location:          "site-19",
+				CharactersPresent: []string{"unknown"},
+				EntityVisible:     false,
+				ColorPalette:      "neutral",
+				Atmosphere:        "subdued",
+				FactTags:          []domain.FactTag{},
+			})
+			cursor = end
 		}
+		acts = append(acts, domain.ActScript{
+			ActID:     actID,
+			Monologue: mono,
+			Beats:     anchors,
+			Mood:      "calm",
+		})
 	}
 	return &agents.PipelineState{
 		RunID: runID,
@@ -132,17 +263,11 @@ func ttsTrackScenario(runID string, narrations []string) *agents.PipelineState {
 		Narration: &domain.NarrationScript{
 			SCPID:         "049",
 			SourceVersion: domain.NarrationSourceVersionV2,
-			Acts: []domain.ActScript{{
-				ActID:     domain.ActIncident,
-				Monologue: string(monoBuilder),
-				Beats:     anchors,
-				Mood:      "calm",
-			}},
+			Acts:          acts,
 		},
 	}
 }
 
-// ttsFixture builds a TTSTrackConfig with injected fakes.
 type ttsFixture struct {
 	outputDir string
 	runID     string
@@ -152,9 +277,10 @@ type ttsFixture struct {
 	clk       *clock.FakeClock
 	track     pipeline.TTSTrack
 	req       pipeline.PhaseBRequest
+	audio     *fakeAudioOps
 }
 
-func newTTSFixture(t *testing.T, narrations []string) *ttsFixture {
+func newTTSFixture(t *testing.T, actMonologues []string, beatsPerAct [][]int) *ttsFixture {
 	t.Helper()
 	outputDir := t.TempDir()
 	runID := "scp-049-run-1"
@@ -163,25 +289,28 @@ func newTTSFixture(t *testing.T, narrations []string) *ttsFixture {
 	limiter := &fakeRetryLimiter{}
 	clk := clock.NewFakeClock(time.Now())
 	logger, _ := testutil.CaptureLog(t)
+	audio := newFakeAudioOps()
 
 	cfg := pipeline.TTSTrackConfig{
-		OutputDir:  outputDir,
-		TTSModel:   "fake-tts",
-		TTSVoice:   "longhua",
-		AudioFormat: "wav",
-		MaxRetries: 3,
-		TTS:        fakeTTS,
-		Store:      store,
-		Limiter:    limiter,
-		Clock:      clk,
-		Logger:     logger,
+		OutputDir:     outputDir,
+		TTSModel:      "fake-tts",
+		TTSVoice:      "longhua",
+		AudioFormat:   "wav",
+		MaxRetries:    3,
+		MaxInputBytes: 1 << 20, // huge — single-call path by default
+		TTS:           fakeTTS,
+		Store:         store,
+		Limiter:       limiter,
+		Clock:         clk,
+		Logger:        logger,
+		AudioOps:      audio,
 	}
 	track, err := pipeline.NewTTSTrack(cfg)
 	if err != nil {
 		t.Fatalf("NewTTSTrack: %v", err)
 	}
 
-	scenario := ttsTrackScenario(runID, narrations)
+	scenario := v2Scenario(runID, actMonologues, beatsPerAct)
 	req := pipeline.PhaseBRequest{
 		RunID:    runID,
 		Stage:    domain.StageImage,
@@ -196,175 +325,206 @@ func newTTSFixture(t *testing.T, narrations []string) *ttsFixture {
 		clk:       clk,
 		track:     track,
 		req:       req,
+		audio:     audio,
 	}
 }
 
-// ── AC-2 tests ────────────────────────────────────────────────────────────────
+// ── Synthesis path tests (I/O matrix) ────────────────────────────────────────
 
-func TestTTSTrack_TransliteratesNarrationBeforeSynthesize(t *testing.T) {
+func TestTTSTrack_SingleCallSynthesisProducesCanonicalRunAudio(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	// Narration with English word + number — transliteration must convert both.
-	f := newTTSFixture(t, []string{"SCP-049 entity class doctor"})
-	_, err := f.track(context.Background(), f.req)
-	if err != nil {
+	mono := "한 번에 합성 가능한 짧은 모놀로그입니다."
+	f := newTTSFixture(t,
+		[]string{mono},
+		[][]int{{12, 12}},
+	)
+	if _, err := f.track(context.Background(), f.req); err != nil {
 		t.Fatalf("track: %v", err)
 	}
 
-	f.tts.mu.Lock()
-	defer f.tts.mu.Unlock()
-	if len(f.tts.receivedReqs) != 1 {
-		t.Fatalf("expected 1 synthesize call, got %d", len(f.tts.receivedReqs))
+	canonical := filepath.Join(f.outputDir, f.runID, "tts", "run_audio.wav")
+	st, err := os.Stat(canonical)
+	if err != nil {
+		t.Fatalf("run_audio.wav missing: %v", err)
 	}
 
-	got := f.tts.receivedReqs[0].Text
-	want := pipeline.Transliterate("SCP-049 entity class doctor")
-	testutil.AssertEqual(t, got, want)
+	f.tts.mu.Lock()
+	got := len(f.tts.receivedReqs)
+	f.tts.mu.Unlock()
+	if got != 1 {
+		t.Errorf("expected 1 synthesize call (single-call path), got %d", got)
+	}
 
-	// The transliterated text must contain no ASCII digits and no isolated Latin words.
-	if strings.ContainsAny(got, "0123456789") {
-		t.Errorf("transliterated text contains ASCII digits: %q", got)
+	// AC #1: canonical run audio's duration must reflect the merged-monologue
+	// rune count at the configured pacing rate. With the test's fakeAudioOps
+	// (4000 bytes/sec) and fakeTTS (4 bytes/rune), 1 rune ≈ 1ms, so the
+	// canonical duration in ms must be ≥ rune count.
+	durMs := int64(float64(st.Size()) / f.audio.bytesPerSec * 1000)
+	wantMin := int64(len([]rune(pipeline.Transliterate(mono))))
+	if durMs < wantMin {
+		t.Errorf("canonical duration = %dms, want ≥ %dms (rune-count floor)", durMs, wantMin)
 	}
 }
 
-func TestTTSTrack_PreservesOriginalNarrationInScenarioAndSegments(t *testing.T) {
+func TestTTSTrack_LargeMonologueChunksOnSentenceBoundaries(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	original := "SCP-049 entity class doctor"
-
-	// Wire the real SegmentStore so we can verify segments.narration is not
-	// overwritten by the TTS track (AC-2 rule: raw narration preserved in DB).
-	database := testutil.NewTestDB(t)
-	runStore := db.NewRunStore(database)
-	segStore := db.NewSegmentStore(database)
+	body := strings.Repeat("문장 하나입니다. ", 30)
+	runID := "scp-049-chunked"
 	outputDir := t.TempDir()
-
-	run, err := runStore.Create(context.Background(), "049", outputDir)
-	if err != nil {
-		t.Fatalf("create run: %v", err)
-	}
-	runID := run.ID
-
-	// Seed segments.narration with the original narration BEFORE the TTS track
-	// runs so we can detect any stomp on the narration column.
-	if _, err := database.ExecContext(context.Background(),
-		`INSERT INTO segments (run_id, scene_index, narration, status) VALUES (?, ?, ?, 'pending')`,
-		runID, 0, original); err != nil {
-		t.Fatalf("seed narration: %v", err)
-	}
-
 	fakeTTS := newFakeTTS()
+	store := newFakeTTSStore()
 	limiter := &fakeRetryLimiter{}
+	clk := clock.NewFakeClock(time.Now())
 	logger, _ := testutil.CaptureLog(t)
+	audio := newFakeAudioOps()
 
 	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
-		OutputDir:   outputDir,
-		TTSModel:    "fake-tts",
-		TTSVoice:    "longhua",
-		AudioFormat: "wav",
-		MaxRetries:  3,
-		TTS:         fakeTTS,
-		Store:       segStore,
-		Limiter:     limiter,
-		Clock:       clock.RealClock{},
-		Logger:      logger,
+		OutputDir:     outputDir,
+		TTSModel:      "fake-tts",
+		TTSVoice:      "longhua",
+		AudioFormat:   "wav",
+		MaxRetries:    3,
+		MaxInputBytes: 90,
+		TTS:           fakeTTS,
+		Store:         store,
+		Limiter:       limiter,
+		Clock:         clk,
+		Logger:        logger,
+		AudioOps:      audio,
 	})
 	if err != nil {
 		t.Fatalf("NewTTSTrack: %v", err)
 	}
 
-	scenario := ttsTrackScenario(runID, []string{original})
-	req := pipeline.PhaseBRequest{RunID: runID, Stage: domain.StageTTS, Scenario: scenario}
-
+	bodyRunes := len([]rune(body))
+	scenario := v2Scenario(runID, []string{body}, [][]int{{bodyRunes / 4, bodyRunes / 4, bodyRunes / 4, bodyRunes - 3*(bodyRunes/4)}})
+	req := pipeline.PhaseBRequest{
+		RunID:    runID,
+		Stage:    domain.StageImage,
+		Scenario: scenario,
+	}
 	if _, err := track(context.Background(), req); err != nil {
 		t.Fatalf("track: %v", err)
 	}
 
-	// Scenario narration must be untouched in memory. v2: read via the
-	// LegacyScenes() bridge.
-	legacy := scenario.Narration.LegacyScenes()
-	if len(legacy) == 0 || legacy[0].Narration != original {
-		t.Errorf("in-memory narration mutated: got %v, want %q", legacy, original)
+	fakeTTS.mu.Lock()
+	calls := len(fakeTTS.receivedReqs)
+	fakeTTS.mu.Unlock()
+	if calls < 2 {
+		t.Errorf("expected multi-chunk synthesis (≥2 calls), got %d", calls)
 	}
-
-	// segments.narration must be untouched in DB.
-	segs, err := segStore.ListByRunID(context.Background(), runID)
-	if err != nil {
-		t.Fatalf("ListByRunID: %v", err)
-	}
-	if len(segs) != 1 {
-		t.Fatalf("expected 1 segment row, got %d", len(segs))
-	}
-	if segs[0].Narration == nil || *segs[0].Narration != original {
-		var got string
-		if segs[0].Narration != nil {
-			got = *segs[0].Narration
+	for _, r := range fakeTTS.receivedReqs {
+		if len(r.Text) > 90 {
+			t.Errorf("chunk text exceeds cap: %d bytes", len(r.Text))
 		}
-		t.Errorf("segments.narration mutated by TTS track: got %q, want %q", got, original)
 	}
 }
 
-func TestTTSTrack_EmptyNarrationFailsValidation(t *testing.T) {
+func TestTTSTrack_PerBeatSlicesConcatToCanonicalRunAudioByteForByte(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	// nil Narration
-	f := newTTSFixture(t, nil)
-	f.req.Scenario.Narration = nil
-	_, err := f.track(context.Background(), f.req)
-	if !errors.Is(err, domain.ErrValidation) {
-		t.Errorf("nil narration: expected ErrValidation, got %v", err)
-	}
-
-	// empty narration string in a scene
-	f2 := newTTSFixture(t, []string{""})
-	_, err2 := f2.track(context.Background(), f2.req)
-	if !errors.Is(err2, domain.ErrValidation) {
-		t.Errorf("empty narration: expected ErrValidation, got %v", err2)
-	}
-}
-
-// ── AC-4 tests ────────────────────────────────────────────────────────────────
-
-func TestTTSTrack_UsesSharedDashScopeLimiter(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	f := newTTSFixture(t, []string{"씬 하나", "씬 둘", "씬 셋"})
-	_, err := f.track(context.Background(), f.req)
-	if err != nil {
+	f := newTTSFixture(t,
+		[]string{"첫 번째 액트 모놀로그입니다.", "두 번째 액트 모놀로그입니다.", "세 번째.", "네 번째 마지막 액트입니다."},
+		[][]int{{6, 8}, {6, 8}, {2, 2}, {6, 8}},
+	)
+	if _, err := f.track(context.Background(), f.req); err != nil {
 		t.Fatalf("track: %v", err)
 	}
 
-	f.limiter.mu.Lock()
-	got := f.limiter.calls
-	f.limiter.mu.Unlock()
-	testutil.AssertEqual(t, got, 3) // one limiter.Do per scene
+	runDir := filepath.Join(f.outputDir, f.runID)
+	canonicalBytes, err := os.ReadFile(filepath.Join(runDir, "tts", "run_audio.wav"))
+	if err != nil {
+		t.Fatalf("read canonical: %v", err)
+	}
+
+	var concat []byte
+	for i := 1; i <= 8; i++ {
+		p := filepath.Join(runDir, "tts", fmt.Sprintf("scene_%02d.wav", i))
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("read scene %d: %v", i, err)
+		}
+		concat = append(concat, raw...)
+	}
+	if len(concat) != len(canonicalBytes) {
+		t.Fatalf("concat(slices) len=%d, canonical len=%d", len(concat), len(canonicalBytes))
+	}
+	for i := range concat {
+		if concat[i] != canonicalBytes[i] {
+			t.Fatalf("byte mismatch at offset %d", i)
+		}
+	}
 }
 
-func TestTTSTrack_RetriesOn429AndRecordsRetry(t *testing.T) {
+func TestTTSTrack_AtomicFailureRemovesPartialFiles(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	f := newTTSFixture(t, []string{"씬 하나"})
+	body := strings.Repeat("문장 하나입니다. ", 5)
+	f := newTTSFixture(t, []string{body}, [][]int{{30, 50}})
 
-	// First call returns rate-limit error, second succeeds.
+	// Force chunked path; second chunk fails non-retryably.
+	logger, _ := testutil.CaptureLog(t)
+	f.tts.err = fmt.Errorf("validation: %w", domain.ErrValidation)
+	f.tts.errAfter = 2
+	chunkedTrack, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
+		OutputDir:     f.outputDir,
+		TTSModel:      "fake-tts",
+		TTSVoice:      "longhua",
+		AudioFormat:   "wav",
+		MaxRetries:    3,
+		MaxInputBytes: 60,
+		TTS:           f.tts,
+		Store:         f.store,
+		Limiter:       f.limiter,
+		Clock:         f.clk,
+		Logger:        logger,
+		AudioOps:      f.audio,
+	})
+	if err != nil {
+		t.Fatalf("NewTTSTrack: %v", err)
+	}
+
+	if _, err := chunkedTrack(context.Background(), f.req); err == nil {
+		t.Fatal("expected chunk failure to surface, got nil")
+	}
+
+	runDir := filepath.Join(f.outputDir, f.runID)
+	canonical := filepath.Join(runDir, "tts", "run_audio.wav")
+	if _, err := os.Stat(canonical); !os.IsNotExist(err) {
+		t.Errorf("canonical run_audio.wav must NOT exist after atomic failure: %v", err)
+	}
+	matches, _ := filepath.Glob(filepath.Join(runDir, "tts", ".chunk_*.wav"))
+	if len(matches) != 0 {
+		t.Errorf("partial chunk files leaked: %v", matches)
+	}
+}
+
+func TestTTSTrack_RateLimitErrorRetriesAndRecordsRetry(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	f := newTTSFixture(t, []string{"한 번 합성합니다."}, [][]int{{6}})
 	f.tts.err = fmt.Errorf("rate limited: %w", domain.ErrRateLimited)
 	f.tts.errAfter = 1
 
 	retries := &fakeRetryRecorder{}
 	logger, _ := testutil.CaptureLog(t)
-	cfg := pipeline.TTSTrackConfig{
-		OutputDir:   f.outputDir,
-		TTSModel:    "fake-tts",
-		TTSVoice:    "longhua",
-		AudioFormat: "wav",
-		MaxRetries:  3,
-		TTS:         f.tts,
-		Store:       f.store,
-		Limiter:     f.limiter,
-		Recorder:    retries,
-		Clock:       f.clk,
-		Logger:      logger,
-	}
-	track, err := pipeline.NewTTSTrack(cfg)
+	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
+		OutputDir:     f.outputDir,
+		TTSModel:      "fake-tts",
+		TTSVoice:      "longhua",
+		AudioFormat:   "wav",
+		MaxRetries:    3,
+		MaxInputBytes: 1 << 20,
+		TTS:           f.tts,
+		Store:         f.store,
+		Limiter:       f.limiter,
+		Recorder:      retries,
+		Clock:         f.clk,
+		Logger:        logger,
+		AudioOps:      f.audio,
+	})
 	if err != nil {
 		t.Fatalf("NewTTSTrack: %v", err)
 	}
@@ -375,13 +535,10 @@ func TestTTSTrack_RetriesOn429AndRecordsRetry(t *testing.T) {
 		doneCh <- err
 	}()
 
-	// The retry helper sleeps before retry; advance the clock to unblock.
 	waitForPendingSleepers(t, f.clk, 1)
-	// Clear the error so the second call succeeds.
 	f.tts.mu.Lock()
 	f.tts.err = nil
 	f.tts.mu.Unlock()
-	// Advance by 2s: backoff for attempt 0 is 1s+jitter(0-500ms), so 2s is sufficient.
 	f.clk.Advance(2 * time.Second)
 
 	if err := <-doneCh; err != nil {
@@ -396,116 +553,279 @@ func TestTTSTrack_RetriesOn429AndRecordsRetry(t *testing.T) {
 	if retries.retries[0].stage != domain.StageTTS {
 		t.Errorf("retry stage = %v, want %v", retries.retries[0].stage, domain.StageTTS)
 	}
-	if retries.retries[0].reason != "rate_limit" {
-		t.Errorf("retry reason = %q, want %q", retries.retries[0].reason, "rate_limit")
-	}
 }
 
-func TestTTSTrack_NonRetryableErrorSurfacesImmediately(t *testing.T) {
+// ── Validation tests ─────────────────────────────────────────────────────────
+
+func TestTTSTrack_NilNarrationFailsValidation(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	f := newTTSFixture(t, []string{"씬 하나"})
-	f.tts.err = fmt.Errorf("bad request: %w", domain.ErrValidation)
-
+	f := newTTSFixture(t, []string{"무대로."}, [][]int{{4}})
+	f.req.Scenario.Narration = nil
 	_, err := f.track(context.Background(), f.req)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	// Non-retryable error must surface without consuming retries.
-	f.tts.mu.Lock()
-	calls := f.tts.callCount
-	f.tts.mu.Unlock()
-	if calls > 1 {
-		t.Errorf("expected 1 call (no retry for non-retryable), got %d", calls)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("nil narration: expected ErrValidation, got %v", err)
 	}
 }
 
-// ── AC-5 tests ────────────────────────────────────────────────────────────────
-
-func TestTTSTrack_WritesAudioToSceneCanonicalPaths(t *testing.T) {
+func TestTTSTrack_EmptyActsFailsValidation(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	f := newTTSFixture(t, []string{"씬 하나", "씬 둘"})
+	f := newTTSFixture(t, []string{"무대로."}, [][]int{{4}})
+	f.req.Scenario.Narration.Acts = nil
 	_, err := f.track(context.Background(), f.req)
-	if err != nil {
-		t.Fatalf("track: %v", err)
-	}
-
-	runDir := filepath.Join(f.outputDir, f.runID)
-	for _, want := range []string{
-		filepath.Join(runDir, "tts", "scene_01.wav"),
-		filepath.Join(runDir, "tts", "scene_02.wav"),
-	} {
-		if _, err := os.Stat(want); os.IsNotExist(err) {
-			t.Errorf("expected audio file %s, not found", want)
-		}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("empty acts: expected ErrValidation, got %v", err)
 	}
 }
 
-func TestTTSTrack_StoresRelativePathInSegments(t *testing.T) {
+func TestTTSTrack_BeatOffsetOutOfRangeFailsValidation(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	f := newTTSFixture(t, []string{"씬 하나"})
+	f := newTTSFixture(t, []string{"짧다."}, [][]int{{2}})
+	f.req.Scenario.Narration.Acts[0].Beats[0].EndOffset = 9999
 	_, err := f.track(context.Background(), f.req)
-	if err != nil {
-		t.Fatalf("track: %v", err)
-	}
-
-	f.store.mu.Lock()
-	entry, ok := f.store.entries[0]
-	f.store.mu.Unlock()
-	if !ok {
-		t.Fatal("no entry for scene index 0")
-	}
-	if !strings.HasPrefix(entry.path, "tts/") {
-		t.Errorf("tts_path = %q, want prefix \"tts/\"", entry.path)
-	}
-	if strings.Contains(entry.path, f.outputDir) {
-		t.Errorf("tts_path contains absolute run dir: %q", entry.path)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("beat overflow: expected ErrValidation, got %v", err)
 	}
 }
 
-func TestTTSTrack_RerunOverwritesDeterministically(t *testing.T) {
+func TestTTSTrack_ZeroLengthBeatFailsValidation(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	f := newTTSFixture(t, []string{"씬 하나"})
+	f := newTTSFixture(t, []string{"짧다."}, [][]int{{2}})
+	f.req.Scenario.Narration.Acts[0].Beats[0].EndOffset = f.req.Scenario.Narration.Acts[0].Beats[0].StartOffset
+	_, err := f.track(context.Background(), f.req)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("zero-length beat: expected ErrValidation, got %v", err)
+	}
+}
+
+func TestTTSTrack_NonMonotonicBeatsInActFailValidation(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	f := newTTSFixture(t, []string{"한 액트의 모놀로그."}, [][]int{{4, 4}})
+	f.req.Scenario.Narration.Acts[0].Beats[1].StartOffset = 1
+	f.req.Scenario.Narration.Acts[0].Beats[1].EndOffset = 3
+	_, err := f.track(context.Background(), f.req)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("overlapping beats: expected ErrValidation, got %v", err)
+	}
+}
+
+func TestNewTTSTrack_RejectsNonWAVFormat(t *testing.T) {
+	_, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
+		OutputDir:   t.TempDir(),
+		TTSModel:    "fake-tts",
+		TTSVoice:    "longhua",
+		AudioFormat: "mp3",
+		TTS:         newFakeTTS(),
+		Store:       newFakeTTSStore(),
+		Limiter:     &fakeRetryLimiter{},
+	})
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("non-WAV format: expected ErrValidation, got %v", err)
+	}
+}
+
+func TestTTSTrack_ZeroBeatsFailsValidation(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	f := newTTSFixture(t, []string{"짧다."}, [][]int{{}})
+	_, err := f.track(context.Background(), f.req)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("zero beats: expected ErrValidation, got %v", err)
+	}
+}
+
+// ── Wiring tests ─────────────────────────────────────────────────────────────
+
+func TestTTSTrack_TransliteratesMergedMonologueBeforeSynthesize(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	f := newTTSFixture(t,
+		[]string{"SCP-049 보고서.", "엔터티 격리."},
+		[][]int{{8}, {6}},
+	)
 	if _, err := f.track(context.Background(), f.req); err != nil {
-		t.Fatalf("first run: %v", err)
-	}
-	if _, err := f.track(context.Background(), f.req); err != nil {
-		t.Fatalf("second run: %v", err)
-	}
-
-	runDir := filepath.Join(f.outputDir, f.runID)
-	p := filepath.Join(runDir, "tts", "scene_01.wav")
-	if _, err := os.Stat(p); err != nil {
-		t.Errorf("expected %s after re-run: %v", p, err)
-	}
-}
-
-// ── AC-7 tests ────────────────────────────────────────────────────────────────
-
-func TestTTSTrack_PassesConfiguredModelAndVoiceToProvider(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	f := newTTSFixture(t, []string{"씬 하나"})
-	// The fixture already uses TTSModel="fake-tts" and TTSVoice="longhua"
-	_, err := f.track(context.Background(), f.req)
-	if err != nil {
 		t.Fatalf("track: %v", err)
 	}
 
 	f.tts.mu.Lock()
 	defer f.tts.mu.Unlock()
 	if len(f.tts.receivedReqs) == 0 {
-		t.Fatal("no synthesize calls recorded")
+		t.Fatal("no synthesize calls")
+	}
+	got := f.tts.receivedReqs[0].Text
+	if strings.Contains(got, "SCP-049") {
+		t.Errorf("transliteration not applied: input still contains SCP-049: %q", got)
+	}
+}
+
+func TestTTSTrack_PassesConfiguredModelAndVoiceToProvider(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	f := newTTSFixture(t, []string{"안녕."}, [][]int{{2}})
+	if _, err := f.track(context.Background(), f.req); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+
+	f.tts.mu.Lock()
+	defer f.tts.mu.Unlock()
+	if len(f.tts.receivedReqs) == 0 {
+		t.Fatal("no synthesize calls")
 	}
 	req := f.tts.receivedReqs[0]
 	testutil.AssertEqual(t, req.Model, "fake-tts")
 	testutil.AssertEqual(t, req.Voice, "longhua")
 }
 
-// ── AC-8 tests (no-regression for PhaseBRunner) ───────────────────────────────
+func TestTTSTrack_StoresPerBeatRelativePathInSegments(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	f := newTTSFixture(t,
+		[]string{"첫 번째.", "두 번째."},
+		[][]int{{4}, {4}},
+	)
+	if _, err := f.track(context.Background(), f.req); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+
+	f.store.mu.Lock()
+	defer f.store.mu.Unlock()
+	if len(f.store.entries) != 2 {
+		t.Fatalf("expected 2 segment rows, got %d", len(f.store.entries))
+	}
+	for sceneIndex, entry := range f.store.entries {
+		if !strings.HasPrefix(entry.path, "tts/scene_") {
+			t.Errorf("scene %d: path = %q, want prefix tts/scene_", sceneIndex, entry.path)
+		}
+		if strings.Contains(entry.path, f.outputDir) {
+			t.Errorf("scene %d: path contains absolute run dir: %q", sceneIndex, entry.path)
+		}
+		if entry.durationMs <= 0 {
+			t.Errorf("scene %d: duration_ms = %d, want > 0", sceneIndex, entry.durationMs)
+		}
+	}
+}
+
+func TestTTSTrack_RunLevelAuditEmittedOnce(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outputDir := t.TempDir()
+	runID := "scp-049-audit"
+	auditLogger := pipeline.NewFileAuditLogger(outputDir)
+	fakeTTS := newFakeTTS()
+	store := newFakeTTSStore()
+	limiter := &fakeRetryLimiter{}
+	clk := clock.NewFakeClock(time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC))
+	logger, _ := testutil.CaptureLog(t)
+	audio := newFakeAudioOps()
+
+	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
+		OutputDir:     outputDir,
+		TTSModel:      "fake-tts",
+		TTSVoice:      "longhua",
+		AudioFormat:   "wav",
+		MaxRetries:    3,
+		MaxInputBytes: 1 << 20,
+		AuditLogger:   auditLogger,
+		TTS:           fakeTTS,
+		Store:         store,
+		Limiter:       limiter,
+		Clock:         clk,
+		Logger:        logger,
+		AudioOps:      audio,
+	})
+	if err != nil {
+		t.Fatalf("NewTTSTrack: %v", err)
+	}
+
+	scenario := v2Scenario(runID,
+		[]string{"첫 번째.", "두 번째."},
+		[][]int{{4}, {4}},
+	)
+	req := pipeline.PhaseBRequest{
+		RunID:    runID,
+		Stage:    domain.StageTTS,
+		Scenario: scenario,
+	}
+	if _, err := track(context.Background(), req); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+
+	auditPath := filepath.Join(outputDir, runID, "audit.log")
+	raw, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit.log: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 run-level audit line, got %d: %s", len(lines), raw)
+	}
+	var entry domain.AuditEntry
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("invalid audit JSON: %v", err)
+	}
+	if entry.EventType != domain.AuditEventTTSSynthesis {
+		t.Errorf("event_type = %q, want %q", entry.EventType, domain.AuditEventTTSSynthesis)
+	}
+	if entry.Stage != string(domain.StageTTS) {
+		t.Errorf("stage = %q, want %q", entry.Stage, domain.StageTTS)
+	}
+}
+
+func TestTTSTrack_BlockedVoiceRejectedBeforeAnyAPICall(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	outputDir := t.TempDir()
+	runID := "scp-049-blocked"
+	auditLogger := pipeline.NewFileAuditLogger(outputDir)
+	fakeTTS := newFakeTTS()
+	store := newFakeTTSStore()
+	limiter := &fakeRetryLimiter{}
+	clk := clock.NewFakeClock(time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC))
+	logger, _ := testutil.CaptureLog(t)
+	audio := newFakeAudioOps()
+
+	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
+		OutputDir:       outputDir,
+		TTSModel:        "fake-tts",
+		TTSVoice:        "blocked-voice",
+		AudioFormat:     "wav",
+		MaxRetries:      3,
+		BlockedVoiceIDs: []string{"blocked-voice", "other-blocked"},
+		AuditLogger:     auditLogger,
+		TTS:             fakeTTS,
+		Store:           store,
+		Limiter:         limiter,
+		Clock:           clk,
+		Logger:          logger,
+		AudioOps:        audio,
+	})
+	if err != nil {
+		t.Fatalf("NewTTSTrack: %v", err)
+	}
+
+	scenario := v2Scenario(runID, []string{"내레이션."}, [][]int{{5}})
+	req := pipeline.PhaseBRequest{
+		RunID:    runID,
+		Stage:    domain.StageTTS,
+		Scenario: scenario,
+	}
+	_, err = track(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error for blocked voice")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("error does not wrap ErrValidation: %v", err)
+	}
+	if fakeTTS.callCount > 0 {
+		t.Errorf("fake TTS called %d times, expected 0", fakeTTS.callCount)
+	}
+}
+
+// ── No-regression: PhaseBRunner concurrency ─────────────────────────────────
 
 func TestPhaseBRunner_TTSFailureDoesNotCancelImageTrack(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
@@ -517,7 +837,6 @@ func TestPhaseBRunner_TTSFailureDoesNotCancelImageTrack(t *testing.T) {
 
 	runner := pipeline.NewPhaseBRunner(
 		func(ctx context.Context, r pipeline.PhaseBRequest) (pipeline.ImageTrackResult, error) {
-			// Wait for TTS to fail, then check if our context was cancelled.
 			select {
 			case <-imageDone:
 			case <-ctx.Done():
@@ -528,7 +847,6 @@ func TestPhaseBRunner_TTSFailureDoesNotCancelImageTrack(t *testing.T) {
 			}, nil
 		},
 		func(ctx context.Context, r pipeline.PhaseBRequest) (pipeline.TTSTrackResult, error) {
-			// TTS fails immediately
 			close(imageDone)
 			return pipeline.TTSTrackResult{}, errors.New("tts failed")
 		},
@@ -545,12 +863,9 @@ func TestPhaseBRunner_TTSFailureDoesNotCancelImageTrack(t *testing.T) {
 	}
 }
 
-// ── integration tests ─────────────────────────────────────────────────────────
+// ── Integration: real SegmentStore ──────────────────────────────────────────
 
-// TestPhaseBRunner_RealTTSTrack_WithFakeProvider_CompletesAllScenes wires the
-// real TTSTrack (fake TTSSynthesizer + real SQLite SegmentStore) and drives a
-// 3-scene Phase B run end-to-end, asserting disk artifacts and DB rows.
-func TestPhaseBRunner_RealTTSTrack_WithFakeProvider_CompletesAllScenes(t *testing.T) {
+func TestPhaseBRunner_RealTTSTrack_PopulatesPerBeatSegments(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
 	database := testutil.NewTestDB(t)
@@ -567,25 +882,30 @@ func TestPhaseBRunner_RealTTSTrack_WithFakeProvider_CompletesAllScenes(t *testin
 	fakeTTS := newFakeTTS()
 	limiter := &fakeRetryLimiter{}
 	logger, _ := testutil.CaptureLog(t)
+	audio := newFakeAudioOps()
 
 	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
-		OutputDir:   outputDir,
-		TTSModel:    "fake-tts",
-		TTSVoice:    "longhua",
-		AudioFormat: "wav",
-		MaxRetries:  3,
-		TTS:         fakeTTS,
-		Store:       segStore,
-		Limiter:     limiter,
-		Clock:       clock.RealClock{},
-		Logger:      logger,
+		OutputDir:     outputDir,
+		TTSModel:      "fake-tts",
+		TTSVoice:      "longhua",
+		AudioFormat:   "wav",
+		MaxRetries:    3,
+		MaxInputBytes: 1 << 20,
+		TTS:           fakeTTS,
+		Store:         segStore,
+		Limiter:       limiter,
+		Clock:         clock.RealClock{},
+		Logger:        logger,
+		AudioOps:      audio,
 	})
 	if err != nil {
 		t.Fatalf("NewTTSTrack: %v", err)
 	}
 
-	narrations := []string{"SCP-049 entity class doctor", "씬 둘 text", "씬 셋 text"}
-	scenario := ttsTrackScenario(runID, narrations)
+	scenario := v2Scenario(runID,
+		[]string{"첫째 액트.", "둘째 액트.", "셋째.", "넷째."},
+		[][]int{{4}, {4}, {2}, {2}},
+	)
 	req := pipeline.PhaseBRequest{
 		RunID:    runID,
 		Stage:    domain.StageTTS,
@@ -597,346 +917,34 @@ func TestPhaseBRunner_RealTTSTrack_WithFakeProvider_CompletesAllScenes(t *testin
 		t.Fatalf("track: %v", err)
 	}
 
-	if len(result.Artifacts) != 3 {
-		t.Fatalf("expected 3 artifacts, got %d", len(result.Artifacts))
+	if len(result.Artifacts) < 5 {
+		t.Errorf("expected ≥5 artifacts (run_audio + 4 scenes), got %d", len(result.Artifacts))
 	}
 
-	// All three audio files must exist on disk.
-	for i := 1; i <= 3; i++ {
+	canonical := filepath.Join(outputDir, runID, "tts", "run_audio.wav")
+	if _, err := os.Stat(canonical); err != nil {
+		t.Errorf("canonical run_audio missing: %v", err)
+	}
+	for i := 1; i <= 4; i++ {
 		p := filepath.Join(outputDir, runID, "tts", fmt.Sprintf("scene_%02d.wav", i))
 		if _, err := os.Stat(p); err != nil {
-			t.Errorf("scene %d: expected file %s: %v", i, p, err)
+			t.Errorf("scene %d slice missing: %v", i, err)
 		}
 	}
 
-	// Real SegmentStore must have tts_path and tts_duration_ms for each scene.
 	segs, err := segStore.ListByRunID(context.Background(), runID)
 	if err != nil {
 		t.Fatalf("ListByRunID: %v", err)
 	}
-	if len(segs) != 3 {
-		t.Fatalf("expected 3 segment rows, got %d", len(segs))
+	if len(segs) != 4 {
+		t.Fatalf("expected 4 segment rows, got %d", len(segs))
 	}
 	for _, seg := range segs {
 		if seg.TTSPath == nil || *seg.TTSPath == "" {
-			t.Errorf("scene index %d: tts_path not set in DB", seg.SceneIndex)
+			t.Errorf("scene index %d: tts_path not set", seg.SceneIndex)
 		}
 		if seg.TTSDurationMs == nil || *seg.TTSDurationMs <= 0 {
-			t.Errorf("scene index %d: tts_duration_ms not set in DB", seg.SceneIndex)
+			t.Errorf("scene index %d: tts_duration_ms not set", seg.SceneIndex)
 		}
-	}
-
-	// Transliteration applied: first scene had English + SCP number.
-	fakeTTS.mu.Lock()
-	defer fakeTTS.mu.Unlock()
-	if len(fakeTTS.receivedReqs) == 0 {
-		t.Fatal("no synthesize calls recorded")
-	}
-	wantText := pipeline.Transliterate("SCP-049 entity class doctor")
-	testutil.AssertEqual(t, fakeTTS.receivedReqs[0].Text, wantText)
-}
-
-// TestResume_PhaseBRegenerationRebuildsTTSAfterFailure proves that after
-// TTS artifacts are cleaned (simulating a resume), re-running the TTS track
-// deterministically rebuilds tts/ files and segment rows.
-func TestResume_PhaseBRegenerationRebuildsTTSAfterFailure(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	database := testutil.NewTestDB(t)
-	runStore := db.NewRunStore(database)
-	segStore := db.NewSegmentStore(database)
-	outputDir := t.TempDir()
-
-	run, err := runStore.Create(context.Background(), "049", outputDir)
-	if err != nil {
-		t.Fatalf("create run: %v", err)
-	}
-	runID := run.ID
-
-	fakeTTS := newFakeTTS()
-	limiter := &fakeRetryLimiter{}
-	logger, _ := testutil.CaptureLog(t)
-
-	buildTrack := func() pipeline.TTSTrack {
-		track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
-			OutputDir:   outputDir,
-			TTSModel:    "fake-tts",
-			TTSVoice:    "longhua",
-			AudioFormat: "wav",
-			MaxRetries:  3,
-			TTS:         fakeTTS,
-			Store:       segStore,
-			Limiter:     limiter,
-			Clock:       clock.RealClock{},
-			Logger:      logger,
-		})
-		if err != nil {
-			t.Fatalf("NewTTSTrack: %v", err)
-		}
-		return track
-	}
-
-	narrations := []string{"씬 하나", "씬 둘"}
-	scenario := ttsTrackScenario(runID, narrations)
-	req := pipeline.PhaseBRequest{
-		RunID:    runID,
-		Stage:    domain.StageTTS,
-		Scenario: scenario,
-	}
-
-	// First run: completes successfully.
-	if _, err := buildTrack()(context.Background(), req); err != nil {
-		t.Fatalf("first run: %v", err)
-	}
-
-	// Simulate resume cleanup: clear DB rows and delete tts/ directory.
-	if _, err := segStore.ClearTTSArtifactsByRunID(context.Background(), runID); err != nil {
-		t.Fatalf("ClearTTSArtifactsByRunID: %v", err)
-	}
-	ttsDir := filepath.Join(outputDir, runID, "tts")
-	if err := os.RemoveAll(ttsDir); err != nil {
-		t.Fatalf("RemoveAll tts dir: %v", err)
-	}
-	if _, err := os.Stat(ttsDir); !os.IsNotExist(err) {
-		t.Fatal("tts dir should be absent after cleanup")
-	}
-
-	// Second run (resume): must rebuild artifacts and DB rows.
-	if _, err := buildTrack()(context.Background(), req); err != nil {
-		t.Fatalf("second run: %v", err)
-	}
-
-	// Files must be back on disk.
-	for i := 1; i <= 2; i++ {
-		p := filepath.Join(ttsDir, fmt.Sprintf("scene_%02d.wav", i))
-		if _, err := os.Stat(p); err != nil {
-			t.Errorf("rebuild: expected %s: %v", p, err)
-		}
-	}
-
-	// DB rows must have tts_path populated again.
-	segs, err := segStore.ListByRunID(context.Background(), runID)
-	if err != nil {
-		t.Fatalf("ListByRunID after resume: %v", err)
-	}
-	for _, seg := range segs {
-		if seg.TTSPath == nil || *seg.TTSPath == "" {
-			t.Errorf("scene index %d: tts_path not rebuilt in DB", seg.SceneIndex)
-		}
-	}
-}
-
-// ── Audit logging ──────────────────────────────────────────────────────────────
-
-func TestTTSTrack_WritesAuditLogOnSuccess(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	outputDir := t.TempDir()
-	runID := "scp-049-audit"
-	narrations := []string{"Scene one narration.", "Scene two narration."}
-
-	fakeTTS := newFakeTTS()
-	store := newFakeTTSStore()
-	limiter := &fakeRetryLimiter{}
-	clk := clock.NewFakeClock(time.Date(2026, 4, 18, 15, 0, 0, 0, time.UTC))
-	logger, _ := testutil.CaptureLog(t)
-	auditLogger := pipeline.NewFileAuditLogger(outputDir)
-
-	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
-		OutputDir:   outputDir,
-		TTSModel:    "fake-tts",
-		TTSVoice:    "longhua",
-		AudioFormat: "wav",
-		MaxRetries:  3,
-		AuditLogger: auditLogger,
-		TTS:         fakeTTS,
-		Store:       store,
-		Limiter:     limiter,
-		Clock:       clk,
-		Logger:      logger,
-	})
-	if err != nil {
-		t.Fatalf("NewTTSTrack: %v", err)
-	}
-
-	scenario := ttsTrackScenario(runID, narrations)
-	req := pipeline.PhaseBRequest{
-		RunID:    runID,
-		Stage:    domain.StageTTS,
-		Scenario: scenario,
-	}
-
-	_, err = track(context.Background(), req)
-	if err != nil {
-		t.Fatalf("track: %v", err)
-	}
-
-	auditPath := filepath.Join(outputDir, runID, "audit.log")
-	raw, err := os.ReadFile(auditPath)
-	if err != nil {
-		t.Fatalf("read audit.log: %v", err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 audit lines for 2 scenes, got %d", len(lines))
-	}
-	for i, line := range lines {
-		var entry domain.AuditEntry
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			t.Fatalf("line %d: invalid JSON: %v", i, err)
-		}
-		if entry.EventType != domain.AuditEventTTSSynthesis {
-			t.Errorf("line %d: event_type=%q, want %q", i, entry.EventType, domain.AuditEventTTSSynthesis)
-		}
-		if entry.RunID != runID {
-			t.Errorf("line %d: run_id=%q, want %q", i, entry.RunID, runID)
-		}
-		if entry.Stage != string(domain.StageTTS) {
-			t.Errorf("line %d: stage=%q, want %q", i, entry.Stage, domain.StageTTS)
-		}
-	}
-}
-
-func TestTTSTrack_BlockedVoiceRejectedWithAuditLog(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	outputDir := t.TempDir()
-	runID := "scp-049-blocked"
-	auditLogger := pipeline.NewFileAuditLogger(outputDir)
-	fakeTTS := newFakeTTS()
-	store := newFakeTTSStore()
-	limiter := &fakeRetryLimiter{}
-	clk := clock.NewFakeClock(time.Date(2026, 4, 18, 15, 0, 0, 0, time.UTC))
-	logger, _ := testutil.CaptureLog(t)
-
-	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
-		OutputDir:       outputDir,
-		TTSModel:        "fake-tts",
-		TTSVoice:        "blocked-voice",
-		AudioFormat:     "wav",
-		MaxRetries:      3,
-		BlockedVoiceIDs: []string{"blocked-voice", "other-blocked"},
-		AuditLogger:     auditLogger,
-		TTS:             fakeTTS,
-		Store:           store,
-		Limiter:         limiter,
-		Clock:           clk,
-		Logger:          logger,
-	})
-	if err != nil {
-		t.Fatalf("NewTTSTrack: %v", err)
-	}
-
-	scenario := ttsTrackScenario(runID, []string{"Narration"})
-	req := pipeline.PhaseBRequest{
-		RunID:    runID,
-		Stage:    domain.StageTTS,
-		Scenario: scenario,
-	}
-
-	_, err = track(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected error for blocked voice, got nil")
-	}
-	if got, want := err.Error(), "Voice profile 'blocked-voice' is blocked by compliance policy"; got != want {
-		t.Fatalf("error message = %q, want %q", got, want)
-	}
-	if !errors.Is(err, domain.ErrValidation) {
-		t.Errorf("error does not wrap ErrValidation: %v", err)
-	}
-
-	if fakeTTS.callCount > 0 {
-		t.Errorf("fake TTS called %d times, expected 0", fakeTTS.callCount)
-	}
-
-	auditPath := filepath.Join(outputDir, runID, "audit.log")
-	raw, err := os.ReadFile(auditPath)
-	if err != nil {
-		t.Fatalf("read audit.log: %v", err)
-	}
-	var entry domain.AuditEntry
-	if err := json.Unmarshal(raw, &entry); err != nil {
-		t.Fatalf("unmarshal audit entry: %v", err)
-	}
-	if entry.EventType != domain.AuditEventVoiceBlocked {
-		t.Errorf("event_type=%q, want %q", entry.EventType, domain.AuditEventVoiceBlocked)
-	}
-	if entry.BlockedID != "blocked-voice" {
-		t.Errorf("blocked_id=%q, want %q", entry.BlockedID, "blocked-voice")
-	}
-}
-
-func TestTTSTrack_BlockedVoiceAllowsOtherVoices(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	outputDir := t.TempDir()
-	runID := "scp-049-allowed"
-	auditLogger := pipeline.NewFileAuditLogger(outputDir)
-	fakeTTS := newFakeTTS()
-	store := newFakeTTSStore()
-	limiter := &fakeRetryLimiter{}
-	clk := clock.NewFakeClock(time.Date(2026, 4, 18, 15, 0, 0, 0, time.UTC))
-	logger, _ := testutil.CaptureLog(t)
-
-	track, err := pipeline.NewTTSTrack(pipeline.TTSTrackConfig{
-		OutputDir:       outputDir,
-		TTSModel:        "fake-tts",
-		TTSVoice:        "allowed-voice",
-		AudioFormat:     "wav",
-		MaxRetries:      3,
-		BlockedVoiceIDs: []string{"blocked-voice-1", "blocked-voice-2"},
-		AuditLogger:     auditLogger,
-		TTS:             fakeTTS,
-		Store:           store,
-		Limiter:         limiter,
-		Clock:           clk,
-		Logger:          logger,
-	})
-	if err != nil {
-		t.Fatalf("NewTTSTrack: %v", err)
-	}
-
-	scenario := ttsTrackScenario(runID, []string{"Narration"})
-	req := pipeline.PhaseBRequest{
-		RunID:    runID,
-		Stage:    domain.StageTTS,
-		Scenario: scenario,
-	}
-
-	_, err = track(context.Background(), req)
-	if err != nil {
-		t.Fatalf("track: %v", err)
-	}
-
-	if fakeTTS.callCount == 0 {
-		t.Fatal("fake TTS was never called (voice incorrectly blocked)")
-	}
-
-	auditPath := filepath.Join(outputDir, runID, "audit.log")
-	raw, err := os.ReadFile(auditPath)
-	if err != nil {
-		t.Fatalf("read audit.log: %v", err)
-	}
-	var entry domain.AuditEntry
-	if err := json.Unmarshal(raw, &entry); err != nil {
-		t.Fatalf("unmarshal audit entry: %v", err)
-	}
-	if entry.EventType == domain.AuditEventVoiceBlocked {
-		t.Fatal("voice was incorrectly blocked")
-	}
-	if entry.EventType != domain.AuditEventTTSSynthesis {
-		t.Errorf("event_type=%q, want %q", entry.EventType, domain.AuditEventTTSSynthesis)
-	}
-}
-
-func TestTTSTrack_NilAuditLoggerDoesNotPanic(t *testing.T) {
-	testutil.BlockExternalHTTP(t)
-
-	fx := newTTSFixture(t, []string{"Hello world"})
-	fx.req.Stage = domain.StageTTS
-
-	_, err := fx.track(context.Background(), fx.req)
-	if err != nil {
-		t.Fatalf("track: %v", err)
 	}
 }

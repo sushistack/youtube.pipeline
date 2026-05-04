@@ -106,6 +106,7 @@ func writeConfigFile(path string, cfg domain.PipelineConfig, existingMode os.Fil
 		TTSModel:                 cfg.TTSModel,
 		TTSVoice:                 cfg.TTSVoice,
 		TTSAudioFormat:           cfg.TTSAudioFormat,
+		TTSMaxInputBytes:         cfg.TTSMaxInputBytes,
 		ImageModel:               cfg.ImageModel,
 		ImageEditModel:           cfg.ImageEditModel,
 		WriterProvider:           cfg.WriterProvider,
@@ -390,6 +391,7 @@ type orderedPipelineConfig struct {
 	TTSModel                 string   `yaml:"tts_model"`
 	TTSVoice                 string   `yaml:"tts_voice"`
 	TTSAudioFormat           string   `yaml:"tts_audio_format"`
+	TTSMaxInputBytes         int      `yaml:"tts_max_input_bytes"`
 	ImageModel               string   `yaml:"image_model"`
 	ImageEditModel           string   `yaml:"image_edit_model"`
 	WriterProvider           string   `yaml:"writer_provider"`

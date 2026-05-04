@@ -222,6 +222,7 @@ func buildPhaseBRunner(
 		TTSVoice:        cfg.TTSVoice,
 		AudioFormat:     cfg.TTSAudioFormat,
 		MaxRetries:      3,
+		MaxInputBytes:   cfg.TTSMaxInputBytes,
 		BlockedVoiceIDs: cfg.BlockedVoiceIDs,
 		AuditLogger:     auditLogger,
 		TTS:             ttsClient,
