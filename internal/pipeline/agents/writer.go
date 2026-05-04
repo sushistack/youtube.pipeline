@@ -348,7 +348,33 @@ func validateWriterMonologueResponse(spec writerActSpec, decoded writerMonologue
 		return fmt.Errorf("writer: act %s monologue: rune length=%d exceeds cap=%d: %w",
 			spec.Act.ID, n, cap, domain.ErrValidation)
 	}
+	// Sentence-terminal floor: stage 2 must split this monologue into
+	// beatCountMin..beatCountMax beats with each beat ending on a sentence
+	// terminal. Adjacent beats cannot share a terminal (the snap step
+	// preserves adjacency invariants), so the monologue MUST contain at
+	// least beatCountMin terminal runes for stage 2 to be feasible.
+	// Failing here forces a stage-1 retry instead of letting stage 2 burn
+	// retries on an unsegmentable input.
+	if n := countSentenceTerminals(decoded.Monologue); n < beatCountMin {
+		return fmt.Errorf("writer: act %s monologue: only %d sentence terminals — stage 2 needs ≥%d to produce %d–%d beats: %w",
+			spec.Act.ID, n, beatCountMin, beatCountMin, beatCountMax, domain.ErrValidation)
+	}
 	return nil
+}
+
+// countSentenceTerminals returns the number of runes in s that are
+// sentence-terminal (`.`, `?`, `!`, `…`, `\n`). Used by the stage-1
+// validator to ensure stage-2 has enough cut points to produce
+// beatCountMin..beatCountMax beats without sharing terminals across
+// adjacent boundaries.
+func countSentenceTerminals(s string) int {
+	n := 0
+	for _, r := range s {
+		if _, ok := sentenceTerminalRunes[r]; ok {
+			n++
+		}
+	}
+	return n
 }
 
 // runWriterActBeats is stage 2: one LLM call (qwen-plus) segmenting the

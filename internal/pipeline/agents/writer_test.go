@@ -851,6 +851,75 @@ func (f *fakeTextGenerator) Generate(_ context.Context, _ domain.TextRequest) (d
 	return f.resp, nil
 }
 
+// --- stage-1 sentence-terminal floor -----------------------------------
+
+// TestWriter_Stage1_RejectsSparseMonologue verifies that a monologue with
+// fewer than beatCountMin sentence terminals is rejected at stage 1, before
+// stage 2 ever sees it. This catches the unsegmentable-input case at the
+// right layer instead of letting stage 2 burn retries on something the
+// snap step cannot fix (adjacent boundaries cannot share a terminal).
+func TestWriter_Stage1_RejectsSparseMonologue(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// Monologue with only 5 sentence terminals — below the 8 floor required
+	// for stage 2's [8, 10] beat range. Each clause is 9 runes + `.`.
+	sparseMono := strings.Repeat(strings.Repeat("가", 9)+".", 5) // 50 runes, 5 terminals
+	sparseResp, _ := json.Marshal(map[string]any{
+		"act_id":     domain.ActIncident,
+		"monologue":  sparseMono,
+		"mood":       "tense",
+		"key_points": []string{"first", "second"},
+	})
+
+	gen := newTwoStageFakeGen()
+	// Three attempts queued (budget=2 → 3 total). All return the same sparse
+	// monologue, so all three should hit the floor and the run hard-fails
+	// at stage 1 without ever calling stage 2.
+	for i := 0; i < 3; i++ {
+		gen.enqueue(stageKeyWriter, domain.ActIncident, string(sparseResp), "")
+	}
+
+	state := freshWriterState()
+	err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
+	if err == nil {
+		t.Fatal("expected sparse-monologue failure, got nil")
+	}
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("error chain must include ErrValidation, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "sentence terminals") {
+		t.Fatalf("error should mention sentence terminals, got: %v", err)
+	}
+	// Stage 2 must NOT run when stage 1 keeps failing.
+	if got := gen.callCount(stageKeySegmenter, domain.ActIncident); got != 0 {
+		t.Errorf("segmenter called %d times despite stage-1 floor failure", got)
+	}
+}
+
+// TestCountSentenceTerminals_TableDriven locks the helper's behavior across
+// the terminal-rune set, including paragraph breaks and ellipsis.
+func TestCountSentenceTerminals_TableDriven(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"empty", "", 0},
+		{"no_terminals", "안녕하세요 반갑습니다", 0},
+		{"period_only", "한 문장. 두 문장.", 2},
+		{"mixed", "정말? 그렇구나! 음… 그래.", 4},
+		{"paragraph_breaks", "첫째\n둘째\n셋째", 2}, // 2 \n between 3 lines
+		{"all_terminals", ".?!…\n", 5},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := countSentenceTerminals(tc.in); got != tc.want {
+				t.Errorf("countSentenceTerminals(%q)=%d, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 // --- snapBeatBoundariesToSentences edge cases --------------------------
 
 func TestSnapBeatBoundariesToSentences_TableDriven(t *testing.T) {

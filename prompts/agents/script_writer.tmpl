@@ -10,6 +10,7 @@ The other acts are written in separate stage-1 calls. Stay strictly inside the a
 
 - **act_id**: `{act_id}`
 - **monologue rune cap (upper bound, inclusive)**: `{monologue_rune_cap}` — total rune count of your `monologue` MUST stay at or below this. Going under by ~10% is fine; going over fails validation and burns the retry budget.
+- **sentence-terminal floor (REQUIRED for stage 2)**: the monologue MUST contain **≥ 8 sentence-terminal runes** (`.`, `?`, `!`, `…`, or paragraph break `\n`). Stage 2 segments your monologue into 8–10 visual beats and each beat MUST end on a terminal — adjacent beats cannot share a terminal, so the act monologue needs ≥ 8 terminals or stage 2 will fail and burn its retry budget. **Practically: write short, punchy Korean sentences. Aim for ~30 runes per sentence on average; never let one sentence exceed ~80 runes without a clean break.** "한 호흡으로 길게 이어 쓰기"는 stage 2 에서 실패합니다.
 - **act synopsis**: {act_synopsis}
 - **act key points**:
 {act_key_points}
@@ -96,8 +97,9 @@ You MUST output **exactly one JSON object** (no surrounding prose, no markdown f
 
 1. `act_id` 정확히 `{act_id}` ?
 2. `monologue` rune 길이 ≤ `{monologue_rune_cap}` ?
-3. 씬·shot·"Scene 1" 같은 메타 표기가 monologue 안에 섞여 있지 않은가?
-4. 위키 문장처럼 들리는 줄이 한 줄이라도 남아 있는가? — 있으면 다시 쓰세요.
-5. {forbidden_terms_section} 의 패턴이 monologue 에 들어가 있는가? — 있으면 다시 쓰세요.
-6. 금지된 현재진행형 행위 묘사가 있는가? — 있으면 과거 framing 으로 바꾸세요.
-7. JSON 외에 다른 텍스트(설명·"Here's the monologue:" 같은 머리말·코드펜스)가 출력에 섞여 있는가? — 있으면 제거하세요.
+3. monologue 안에 sentence-terminal (`.`, `?`, `!`, `…`, `\n`) 가 **8개 이상** 있는가? (각 종결자가 한 문장의 끝 — 8문장 미만이면 stage 2 가 실패합니다.)
+4. 씬·shot·"Scene 1" 같은 메타 표기가 monologue 안에 섞여 있지 않은가?
+5. 위키 문장처럼 들리는 줄이 한 줄이라도 남아 있는가? — 있으면 다시 쓰세요.
+6. {forbidden_terms_section} 의 패턴이 monologue 에 들어가 있는가? — 있으면 다시 쓰세요.
+7. 금지된 현재진행형 행위 묘사가 있는가? — 있으면 과거 framing 으로 바꾸세요.
+8. JSON 외에 다른 텍스트(설명·"Here's the monologue:" 같은 머리말·코드펜스)가 출력에 섞여 있는가? — 있으면 제거하세요.
