@@ -89,11 +89,18 @@ const defaultAgentConcurrency = 4
 // serially (Act N sees Act N-1's monologue tail for continuity), and each
 // act's stage 2 runs immediately after that act's stage 1 completes.
 //
+// gen drives stage 1; segmenterGen drives stage 2. Both must be non-nil.
+// They may be the same client when WriterProvider == SegmenterProvider, but
+// when the providers differ (e.g. deepseek writer + dashscope segmenter)
+// passing one client routes the segmenter model to the wrong API and
+// triggers a 400 from the receiving provider.
+//
 // Atomicity: state.Narration is set ONLY when every act of every stage
 // succeeds. A partial result (some acts have monologue but no beats) NEVER
 // persists. D6 owns resume implications.
 func NewWriter(
 	gen domain.TextGenerator,
+	segmenterGen domain.TextGenerator,
 	writerCfg TextAgentConfig,
 	segmenterCfg TextAgentConfig,
 	prompts PromptAssets,
@@ -117,7 +124,9 @@ func NewWriter(
 		case segmenterCfg.Provider == "":
 			return fmt.Errorf("writer: %w: stage-2 provider is empty", domain.ErrValidation)
 		case gen == nil:
-			return fmt.Errorf("writer: %w: generator is nil", domain.ErrValidation)
+			return fmt.Errorf("writer: %w: stage-1 generator is nil", domain.ErrValidation)
+		case segmenterGen == nil:
+			return fmt.Errorf("writer: %w: stage-2 generator is nil", domain.ErrValidation)
 		case validator == nil:
 			return fmt.Errorf("writer: %w: validator is nil", domain.ErrValidation)
 		case terms == nil:
@@ -145,7 +154,7 @@ func NewWriter(
 			if i == 0 {
 				firstMeta = monoMeta
 			}
-			beatsResp, _, err := runWriterActBeats(ctx, gen, segmenterCfg, prompts, state, spec, monoResp)
+			beatsResp, _, err := runWriterActBeats(ctx, segmenterGen, segmenterCfg, prompts, state, spec, monoResp)
 			if err != nil {
 				return err
 			}

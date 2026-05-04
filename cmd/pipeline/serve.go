@@ -346,10 +346,23 @@ func buildPhaseARunner(
 ) (*pipeline.PhaseARunner, error) {
 	writerKey := apiKeyForProvider(cfg.WriterProvider, env)
 	criticKey := apiKeyForProvider(cfg.CriticProvider, env)
+	segmenterKey := apiKeyForProvider(cfg.SegmenterProvider, env)
 
 	writerGen, err := makeTextGenerator(cfg.WriterProvider, writerKey, limiterFactory, httpClient, logger)
 	if err != nil {
 		return nil, fmt.Errorf("build phase a runner: writer generator (%s): %w", cfg.WriterProvider, err)
+	}
+	// Segmenter often runs against a different provider than the writer
+	// (qwen-plus on dashscope vs deepseek-v4-flash on deepseek). Reusing
+	// writerGen would route SegmenterModel to the wrong API and 400.
+	// Reuse the writer client only when both providers match, to avoid
+	// duplicating limiter+circuit state.
+	segmenterGen := writerGen
+	if cfg.SegmenterProvider != "" && cfg.SegmenterProvider != cfg.WriterProvider {
+		segmenterGen, err = makeTextGenerator(cfg.SegmenterProvider, segmenterKey, limiterFactory, httpClient, logger)
+		if err != nil {
+			return nil, fmt.Errorf("build phase a runner: segmenter generator (%s): %w", cfg.SegmenterProvider, err)
+		}
 	}
 	criticGen, err := makeTextGenerator(cfg.CriticProvider, criticKey, limiterFactory, httpClient, logger)
 	if err != nil {
@@ -500,7 +513,7 @@ func buildPhaseARunner(
 
 	researcher := agents.NewResearcher(corpus, researchV, writerGen, roleClassifierCfg, prompts)
 	structurer := agents.NewStructurer(structureV)
-	writer := agents.NewWriter(writerGen, writerCfg, segmenterCfg, prompts, writerV, terms)
+	writer := agents.NewWriter(writerGen, segmenterGen, writerCfg, segmenterCfg, prompts, writerV, terms)
 	polisher := agents.NewPolisher(writerGen, polisherCfg, prompts, writerV, terms)
 	postWriterCritic := agents.NewPostWriterCritic(criticGen, criticCfg, prompts, writerV, criticPostWriterV, terms, cfg.WriterProvider)
 	visualBreakdowner := agents.NewVisualBreakdowner(writerGen, writerCfg, prompts, visualV, agents.NewHeuristicDurationEstimator())

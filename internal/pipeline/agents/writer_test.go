@@ -578,7 +578,8 @@ func TestWriter_RejectsMissingSegmenterModel(t *testing.T) {
 	bad := sampleSegmenterCfg()
 	bad.Model = ""
 	state := freshWriterState()
-	err := NewWriter(newTwoStageFakeGen(), sampleWriterCfg(), bad, sampleWriterAssets(),
+	gen := newTwoStageFakeGen()
+	err := NewWriter(gen, gen, sampleWriterCfg(), bad, sampleWriterAssets(),
 		mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state)
 	if err == nil || !strings.Contains(err.Error(), "stage-2 model") {
 		t.Fatalf("expected stage-2 model error, got %v", err)
@@ -648,7 +649,9 @@ func hardcodedV2Sample() domain.NarrationScript {
 }
 
 func newTestWriter(gen domain.TextGenerator, validator *Validator, terms *ForbiddenTerms) AgentFunc {
-	return NewWriter(gen, sampleWriterCfg(), sampleSegmenterCfg(), sampleWriterAssets(), validator, terms)
+	// Same gen for both stages — production splits when WriterProvider !=
+	// SegmenterProvider, tests don't exercise cross-provider routing.
+	return NewWriter(gen, gen, sampleWriterCfg(), sampleSegmenterCfg(), sampleWriterAssets(), validator, terms)
 }
 
 func sampleStructurerOutput() *domain.StructurerOutput {
