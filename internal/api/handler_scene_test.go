@@ -75,18 +75,51 @@ func seedSegment(t testing.TB, database *sql.DB, runID string, sceneIndex int, n
 func writeScenarioFixture(t testing.TB) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "scenario.json")
+	// v2 narration: Acts/BeatAnchor structure (post-D1). Each Act carries a
+	// monologue string + per-beat rune-offset slices. The fixture covers two
+	// acts (act_hook + act_2) so HighLeverage detection can light up both
+	// "first appearance" (entity_visible=true on the first beat) and
+	// "act boundary" downstream classifications.
 	raw := []byte(`{
-	  "narration": {
-	    "scp_id": "049",
-	    "title": "Scenario",
-	    "scenes": [
-	      {"scene_num": 1, "act_id": "act_hook", "narration": "Hook", "fact_tags": [], "mood": "tense", "entity_visible": true, "location": "Hall", "characters_present": ["연구원"], "color_palette": "gray", "atmosphere": "tense"},
-	      {"scene_num": 2, "act_id": "act_2", "narration": "Boundary", "fact_tags": [], "mood": "steady", "entity_visible": false, "location": "Cell", "characters_present": ["연구원"], "color_palette": "blue", "atmosphere": "cool"}
-	    ],
-	    "metadata": {"language": "ko", "scene_count": 2},
-	    "source_version": "v1-llm-writer"
-	  }
-	}`)
+  "narration": {
+    "scp_id": "049",
+    "title": "Scenario",
+    "acts": [
+      {
+        "act_id": "act_hook",
+        "monologue": "Hook scene narration text.",
+        "mood": "tense",
+        "key_points": [],
+        "beats": [
+          {
+            "start_offset": 0, "end_offset": 26,
+            "mood": "tense", "location": "Hall",
+            "characters_present": ["연구원"], "entity_visible": true,
+            "color_palette": "gray", "atmosphere": "tense",
+            "fact_tags": []
+          }
+        ]
+      },
+      {
+        "act_id": "act_2",
+        "monologue": "Boundary scene text.",
+        "mood": "steady",
+        "key_points": [],
+        "beats": [
+          {
+            "start_offset": 0, "end_offset": 20,
+            "mood": "steady", "location": "Cell",
+            "characters_present": ["연구원"], "entity_visible": false,
+            "color_palette": "blue", "atmosphere": "cool",
+            "fact_tags": []
+          }
+        ]
+      }
+    ],
+    "metadata": {"language": "ko", "scene_count": 2},
+    "source_version": "v1.2-roles"
+  }
+}`)
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatalf("write scenario: %v", err)
 	}

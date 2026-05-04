@@ -99,10 +99,20 @@ func (s *SettingsService) Snapshot(ctx context.Context) (*SettingsSnapshot, erro
 func (s *SettingsService) Save(
 	ctx context.Context,
 	input SettingsUpdateInput,
-	_ *int64,
+	ifMatchVersion *int64,
 ) (*SettingsSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if ifMatchVersion != nil {
+		currentState, err := s.store.LoadState(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("save settings: load state: %w", err)
+		}
+		if currentState.EffectiveVersion == nil || *currentState.EffectiveVersion != *ifMatchVersion {
+			return nil, ErrSettingsConflict
+		}
+	}
 
 	currentFiles, err := s.files.Load()
 	if err != nil {
@@ -114,10 +124,14 @@ func (s *SettingsService) Save(
 		return nil, fmt.Errorf("save settings: %w", validationErr)
 	}
 
+	state, _, err := s.store.SaveSnapshot(ctx, nextFiles)
+	if err != nil {
+		return nil, fmt.Errorf("save settings: persist: %w", err)
+	}
 	if err := s.files.Write(nextFiles); err != nil {
 		return nil, fmt.Errorf("save settings: write: %w", err)
 	}
-	return s.buildSnapshot(ctx, nextFiles, db.SettingsStateRow{})
+	return s.buildSnapshot(ctx, nextFiles, state)
 }
 
 func (s *SettingsService) LoadEffectiveRuntimeConfig(ctx context.Context) (domain.PipelineConfig, error) {
@@ -150,8 +164,15 @@ func (s *SettingsService) EffectiveDryRun(ctx context.Context) (bool, error) {
 
 // EffectiveVersion returns the current effective version number, or 0 if
 // none is set. Used by handlers building ETag headers for If-Match checks.
-func (s *SettingsService) EffectiveVersion(_ context.Context) (int64, error) {
-	return 1, nil
+func (s *SettingsService) EffectiveVersion(ctx context.Context) (int64, error) {
+	state, err := s.store.LoadState(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("settings effective version: %w", err)
+	}
+	if state.EffectiveVersion == nil {
+		return 0, nil
+	}
+	return *state.EffectiveVersion, nil
 }
 
 // effectiveSnapshotFromState resolves the config+env tuple for a given state

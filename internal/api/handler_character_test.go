@@ -273,7 +273,10 @@ func TestCharacterHandler_Descriptor_ReturnsAutoWithoutPrior(t *testing.T) {
 	runDir := filepath.Join(f.outDir, run.ID)
 	scenarioPath := filepath.Join(runDir, "scenario.json")
 	if err := os.WriteFile(scenarioPath,
-		[]byte(`{"visual_breakdown":{"frozen_descriptor":"auto-from-artifact"}}`),
+		// Phase A serializes the breakdowner output under "visual_script"
+		// (renamed in D2 from the legacy "visual_breakdown" key). The
+		// CharacterService prefill reads visual_script.frozen_descriptor.
+		[]byte(`{"visual_script":{"frozen_descriptor":"auto-from-artifact"}}`),
 		0o644,
 	); err != nil {
 		t.Fatalf("write scenario: %v", err)
