@@ -46,13 +46,23 @@ func NewReviewer(
 		if err != nil {
 			return err
 		}
-		resp, err := gen.Generate(ctx, domain.TextRequest{
+		var (
+			resp     domain.TextResponse
+			parsed   any
+			finalErr error
+		)
+		callStart := time.Now()
+		defer func() {
+			emitAgentTrace(ctx, cfg, "reviewer", prompt, resp, parsed, "", finalErr, callStart)
+		}()
+		resp, err = gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
 			MaxTokens:   cfg.MaxTokens,
 			Temperature: cfg.Temperature,
 		})
 		if err != nil {
+			finalErr = err
 			return err
 		}
 
@@ -72,7 +82,8 @@ func NewReviewer(
 
 		var report domain.ReviewReport
 		if err := decodeJSONResponse(resp.Content, &report); err != nil {
-			return fmt.Errorf("reviewer: %w", err)
+			finalErr = fmt.Errorf("reviewer: %w", err)
+			return finalErr
 		}
 		if report.Issues == nil {
 			report.Issues = []domain.ReviewIssue{}
@@ -113,8 +124,10 @@ func NewReviewer(
 			}
 		}
 		if err := reviewValidator.Validate(report); err != nil {
-			return fmt.Errorf("reviewer: %w", err)
+			finalErr = fmt.Errorf("reviewer: %w", err)
+			return finalErr
 		}
+		parsed = report
 		state.Review = &report
 		return nil
 	}

@@ -32,6 +32,13 @@ type TextAgentConfig struct {
 	Concurrency int
 	AuditLogger domain.AuditLogger
 	Logger      *slog.Logger
+	// TraceWriter, when non-nil, receives one entry per LLM call attempt
+	// with the rendered prompt, raw provider response, parsed output, and
+	// per-attempt cost / latency / error. Retry-loop agents (writer,
+	// visual_breakdowner) emit one entry per attempt so the operator can
+	// see how a failed first attempt's output differed from the retry.
+	// Nil → no traces written; the writer's own retry path is unchanged.
+	TraceWriter domain.TraceWriter
 }
 
 // writerMonologueResponse is the stage-1 LLM response shape: a single
@@ -237,13 +244,23 @@ func runWriterActMonologue(
 				"prompt_chars", utf8.RuneCountInString(prompt),
 			)
 		}
-		resp, err := gen.Generate(ctx, domain.TextRequest{
+		var (
+			resp     domain.TextResponse
+			parsed   any
+			finalErr error
+		)
+		defer func() {
+			emitAgentTrace(ctx, cfg, "writer_monologue", prompt, resp, parsed, "", finalErr, callStart)
+		}()
+		var err error
+		resp, err = gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
 			MaxTokens:   cfg.MaxTokens,
 			Temperature: cfg.Temperature,
 		})
 		if err != nil {
+			finalErr = err
 			if cfg.Logger != nil {
 				cfg.Logger.Error("writer monologue attempt failed",
 					"run_id", state.RunID, "act_id", spec.Act.ID, "attempt", attempt,
@@ -271,18 +288,22 @@ func runWriterActMonologue(
 			})
 		}
 		if isTruncatedFinishReason(resp.FinishReason) {
-			return result{}, retryReasonTruncation, fmt.Errorf(
+			finalErr = fmt.Errorf(
 				"writer: act %s monologue: provider truncated completion (finish_reason=%q): %w",
 				spec.Act.ID, resp.FinishReason, domain.ErrValidation,
 			)
+			return result{}, retryReasonTruncation, finalErr
 		}
 		var decoded writerMonologueResponse
 		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
-			return result{}, retryReasonJSONDecode, fmt.Errorf("writer: act %s monologue: %w", spec.Act.ID, err)
+			finalErr = fmt.Errorf("writer: act %s monologue: %w", spec.Act.ID, err)
+			return result{}, retryReasonJSONDecode, finalErr
 		}
 		if err := validateWriterMonologueResponse(spec, decoded); err != nil {
+			finalErr = err
 			return result{}, retryReasonSchemaValidation, err
 		}
+		parsed = decoded
 		return result{decoded: decoded, meta: actCallMeta{resp: resp}}, "", nil
 	})
 	if err != nil {
@@ -356,13 +377,23 @@ func runWriterActBeats(
 				"provider", cfg.Provider, "model", cfg.Model,
 				"monologue_runes", monologueRuneCount)
 		}
-		resp, err := gen.Generate(ctx, domain.TextRequest{
+		var (
+			resp     domain.TextResponse
+			parsed   any
+			finalErr error
+		)
+		defer func() {
+			emitAgentTrace(ctx, cfg, "writer_segmenter", prompt, resp, parsed, "", finalErr, callStart)
+		}()
+		var err error
+		resp, err = gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
 			MaxTokens:   cfg.MaxTokens,
 			Temperature: cfg.Temperature,
 		})
 		if err != nil {
+			finalErr = err
 			if cfg.Logger != nil {
 				cfg.Logger.Error("writer segmenter attempt failed",
 					"run_id", state.RunID, "act_id", spec.Act.ID, "attempt", attempt,
@@ -390,18 +421,22 @@ func runWriterActBeats(
 			})
 		}
 		if isTruncatedFinishReason(resp.FinishReason) {
-			return result{}, retryReasonTruncation, fmt.Errorf(
+			finalErr = fmt.Errorf(
 				"writer: act %s segmenter: provider truncated completion (finish_reason=%q): %w",
 				spec.Act.ID, resp.FinishReason, domain.ErrValidation,
 			)
+			return result{}, retryReasonTruncation, finalErr
 		}
 		var decoded writerSegmenterResponse
 		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
-			return result{}, retryReasonJSONDecode, fmt.Errorf("writer: act %s segmenter: %w", spec.Act.ID, err)
+			finalErr = fmt.Errorf("writer: act %s segmenter: %w", spec.Act.ID, err)
+			return result{}, retryReasonJSONDecode, finalErr
 		}
 		if err := validateWriterSegmenterResponse(spec, decoded, monologueRuneCount); err != nil {
+			finalErr = err
 			return result{}, retryReasonSchemaValidation, err
 		}
+		parsed = decoded
 		return result{decoded: decoded, meta: actCallMeta{resp: resp}}, "", nil
 	})
 	if err != nil {

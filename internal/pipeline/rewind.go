@@ -206,6 +206,8 @@ func applyRewindFS(runDir string, plan RewindPlan) error {
 		{plan.FSRemoveOutputMP4, filepath.Join(runDir, "output.mp4"), false},
 		{plan.FSRemoveMetadata, filepath.Join(runDir, "metadata.json"), false},
 		{plan.FSRemoveManifest, filepath.Join(runDir, "manifest.json"), false},
+		{plan.FSRemoveCacheDir, CacheDir(runDir), true},
+		{plan.FSRemoveTracesDir, TracesDir(runDir), true},
 	}
 	for _, o := range ops {
 		if !o.want {

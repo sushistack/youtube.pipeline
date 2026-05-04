@@ -19,12 +19,15 @@ import (
 )
 
 // cacheFiles is the single source of truth for the deterministic-agent cache
-// stage → on-disk filename mapping. Used by the pending-state cache panel
-// (GET /api/runs/{id}/cache) and by the optional drop_caches body of
-// POST /api/runs/{id}/advance. Keys must match the strings used by the UI.
+// stage → on-disk path mapping (relative to runDir). Used by the pending-state
+// cache panel (GET /api/runs/{id}/cache) and by the optional drop_caches body
+// of POST /api/runs/{id}/advance. Keys must match the strings used by the UI.
+//
+// research and structure live under _cache/ (CacheEnvelope format).
+// scenario is a flat JSON file at the run-dir root.
 var cacheFiles = map[string]string{
-	"research":  "research_cache.json",
-	"structure": "structure_cache.json",
+	"research":  "_cache/research_cache.json",
+	"structure": "_cache/structure_cache.json",
 	"scenario":  "scenario.json",
 }
 
@@ -33,6 +36,15 @@ var cacheFiles = map[string]string{
 // ordering (response rows, error messages) ranges this slice and looks up
 // filenames in cacheFiles.
 var cacheStageOrder = []string{"research", "structure", "scenario"}
+
+// envelopedCacheStages is the subset of cacheStages whose on-disk files are
+// CacheEnvelope format. The handler uses envelope-aware reading for these
+// to surface Fingerprint and StalenessReason. "scenario" is a flat
+// PipelineState JSON and uses the legacy source_version probe.
+var envelopedCacheStages = map[string]bool{
+	"research":  true,
+	"structure": true,
+}
 
 // maxRequestBodyBytes caps any JSON request body we accept. 64KB is far more
 // than any current endpoint needs; resume is a tiny flag, create is a short
@@ -387,14 +399,19 @@ func (h *RunHandler) Resume(w http.ResponseWriter, r *http.Request) {
 }
 
 // cacheEntryResponse is one row of GET /api/runs/{id}/cache.
-// source_version is "" when the file is unparseable as JSON or has no
-// source_version key — the entry still surfaces so the operator can decide.
+// For CacheEnvelope stages (research, structure): fingerprint is the stored
+// sha256 hex and staleness_reason is non-empty only when the envelope is
+// corrupt or a legacy envelopeless file. A fresh valid envelope has "" staleness_reason;
+// mismatch detection happens at run time (the runner has current expected inputs).
+// For flat stages (scenario): fingerprint and staleness_reason are always "".
 type cacheEntryResponse struct {
-	Stage         string `json:"stage"`
-	Filename      string `json:"filename"`
-	SizeBytes     int64  `json:"size_bytes"`
-	ModifiedAt    string `json:"modified_at"`
-	SourceVersion string `json:"source_version"`
+	Stage           string `json:"stage"`
+	Filename        string `json:"filename"`
+	SizeBytes       int64  `json:"size_bytes"`
+	ModifiedAt      string `json:"modified_at"`
+	SourceVersion   string `json:"source_version"`
+	Fingerprint     string `json:"fingerprint,omitempty"`
+	StalenessReason string `json:"staleness_reason,omitempty"`
 }
 
 // cacheListResponse is the envelope payload for GET /api/runs/{id}/cache.
@@ -454,14 +471,33 @@ func (h *RunHandler) Cache(w http.ResponseWriter, r *http.Request) {
 			SizeBytes:  info.Size(),
 			ModifiedAt: info.ModTime().UTC().Format(time.RFC3339Nano),
 		}
-		// Partial unmarshal: tolerant of any shape so long as source_version
-		// is a string. JSON errors → empty source_version, entry still
-		// surfaces (operator decides whether to drop).
 		if data, readErr := os.ReadFile(full); readErr == nil {
-			var probe struct {
-				SourceVersion string `json:"source_version"`
-			}
-			if err := json.Unmarshal(data, &probe); err == nil {
+			if envelopedCacheStages[stage] {
+				// Envelope-based stages: decode as CacheEnvelope to surface
+				// fingerprint. If corrupt or legacy (envelope_version==0),
+				// mark staleness_reason and try a legacy source_version probe
+				// as a best-effort fallback for operator visibility.
+				var env pipeline.CacheEnvelope
+				if jsonErr := json.Unmarshal(data, &env); jsonErr != nil {
+					entry.StalenessReason = string(pipeline.StaleEnvelopeCorrupt)
+				} else if env.EnvelopeVersion == 0 {
+					entry.StalenessReason = string(pipeline.StaleEnvelopeCorrupt)
+					var probe struct {
+						SourceVersion string `json:"source_version"`
+					}
+					_ = json.Unmarshal(data, &probe)
+					entry.SourceVersion = probe.SourceVersion
+				} else {
+					entry.SourceVersion = env.SourceVersion
+					entry.Fingerprint = env.Fingerprint
+				}
+			} else {
+				// Flat probe for non-envelope files (scenario.json). JSON
+				// errors → source_version="", entry still surfaces.
+				var probe struct {
+					SourceVersion string `json:"source_version"`
+				}
+				_ = json.Unmarshal(data, &probe)
 				entry.SourceVersion = probe.SourceVersion
 			}
 		}

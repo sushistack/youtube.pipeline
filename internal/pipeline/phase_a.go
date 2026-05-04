@@ -50,6 +50,14 @@ type PhaseARunner struct {
 	outputDir      string
 	clock          clock.Clock
 	logger         *slog.Logger
+
+	// cacheInputs maps deterministic stages (researcher, structurer) to
+	// the FingerprintInputs that should validate their on-disk cache.
+	// nil/missing entries → no caching attempted for that stage; the
+	// runner runs the agent and skips cache write. Production wiring
+	// (cmd/pipeline/serve.go) populates entries for both deterministic
+	// stages from effective config; tests inject explicit values.
+	cacheInputs map[agents.PipelineStage]FingerprintInputs
 }
 
 // NewPhaseARunner constructs a runner. All eight AgentFunc arguments are
@@ -122,6 +130,17 @@ func NewPhaseARunner(
 	}, nil
 }
 
+// WithCacheFingerprints registers the FingerprintInputs the runner must
+// validate cache envelopes against. Caches whose recorded fingerprint
+// does not match are treated as misses (the agent re-runs and overwrites
+// the envelope). Stages with no entry in fps are run uncached.
+//
+// Returns r so callers can chain: `runner.WithCacheFingerprints(...)`.
+func (r *PhaseARunner) WithCacheFingerprints(fps map[agents.PipelineStage]FingerprintInputs) *PhaseARunner {
+	r.cacheInputs = fps
+	return r
+}
+
 // Run executes the seven Phase A agents sequentially. Ordering is fixed:
 // Researcher → Structurer → Writer → PostWriterCritic → VisualBreakdowner → Reviewer → Critic.
 // On the first agent error, the chain aborts and the error is returned
@@ -191,6 +210,11 @@ func (r *PhaseARunner) Run(ctx context.Context, state *agents.PipelineState) err
 	}
 
 	state.StartedAt = r.clock.Now().Format(time.RFC3339Nano)
+
+	// Tag the context with run ID so any TraceWriter wired into agent
+	// configs (via cmd/pipeline/serve.go) can route per-attempt traces
+	// to {outputDir}/{runID}/traces/.
+	ctx = WithTraceRunID(ctx, state.RunID)
 
 	// Fail-fast: ensure the per-run output directory is writable BEFORE
 	// any agent runs. A bad outputDir (e.g., points at a regular file,
@@ -377,106 +401,120 @@ func shouldFinalizePhaseA(state *agents.PipelineState) bool {
 		state.Critic.PostReviewer.Verdict == domain.CriticVerdictAcceptWithNotes
 }
 
-// tryLoadCache attempts to read a cached agent output from disk for deterministic
-// agents (researcher, structurer). On success it populates the relevant state
-// field and returns true so the caller can skip invoking the agent. Any read
-// or unmarshal failure is treated as a cache miss (returns false) — the agent
-// will run normally and overwrite the stale or corrupt file.
+// CacheStageFilenames maps deterministic Phase A stages to their on-disk
+// cache filenames (under {runDir}/_cache/). Centralized so the API
+// handler, rewind cleanup, and the runner cannot drift on file naming.
+var CacheStageFilenames = map[agents.PipelineStage]string{
+	agents.StageResearcher: "research_cache.json",
+	agents.StageStructurer: "structure_cache.json",
+}
+
+// tryLoadCache attempts to read a cached agent output from disk for
+// deterministic agents (researcher, structurer). On envelope-fingerprint
+// match it populates the relevant state field and returns true so the
+// caller can skip invoking the agent.
+//
+// Mismatches are typed (StalenessReason) and logged; the file is not
+// deleted — writeCache will overwrite it on the next successful agent
+// run. Any read failure (file missing, permission denied) is a silent
+// miss. A legacy envelopeless flat-payload file is reported as
+// envelope_corrupt and treated as a miss with no migration code.
+//
+// Returns false (miss) when:
+//   - r.cacheInputs has no entry for ps (caching not configured)
+//   - the file is missing
+//   - the envelope is corrupt or fingerprint mismatched
+//   - the cached payload's SCPID differs from state.SCPID (cross-run safety)
 func (r *PhaseARunner) tryLoadCache(ps agents.PipelineStage, runDir string, state *agents.PipelineState) bool {
-	var cacheFile string
-	switch ps {
-	case agents.StageResearcher:
-		cacheFile = filepath.Join(runDir, "research_cache.json")
-	case agents.StageStructurer:
-		cacheFile = filepath.Join(runDir, "structure_cache.json")
-	default:
+	expected, ok := r.cacheInputs[ps]
+	if !ok {
 		return false
 	}
+	filename, ok := CacheStageFilenames[ps]
+	if !ok {
+		return false
+	}
+	cacheFile := CacheStageFile(runDir, filename)
 
-	data, err := os.ReadFile(cacheFile)
+	env, reason, err := LoadEnvelope(cacheFile, expected)
 	if err != nil {
+		// File missing or unreadable — silent miss, agent runs.
+		return false
+	}
+	if reason != "" {
+		r.logger.Info("agent cache stale",
+			"pipeline_stage", ps.String(),
+			"run_id", state.RunID,
+			"staleness_reason", string(reason),
+		)
 		return false
 	}
 
 	switch ps {
 	case agents.StageResearcher:
 		var out *domain.ResearcherOutput
-		if err := json.Unmarshal(data, &out); err != nil || out == nil {
+		if err := json.Unmarshal(env.Payload, &out); err != nil || out == nil {
 			return false
 		}
 		if out.SCPID != state.SCPID {
-			return false
-		}
-		if out.SourceVersion != domain.SourceVersionV1 {
-			r.logger.Info("agent cache stale: source_version mismatch",
-				"pipeline_stage", ps.String(), "run_id", state.RunID,
-				"cached_version", out.SourceVersion, "current_version", domain.SourceVersionV1)
 			return false
 		}
 		state.Research = out
 	case agents.StageStructurer:
 		var out *domain.StructurerOutput
-		if err := json.Unmarshal(data, &out); err != nil || out == nil {
+		if err := json.Unmarshal(env.Payload, &out); err != nil || out == nil {
 			return false
 		}
 		if out.SCPID != state.SCPID {
 			return false
 		}
-		if out.SourceVersion != domain.SourceVersionV1 {
-			r.logger.Info("agent cache stale: source_version mismatch",
-				"pipeline_stage", ps.String(), "run_id", state.RunID,
-				"cached_version", out.SourceVersion, "current_version", domain.SourceVersionV1)
-			return false
-		}
 		state.Structure = out
+	default:
+		return false
 	}
 
 	r.logger.Info("agent cache hit", "pipeline_stage", ps.String(), "run_id", state.RunID)
 	return true
 }
 
-// writeCache persists a deterministic agent's output to disk atomically
-// (tmp file → rename). Errors are logged but not returned — a failed cache
-// write is non-fatal; the pipeline result is not affected.
+// writeCache persists a deterministic agent's output to disk as a
+// CacheEnvelope, atomically (tmp file → rename) under
+// {runDir}/_cache/{stage}_cache.json. Errors are logged but not
+// returned — a failed cache write is non-fatal; the pipeline result is
+// not affected.
 func (r *PhaseARunner) writeCache(ps agents.PipelineStage, runDir string, state *agents.PipelineState) {
-	var (
-		cacheFile string
-		payload   any
-	)
+	inputs, ok := r.cacheInputs[ps]
+	if !ok {
+		return
+	}
+	filename, ok := CacheStageFilenames[ps]
+	if !ok {
+		return
+	}
+	var payload any
 	switch ps {
 	case agents.StageResearcher:
 		if state.Research == nil {
 			return
 		}
-		cacheFile = filepath.Join(runDir, "research_cache.json")
 		payload = state.Research
 	case agents.StageStructurer:
 		if state.Structure == nil {
 			return
 		}
-		cacheFile = filepath.Join(runDir, "structure_cache.json")
 		payload = state.Structure
 	default:
 		return
 	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		r.logger.Warn("agent cache marshal failed", "pipeline_stage", ps.String(), "run_id", state.RunID, "error", err.Error())
+	cacheFile := CacheStageFile(runDir, filename)
+	if err := WriteEnvelope(cacheFile, inputs, payload, r.clock.Now()); err != nil {
+		r.logger.Warn("agent cache write failed",
+			"pipeline_stage", ps.String(),
+			"run_id", state.RunID,
+			"error", err.Error(),
+		)
 		return
 	}
-
-	tmp := cacheFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		r.logger.Warn("agent cache write failed", "pipeline_stage", ps.String(), "run_id", state.RunID, "error", err.Error())
-		return
-	}
-	if err := os.Rename(tmp, cacheFile); err != nil {
-		r.logger.Warn("agent cache rename failed", "pipeline_stage", ps.String(), "run_id", state.RunID, "error", err.Error())
-		os.Remove(tmp)
-		return
-	}
-
 	r.logger.Info("agent cache written", "pipeline_stage", ps.String(), "run_id", state.RunID)
 }
 

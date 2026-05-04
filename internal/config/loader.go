@@ -62,6 +62,7 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("auto_approval_threshold", cfg.AutoApprovalThreshold)
 	v.SetDefault("artifact_retention_days", cfg.ArtifactRetentionDays)
 	v.SetDefault("use_template_prompts", cfg.UseTemplatePrompts)
+	v.SetDefault("observability.debug_traces", cfg.Observability.DebugTraces)
 
 	// Read config.yaml if it exists.
 	if cfgPath != "" {

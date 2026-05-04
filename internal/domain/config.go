@@ -152,6 +152,23 @@ type PipelineConfig struct {
 	// flipping this only affects subsequently created runs (matching
 	// the spirit of DryRun).
 	UseTemplatePrompts bool `yaml:"use_template_prompts" mapstructure:"use_template_prompts"`
+
+	// Observability groups runtime debug toggles that are operationally
+	// off-by-default — flipping them costs disk I/O and bloats run
+	// directories, so a deliberate config edit is required.
+	Observability ObservabilityConfig `yaml:"observability" mapstructure:"observability"`
+}
+
+// ObservabilityConfig groups runtime debug-output toggles. Lives in
+// config.yaml only — env-only toggles are dead layers in a
+// 1-operator pipeline (memory: feedback_config_not_env.md).
+type ObservabilityConfig struct {
+	// DebugTraces, when true, dumps one JSON file per LLM call attempt
+	// under {runDir}/traces/{stage}.{NNN}.json containing the full
+	// rendered prompt, raw provider response, parsed output, and
+	// per-attempt cost / latency. Default false — operators flip it
+	// on only while iterating prompts or fewshots.
+	DebugTraces bool `yaml:"debug_traces" mapstructure:"debug_traces"`
 }
 
 // DefaultConfig returns a PipelineConfig with sensible defaults.

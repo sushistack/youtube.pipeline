@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -322,6 +324,14 @@ func mergeProjectEnv(loaded map[string]string, projectRoot string) map[string]st
 	return merged
 }
 
+// sha256Hex returns the lowercase hex sha256 of s. Used to build
+// FingerprintInputs.PromptTemplateSHA without hitting the filesystem again
+// after LoadPromptAssets has already read the files into memory.
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
 // buildPhaseARunner constructs a PhaseARunner wired with real agent
 // implementations. projectRoot must be the repo root so schema files and
 // prompt assets can be resolved. Returns an error if any required API key is
@@ -395,6 +405,13 @@ func buildPhaseARunner(
 	corpus := agents.NewFilesystemCorpus(cfg.DataDir)
 	auditLogger := pipeline.NewFileAuditLogger(cfg.OutputDir)
 
+	// TraceWriter: active only when observability.debug_traces=true.
+	// NoopTraceWriter makes the hot path zero-syscall.
+	var traceWriter domain.TraceWriter = pipeline.NoopTraceWriter{}
+	if cfg.Observability.DebugTraces {
+		traceWriter = pipeline.NewFileTraceWriter(cfg.OutputDir)
+	}
+
 	writerCfg := agents.TextAgentConfig{
 		Model:    cfg.WriterModel,
 		Provider: cfg.WriterProvider,
@@ -406,6 +423,7 @@ func buildPhaseARunner(
 		MaxTokens:   12288,
 		Temperature: 0.7,
 		AuditLogger: auditLogger,
+		TraceWriter: traceWriter,
 		Logger:      logger,
 	}
 	// v2 stage-2: beat segmenter (qwen-plus per spec D1). Offset arithmetic
@@ -418,6 +436,7 @@ func buildPhaseARunner(
 		MaxTokens:   4096,
 		Temperature: 0.0,
 		AuditLogger: auditLogger,
+		TraceWriter: traceWriter,
 		Logger:      logger,
 	}
 	criticCfg := agents.TextAgentConfig{
@@ -426,6 +445,7 @@ func buildPhaseARunner(
 		MaxTokens:   2048,
 		Temperature: 0.0,
 		AuditLogger: auditLogger,
+		TraceWriter: traceWriter,
 		Logger:      logger,
 	}
 
@@ -436,6 +456,7 @@ func buildPhaseARunner(
 		Temperature: 0.0,
 		Concurrency: 1,
 		AuditLogger: auditLogger,
+		TraceWriter: traceWriter,
 		Logger:      logger,
 	}
 	polisherCfg := agents.TextAgentConfig{
@@ -449,7 +470,32 @@ func buildPhaseARunner(
 		MaxTokens:   16384,
 		Temperature: 0.5,
 		AuditLogger: auditLogger,
+		TraceWriter: traceWriter,
 		Logger:      logger,
+	}
+
+	// FingerprintInputs for deterministic stages. Researcher fingerprint covers
+	// the role-classifier prompt (the only LLM dependency in that stage) plus
+	// model/provider/schema. Structurer has no LLM dependency — its fingerprint
+	// only tracks schema versioning so stale caches are invalidated on struct
+	// layout changes.
+	fps := map[agents.PipelineStage]pipeline.FingerprintInputs{
+		agents.StageResearcher: {
+			SourceVersion:     domain.SourceVersionV1,
+			PromptTemplateSHA: sha256Hex(prompts.RoleClassifierTemplate),
+			FewshotSHA:        "",
+			Model:             cfg.WriterModel,
+			Provider:          cfg.WriterProvider,
+			SchemaVersion:     "v1",
+		},
+		agents.StageStructurer: {
+			SourceVersion:     domain.SourceVersionV1,
+			PromptTemplateSHA: "",
+			FewshotSHA:        "",
+			Model:             "",
+			Provider:          "",
+			SchemaVersion:     "v1",
+		},
 	}
 
 	researcher := agents.NewResearcher(corpus, researchV, writerGen, roleClassifierCfg, prompts)
@@ -461,12 +507,16 @@ func buildPhaseARunner(
 	reviewer := agents.NewReviewer(criticGen, criticCfg, prompts, visualV, reviewV)
 	postReviewerCritic := agents.NewPostReviewerCritic(criticGen, criticCfg, prompts, writerV, visualV, reviewV, criticPostReviewerV, terms, cfg.WriterProvider)
 
-	return pipeline.NewPhaseARunner(
+	runner, err := pipeline.NewPhaseARunner(
 		researcher, structurer, writer, polisher, postWriterCritic,
 		visualBreakdowner, reviewer, postReviewerCritic,
 		cfg.WriterProvider, cfg.CriticProvider,
 		cfg.OutputDir, clock.RealClock{}, logger,
 	)
+	if err != nil {
+		return nil, err
+	}
+	return runner.WithCacheFingerprints(fps), nil
 }
 
 type dynamicPhaseAExecutor struct {

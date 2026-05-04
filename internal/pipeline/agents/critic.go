@@ -82,13 +82,23 @@ func NewPostWriterCritic(
 			)
 		}
 		callStart := time.Now()
-		resp, err := gen.Generate(ctx, domain.TextRequest{
+		var (
+			resp     domain.TextResponse
+			parsed   any
+			verdict  string
+			finalErr error
+		)
+		defer func() {
+			emitAgentTrace(ctx, cfg, "post_writer_critic", prompt, resp, parsed, verdict, finalErr, callStart)
+		}()
+		resp, err = gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
 			MaxTokens:   cfg.MaxTokens,
 			Temperature: cfg.Temperature,
 		})
 		if err != nil {
+			finalErr = err
 			if cfg.Logger != nil {
 				cfg.Logger.Error("critic call failed",
 					"run_id", state.RunID,
@@ -126,7 +136,8 @@ func NewPostWriterCritic(
 
 		var report domain.CriticCheckpointReport
 		if err := decodeJSONResponse(resp.Content, &report); err != nil {
-			return fmt.Errorf("critic: %w", err)
+			finalErr = fmt.Errorf("critic: %w", err)
+			return finalErr
 		}
 		if report.OverallScore == 0 && report.Verdict != domain.CriticVerdictRetry {
 			report.OverallScore = scoreRubric(report.Rubric)
@@ -159,12 +170,16 @@ func NewPostWriterCritic(
 		}
 		report.SourceVersion = domain.CriticSourceVersionV2
 		if !containsHangul(report.Feedback) {
-			return fmt.Errorf("critic: feedback must remain Korean: %w", domain.ErrValidation)
+			finalErr = fmt.Errorf("critic: feedback must remain Korean: %w", domain.ErrValidation)
+			return finalErr
 		}
 		if err := criticValidator.Validate(report); err != nil {
-			return fmt.Errorf("critic: %w", err)
+			finalErr = fmt.Errorf("critic: %w", err)
+			return finalErr
 		}
 
+		parsed = report
+		verdict = string(report.Verdict)
 		ensureCriticState(state).PostWriter = &report
 		return nil
 	}
@@ -243,13 +258,23 @@ func NewPostReviewerCritic(
 			)
 		}
 		callStart := time.Now()
-		resp, err := gen.Generate(ctx, domain.TextRequest{
+		var (
+			resp     domain.TextResponse
+			parsed   any
+			verdict  string
+			finalErr error
+		)
+		defer func() {
+			emitAgentTrace(ctx, cfg, "post_reviewer_critic", prompt, resp, parsed, verdict, finalErr, callStart)
+		}()
+		resp, err = gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
 			MaxTokens:   cfg.MaxTokens,
 			Temperature: cfg.Temperature,
 		})
 		if err != nil {
+			finalErr = err
 			if cfg.Logger != nil {
 				cfg.Logger.Error("critic call failed",
 					"run_id", state.RunID,
@@ -287,7 +312,8 @@ func NewPostReviewerCritic(
 
 		var report domain.CriticCheckpointReport
 		if err := decodeJSONResponse(resp.Content, &report); err != nil {
-			return fmt.Errorf("critic: %w", err)
+			finalErr = fmt.Errorf("critic: %w", err)
+			return finalErr
 		}
 		if report.OverallScore == 0 && report.Verdict != domain.CriticVerdictRetry {
 			report.OverallScore = scoreRubric(report.Rubric)
@@ -298,7 +324,8 @@ func NewPostReviewerCritic(
 			report.RetryReason = ""
 		}
 		if err := validateMinorPolicyFindings(report.MinorPolicyFindings, state.Narration); err != nil {
-			return fmt.Errorf("critic: %w", err)
+			finalErr = fmt.Errorf("critic: %w", err)
+			return finalErr
 		}
 		if cfg.Logger != nil {
 			cfg.Logger.Info("critic verdict",
@@ -323,12 +350,16 @@ func NewPostReviewerCritic(
 		}
 		report.SourceVersion = domain.CriticSourceVersionPostReviewerV2
 		if !containsHangul(report.Feedback) {
-			return fmt.Errorf("critic: feedback must remain Korean: %w", domain.ErrValidation)
+			finalErr = fmt.Errorf("critic: feedback must remain Korean: %w", domain.ErrValidation)
+			return finalErr
 		}
 		if err := criticValidator.Validate(report); err != nil {
-			return fmt.Errorf("critic: %w", err)
+			finalErr = fmt.Errorf("critic: %w", err)
+			return finalErr
 		}
 
+		parsed = report
+		verdict = string(report.Verdict)
 		ensureCriticState(state).PostReviewer = &report
 		return nil
 	}

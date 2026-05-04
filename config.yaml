@@ -23,3 +23,5 @@ golden_staleness_days: 30
 shadow_eval_window: 10
 auto_approval_threshold: 0.85
 artifact_retention_days: 30
+observability:
+  debug_traces: false

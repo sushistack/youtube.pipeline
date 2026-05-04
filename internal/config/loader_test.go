@@ -381,3 +381,34 @@ func TestLoad_DryRunFromYAML(t *testing.T) {
 		t.Errorf("DryRun = false, want true after YAML override")
 	}
 }
+
+func TestLoad_DebugTracesDefaultsFalse(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(""), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	cfg, err := Load(cfgPath, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Observability.DebugTraces {
+		t.Errorf("DebugTraces = true, want false by default")
+	}
+}
+
+func TestLoad_DebugTracesFromYAML(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.yaml")
+	yaml := "observability:\n  debug_traces: true\n"
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	cfg, err := Load(cfgPath, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Observability.DebugTraces {
+		t.Errorf("DebugTraces = false, want true after YAML override")
+	}
+}

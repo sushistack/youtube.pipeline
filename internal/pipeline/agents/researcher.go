@@ -165,9 +165,20 @@ func classifyBeatRoles(
 				"beat_count", len(beats),
 			)
 		}
+		var (
+			resp     domain.TextResponse
+			parsed   any
+			finalErr error
+		)
 		callStart := time.Now()
-		resp, err := gen.Generate(ctx, req)
+		emitOnExit := func() {
+			emitAgentTrace(ctx, cfg, roleClassifierAuditStage, prompt, resp, parsed, "", finalErr, callStart)
+		}
+		var err error
+		resp, err = gen.Generate(ctx, req)
 		if err != nil {
+			finalErr = err
+			emitOnExit()
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return err
 			}
@@ -206,19 +217,23 @@ func classifyBeatRoles(
 			})
 		}
 
-		assignments, err := parseRoleClassifications(resp.Content, len(beats))
-		if err != nil {
-			lastErr = err
+		assignments, perr := parseRoleClassifications(resp.Content, len(beats))
+		if perr != nil {
+			finalErr = perr
+			emitOnExit()
+			lastErr = perr
 			if cfg.Logger != nil {
 				cfg.Logger.Info("role classifier retry",
 					"run_id", state.RunID,
 					"attempt", attempt,
 					"reason", "validation",
-					"error", err.Error(),
+					"error", perr.Error(),
 				)
 			}
 			continue
 		}
+		parsed = assignments
+		emitOnExit()
 		for i, role := range assignments {
 			beats[i].RoleSuggestion = role
 		}

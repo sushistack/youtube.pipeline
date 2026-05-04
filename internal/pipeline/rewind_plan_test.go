@@ -150,6 +150,12 @@ func TestPlanRewind_Scenario(t *testing.T) {
 			break
 		}
 	}
+	if !plan.FSRemoveCacheDir {
+		t.Errorf("scenario rewind must set FSRemoveCacheDir (wipes _cache/ before Phase A re-runs): %+v", plan)
+	}
+	if !plan.FSRemoveTracesDir {
+		t.Errorf("scenario rewind must set FSRemoveTracesDir (stale traces irrelevant after full restart): %+v", plan)
+	}
 	// All known decision types must be deleted (rewind to research wipes
 	// everything from research onward).
 	if len(plan.DecisionTypesToDelete) == 0 {

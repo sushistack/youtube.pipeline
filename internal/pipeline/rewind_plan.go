@@ -229,6 +229,14 @@ type RewindPlan struct {
 	FSRemoveOutputMP4 bool
 	FSRemoveMetadata  bool
 	FSRemoveManifest  bool
+	// FSRemoveCacheDir removes {runDir}/_cache/ (deterministic-agent envelopes).
+	// Set only for full-restart rewinds (StageNodeScenario) so resumed runs do
+	// not retain stale research/structure caches from the prior attempt.
+	FSRemoveCacheDir bool
+	// FSRemoveTracesDir removes {runDir}/traces/ (per-attempt LLM debug traces).
+	// Set for full-restart rewinds alongside FSRemoveCacheDir; traces from the
+	// previous attempt are irrelevant after Phase A re-runs from scratch.
+	FSRemoveTracesDir bool
 }
 
 // PlanRewind builds the full set of effects required to rewind to the
@@ -263,6 +271,8 @@ func PlanRewind(node StageNodeKey) (RewindPlan, error) {
 		p.FSRemoveOutputMP4 = true
 		p.FSRemoveMetadata = true
 		p.FSRemoveManifest = true
+		p.FSRemoveCacheDir = true
+		p.FSRemoveTracesDir = true
 	case StageNodeCharacter:
 		// Re-enter at Cast HITL. Phase A artifacts (scenario.json + segments
 		// narration text) are preserved; Phase B/C outputs are wiped.

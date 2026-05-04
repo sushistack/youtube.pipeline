@@ -42,6 +42,11 @@ type runnerBuilder struct {
 	outputDir      string
 	clock          clock.Clock
 	logger         *slog.Logger
+
+	// cacheInputs, when non-nil, is forwarded to WithCacheFingerprints in
+	// build() so tests that exercise cache hit / miss paths get the same
+	// envelope-based invalidation as production code.
+	cacheInputs map[agents.PipelineStage]FingerprintInputs
 }
 
 func defaultRunnerBuilder(t *testing.T) *runnerBuilder {
@@ -74,6 +79,9 @@ func (b *runnerBuilder) build(t *testing.T) *PhaseARunner {
 	)
 	if err != nil {
 		t.Fatalf("NewPhaseARunner: %v", err)
+	}
+	if b.cacheInputs != nil {
+		r.WithCacheFingerprints(b.cacheInputs)
 	}
 	return r
 }
@@ -875,17 +883,45 @@ func TestPhaseARunner_MkdirFailure_ReturnsError(t *testing.T) {
 
 // --- Phase A agent caching (researcher / structurer) ----------------------
 
+// defaultCacheInputs returns FingerprintInputs for both deterministic stages
+// with the stable test values. Tests that exercise cache hit / miss paths set
+// b.cacheInputs = defaultCacheInputs() before calling b.build().
+func defaultCacheInputs() map[agents.PipelineStage]FingerprintInputs {
+	return map[agents.PipelineStage]FingerprintInputs{
+		agents.StageResearcher: {
+			SourceVersion: domain.SourceVersionV1,
+			SchemaVersion: "v1",
+		},
+		agents.StageStructurer: {
+			SourceVersion: domain.SourceVersionV1,
+			SchemaVersion: "v1",
+		},
+	}
+}
+
+// writeTestCacheEnvelope writes a CacheEnvelope to the canonical _cache/ path
+// for ps under runDir. inputs must match the runner's cacheInputs entry for
+// that stage so tryLoadCache accepts the envelope as a cache hit.
+func writeTestCacheEnvelope(t *testing.T, runDir string, ps agents.PipelineStage, payload any, inputs FingerprintInputs) {
+	t.Helper()
+	filename, ok := CacheStageFilenames[ps]
+	if !ok {
+		t.Fatalf("writeTestCacheEnvelope: no cache filename for stage %v", ps)
+	}
+	path := CacheStageFile(runDir, filename)
+	if err := WriteEnvelope(path, inputs, payload, time.Now()); err != nil {
+		t.Fatalf("writeTestCacheEnvelope %v: %v", ps, err)
+	}
+}
+
 func TestPhaseARunner_ResearcherCacheHit(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	b := defaultRunnerBuilder(t)
+	b.cacheInputs = defaultCacheInputs()
 
-	// Write a valid research_cache.json before Run() is called.
 	runDir := filepath.Join(b.outputDir, "run-1")
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	cached := &domain.ResearcherOutput{SCPID: "scp-1", Title: "from-cache", SourceVersion: domain.SourceVersionV1}
-	writeTestCacheJSON(t, filepath.Join(runDir, "research_cache.json"), cached)
+	writeTestCacheEnvelope(t, runDir, agents.StageResearcher, cached, b.cacheInputs[agents.StageResearcher])
 
 	var researcherCalls int
 	b.researcher = func(_ context.Context, _ *agents.PipelineState) error {
@@ -909,14 +945,11 @@ func TestPhaseARunner_ResearcherCacheHit(t *testing.T) {
 func TestPhaseARunner_StructurerCacheHit(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	b := defaultRunnerBuilder(t)
+	b.cacheInputs = defaultCacheInputs()
 
-	// Write a valid structure_cache.json before Run() is called.
 	runDir := filepath.Join(b.outputDir, "run-1")
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	cached := &domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 42, SourceVersion: domain.SourceVersionV1}
-	writeTestCacheJSON(t, filepath.Join(runDir, "structure_cache.json"), cached)
+	writeTestCacheEnvelope(t, runDir, agents.StageStructurer, cached, b.cacheInputs[agents.StageStructurer])
 
 	var structurerCalls int
 	b.structurer = func(_ context.Context, _ *agents.PipelineState) error {
@@ -940,6 +973,7 @@ func TestPhaseARunner_StructurerCacheHit(t *testing.T) {
 func TestPhaseARunner_CacheMissWritesFile(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	b := defaultRunnerBuilder(t)
+	b.cacheInputs = defaultCacheInputs()
 
 	b.researcher = func(_ context.Context, state *agents.PipelineState) error {
 		state.Research = &domain.ResearcherOutput{SCPID: "scp-1", Title: "fresh"}
@@ -957,11 +991,11 @@ func TestPhaseARunner_CacheMissWritesFile(t *testing.T) {
 	}
 
 	runDir := filepath.Join(b.outputDir, state.RunID)
-	if _, err := os.Stat(filepath.Join(runDir, "research_cache.json")); err != nil {
-		t.Errorf("research_cache.json not written: %v", err)
+	if _, err := os.Stat(CacheStageFile(runDir, CacheStageFilenames[agents.StageResearcher])); err != nil {
+		t.Errorf("research cache envelope not written: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(runDir, "structure_cache.json")); err != nil {
-		t.Errorf("structure_cache.json not written: %v", err)
+	if _, err := os.Stat(CacheStageFile(runDir, CacheStageFilenames[agents.StageStructurer])); err != nil {
+		t.Errorf("structure cache envelope not written: %v", err)
 	}
 }
 
@@ -971,14 +1005,12 @@ func TestPhaseARunner_CacheMissWritesFile(t *testing.T) {
 func TestPhaseARunner_ResearcherCacheHit_StructurerRunsNormally(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	b := defaultRunnerBuilder(t)
+	b.cacheInputs = defaultCacheInputs()
 
 	runDir := filepath.Join(b.outputDir, "run-1")
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	// Only pre-seed research cache — no structure_cache.json.
+	// Only pre-seed research cache — no structure cache.
 	cachedResearch := &domain.ResearcherOutput{SCPID: "scp-1", Title: "cached", SourceVersion: domain.SourceVersionV1}
-	writeTestCacheJSON(t, filepath.Join(runDir, "research_cache.json"), cachedResearch)
+	writeTestCacheEnvelope(t, runDir, agents.StageResearcher, cachedResearch, b.cacheInputs[agents.StageResearcher])
 
 	var researcherCalls, structurerCalls int
 	b.researcher = func(_ context.Context, _ *agents.PipelineState) error {
@@ -1007,23 +1039,23 @@ func TestPhaseARunner_ResearcherCacheHit_StructurerRunsNormally(t *testing.T) {
 	}
 }
 
-// TestPhaseARunner_CacheStaleSourceVersion verifies that a cache file whose
-// source_version differs from the current domain.SourceVersionV1 constant is
-// treated as a miss, forcing the deterministic agent to re-run. This is the
-// auto-invalidation hook: bumping SourceVersionV1 in the same commit as a
-// logic change makes existing on-disk caches stale without operator action.
+// TestPhaseARunner_CacheStaleSourceVersion verifies that a cache envelope whose
+// recorded source_version differs from cacheInputs.SourceVersion is treated as
+// a miss, forcing the deterministic agent to re-run. This is the auto-
+// invalidation hook: bumping SourceVersionV1 in the same commit as a logic
+// change makes existing on-disk envelopes stale without operator action.
 func TestPhaseARunner_CacheStaleSourceVersion(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	b := defaultRunnerBuilder(t)
+	b.cacheInputs = defaultCacheInputs() // expects domain.SourceVersionV1
 
 	runDir := filepath.Join(b.outputDir, "run-1")
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	staleResearch := &domain.ResearcherOutput{SCPID: "scp-1", Title: "stale", SourceVersion: "v0-pre-deterministic"}
-	writeTestCacheJSON(t, filepath.Join(runDir, "research_cache.json"), staleResearch)
-	staleStructure := &domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 99, SourceVersion: "v0-pre-deterministic"}
-	writeTestCacheJSON(t, filepath.Join(runDir, "structure_cache.json"), staleStructure)
+	// Write envelopes with an old source_version — these should be rejected.
+	staleInputs := FingerprintInputs{SourceVersion: "v0-pre-deterministic", SchemaVersion: "v1"}
+	writeTestCacheEnvelope(t, runDir, agents.StageResearcher,
+		&domain.ResearcherOutput{SCPID: "scp-1", Title: "stale"}, staleInputs)
+	writeTestCacheEnvelope(t, runDir, agents.StageStructurer,
+		&domain.StructurerOutput{SCPID: "scp-1", TargetSceneCount: 99}, staleInputs)
 
 	var researcherCalls, structurerCalls int
 	b.researcher = func(_ context.Context, state *agents.PipelineState) error {
@@ -1053,9 +1085,14 @@ func TestPhaseARunner_CacheStaleSourceVersion(t *testing.T) {
 	}
 }
 
-// writeTestCacheJSON marshals v to JSON and writes it to path.
+// writeTestCacheJSON marshals v to JSON and writes it to path (flat, no
+// envelope). Used only for non-cache JSON files (scenario.json etc.) and
+// for testing the legacy-corrupt detection path.
 func writeTestCacheJSON(t *testing.T, path string, v any) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 	data, err := json.Marshal(v)
 	if err != nil {
 		t.Fatalf("marshal cache: %v", err)

@@ -201,13 +201,23 @@ func runVisualBreakdownerAct(
 			)
 		}
 		callStart := time.Now()
-		resp, err := gen.Generate(ctx, domain.TextRequest{
+		var (
+			resp     domain.TextResponse
+			parsed   any
+			finalErr error
+		)
+		defer func() {
+			emitAgentTrace(ctx, cfg, "visual_breakdowner", prompt, resp, parsed, "", finalErr, callStart)
+		}()
+		var err error
+		resp, err = gen.Generate(ctx, domain.TextRequest{
 			Prompt:      prompt,
 			Model:       cfg.Model,
 			MaxTokens:   cfg.MaxTokens,
 			Temperature: cfg.Temperature,
 		})
 		if err != nil {
+			finalErr = err
 			if cfg.Logger != nil {
 				cfg.Logger.Error("visual breakdowner attempt failed",
 					"run_id", state.RunID,
@@ -255,11 +265,14 @@ func runVisualBreakdownerAct(
 
 		var decoded visualBreakdownActResponse
 		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
-			return visualBreakdownActResponse{}, retryReasonJSONDecode, fmt.Errorf("visual breakdowner: %w", err)
+			finalErr = fmt.Errorf("visual breakdowner: %w", err)
+			return visualBreakdownActResponse{}, retryReasonJSONDecode, finalErr
 		}
 		if err := validateVisualBreakdownActResponse(act, decoded); err != nil {
+			finalErr = err
 			return visualBreakdownActResponse{}, retryReasonSchemaValidation, err
 		}
+		parsed = decoded
 		return decoded, "", nil
 	})
 	if err != nil {

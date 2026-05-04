@@ -134,6 +134,7 @@ func writeConfigFile(path string, cfg domain.PipelineConfig, existingMode os.Fil
 		BlockedVoiceIDs:          cfg.BlockedVoiceIDs,
 		ArtifactRetentionDays:    cfg.ArtifactRetentionDays,
 		DryRun:                   cfg.DryRun,
+		Observability:            orderedObservability(cfg.Observability),
 	}
 	data, err := yaml.Marshal(&ordered)
 	if err != nil {
@@ -386,37 +387,46 @@ func supportedSecretKeys() []string {
 }
 
 type orderedPipelineConfig struct {
-	WriterModel              string   `yaml:"writer_model"`
-	CriticModel              string   `yaml:"critic_model"`
-	TTSModel                 string   `yaml:"tts_model"`
-	TTSVoice                 string   `yaml:"tts_voice"`
-	TTSAudioFormat           string   `yaml:"tts_audio_format"`
-	TTSMaxInputBytes         int      `yaml:"tts_max_input_bytes"`
-	ImageModel               string   `yaml:"image_model"`
-	ImageEditModel           string   `yaml:"image_edit_model"`
-	WriterProvider           string   `yaml:"writer_provider"`
-	CriticProvider           string   `yaml:"critic_provider"`
-	ImageProvider            string   `yaml:"image_provider"`
-	TTSProvider              string   `yaml:"tts_provider"`
-	DashScopeRegion          string   `yaml:"dashscope_region"`
-	ComfyUIEndpoint          string   `yaml:"comfyui_endpoint"`
-	ComfyUILoRAName          string   `yaml:"comfyui_lora_name,omitempty"`
-	ComfyUILoRAStrengthModel float64  `yaml:"comfyui_lora_strength_model,omitempty"`
-	ComfyUILoRAStrengthClip  float64  `yaml:"comfyui_lora_strength_clip,omitempty"`
-	DataDir                  string   `yaml:"data_dir"`
-	OutputDir                string   `yaml:"output_dir"`
-	DBPath                   string   `yaml:"db_path"`
-	CostCapResearch          float64  `yaml:"cost_cap_research"`
-	CostCapWrite             float64  `yaml:"cost_cap_write"`
-	CostCapImage             float64  `yaml:"cost_cap_image"`
-	CostCapTTS               float64  `yaml:"cost_cap_tts"`
-	CostCapAssemble          float64  `yaml:"cost_cap_assemble"`
-	CostCapPerRun            float64  `yaml:"cost_cap_per_run"`
-	AntiProgressThreshold    float64  `yaml:"anti_progress_threshold"`
-	GoldenStalenessDays      int      `yaml:"golden_staleness_days"`
-	ShadowEvalWindow         int      `yaml:"shadow_eval_window"`
-	AutoApprovalThreshold    float64  `yaml:"auto_approval_threshold"`
-	BlockedVoiceIDs          []string `yaml:"blocked_voice_ids,omitempty"`
-	ArtifactRetentionDays    int      `yaml:"artifact_retention_days"`
-	DryRun                   bool     `yaml:"dry_run,omitempty"`
+	WriterModel              string                       `yaml:"writer_model"`
+	CriticModel              string                       `yaml:"critic_model"`
+	TTSModel                 string                       `yaml:"tts_model"`
+	TTSVoice                 string                       `yaml:"tts_voice"`
+	TTSAudioFormat           string                       `yaml:"tts_audio_format"`
+	TTSMaxInputBytes         int                          `yaml:"tts_max_input_bytes"`
+	ImageModel               string                       `yaml:"image_model"`
+	ImageEditModel           string                       `yaml:"image_edit_model"`
+	WriterProvider           string                       `yaml:"writer_provider"`
+	CriticProvider           string                       `yaml:"critic_provider"`
+	ImageProvider            string                       `yaml:"image_provider"`
+	TTSProvider              string                       `yaml:"tts_provider"`
+	DashScopeRegion          string                       `yaml:"dashscope_region"`
+	ComfyUIEndpoint          string                       `yaml:"comfyui_endpoint"`
+	ComfyUILoRAName          string                       `yaml:"comfyui_lora_name,omitempty"`
+	ComfyUILoRAStrengthModel float64                      `yaml:"comfyui_lora_strength_model,omitempty"`
+	ComfyUILoRAStrengthClip  float64                      `yaml:"comfyui_lora_strength_clip,omitempty"`
+	DataDir                  string                       `yaml:"data_dir"`
+	OutputDir                string                       `yaml:"output_dir"`
+	DBPath                   string                       `yaml:"db_path"`
+	CostCapResearch          float64                      `yaml:"cost_cap_research"`
+	CostCapWrite             float64                      `yaml:"cost_cap_write"`
+	CostCapImage             float64                      `yaml:"cost_cap_image"`
+	CostCapTTS               float64                      `yaml:"cost_cap_tts"`
+	CostCapAssemble          float64                      `yaml:"cost_cap_assemble"`
+	CostCapPerRun            float64                      `yaml:"cost_cap_per_run"`
+	AntiProgressThreshold    float64                      `yaml:"anti_progress_threshold"`
+	GoldenStalenessDays      int                          `yaml:"golden_staleness_days"`
+	ShadowEvalWindow         int                          `yaml:"shadow_eval_window"`
+	AutoApprovalThreshold    float64                      `yaml:"auto_approval_threshold"`
+	BlockedVoiceIDs          []string                     `yaml:"blocked_voice_ids,omitempty"`
+	ArtifactRetentionDays    int                          `yaml:"artifact_retention_days"`
+	DryRun                   bool                         `yaml:"dry_run,omitempty"`
+	Observability            orderedObservabilityConfig   `yaml:"observability,omitempty"`
+}
+
+type orderedObservabilityConfig struct {
+	DebugTraces bool `yaml:"debug_traces,omitempty"`
+}
+
+func orderedObservability(o domain.ObservabilityConfig) orderedObservabilityConfig {
+	return orderedObservabilityConfig{DebugTraces: o.DebugTraces}
 }

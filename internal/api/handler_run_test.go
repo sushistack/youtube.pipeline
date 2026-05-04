@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/sushistack/youtube.pipeline/internal/api"
 	"github.com/sushistack/youtube.pipeline/internal/clock"
@@ -694,11 +695,13 @@ type cacheEnvelope struct {
 	Version int `json:"version"`
 	Data    *struct {
 		Caches []struct {
-			Stage         string `json:"stage"`
-			Filename      string `json:"filename"`
-			SizeBytes     int64  `json:"size_bytes"`
-			ModifiedAt    string `json:"modified_at"`
-			SourceVersion string `json:"source_version"`
+			Stage           string `json:"stage"`
+			Filename        string `json:"filename"`
+			SizeBytes       int64  `json:"size_bytes"`
+			ModifiedAt      string `json:"modified_at"`
+			SourceVersion   string `json:"source_version"`
+			Fingerprint     string `json:"fingerprint"`
+			StalenessReason string `json:"staleness_reason"`
 		} `json:"caches"`
 	} `json:"data"`
 	Error *struct {
@@ -706,18 +709,44 @@ type cacheEnvelope struct {
 	} `json:"error"`
 }
 
-// writeCacheFile drops a JSON file into {outDir}/{runID}/{filename}, creating
-// the run directory on first call. Centralized here so each table case stays
-// readable.
+// writeCacheFile drops a JSON file into {outDir}/{runID}/{filename}. filename
+// may include a subdirectory component (e.g. "_cache/research_cache.json");
+// parent directories are created as needed.
 func writeCacheFile(t *testing.T, outDir, runID, filename, contents string) {
 	t.Helper()
-	runDir := filepath.Join(outDir, runID)
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", runDir, err)
+	fullPath := filepath.Join(outDir, runID, filename)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(fullPath), err)
 	}
-	if err := os.WriteFile(filepath.Join(runDir, filename), []byte(contents), 0o644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(contents), 0o644); err != nil {
 		t.Fatalf("write %s: %v", filename, err)
 	}
+}
+
+// writeCacheEnvelope writes a proper CacheEnvelope for the given envelope stage
+// ("research" or "structure") under {outDir}/{runID}/_cache/. The envelope's
+// fingerprint matches inputs so the handler reports it as a valid (non-stale)
+// entry. Returns the full path for stat assertions.
+func writeCacheEnvelope(t *testing.T, outDir, runID, stage, sourceVersion string) string {
+	t.Helper()
+	relPaths := map[string]string{
+		"research":  "_cache/research_cache.json",
+		"structure": "_cache/structure_cache.json",
+	}
+	rel, ok := relPaths[stage]
+	if !ok {
+		t.Fatalf("writeCacheEnvelope: unknown stage %q", stage)
+	}
+	fullPath := filepath.Join(outDir, runID, rel)
+	inputs := pipeline.FingerprintInputs{
+		SourceVersion: sourceVersion,
+		SchemaVersion: "v1",
+	}
+	payload := map[string]string{"source_version": sourceVersion}
+	if err := pipeline.WriteEnvelope(fullPath, inputs, payload, time.Now()); err != nil {
+		t.Fatalf("writeCacheEnvelope %s: %v", stage, err)
+	}
+	return fullPath
 }
 
 func TestRunHandler_Cache_TableDriven(t *testing.T) {
@@ -737,10 +766,8 @@ func TestRunHandler_Cache_TableDriven(t *testing.T) {
 		{
 			name: "both_caches_present",
 			seed: func(t *testing.T, outDir, runID string) {
-				writeCacheFile(t, outDir, runID, "research_cache.json",
-					`{"scp_id":"049","source_version":"v1-deterministic"}`)
-				writeCacheFile(t, outDir, runID, "structure_cache.json",
-					`{"scp_id":"049","source_version":"v1-deterministic"}`)
+				writeCacheEnvelope(t, outDir, runID, "research", "v1-deterministic")
+				writeCacheEnvelope(t, outDir, runID, "structure", "v1-deterministic")
 			},
 			runID:            "scp-049-run-1",
 			expectedStatus:   http.StatusOK,
@@ -750,8 +777,7 @@ func TestRunHandler_Cache_TableDriven(t *testing.T) {
 		{
 			name: "one_cache_present",
 			seed: func(t *testing.T, outDir, runID string) {
-				writeCacheFile(t, outDir, runID, "research_cache.json",
-					`{"scp_id":"049","source_version":"v1-deterministic"}`)
+				writeCacheEnvelope(t, outDir, runID, "research", "v1-deterministic")
 			},
 			runID:            "scp-049-run-1",
 			expectedStatus:   http.StatusOK,
@@ -787,10 +813,23 @@ func TestRunHandler_Cache_TableDriven(t *testing.T) {
 			expectedSourceVs: nil,
 		},
 		{
-			name: "malformed_source_version",
+			name: "legacy_flat_json_corrupt",
+			seed: func(t *testing.T, outDir, runID string) {
+				// Legacy flat payload (no envelope_version) in new _cache/ path.
+				// Entry must still surface; source_version extracted from flat JSON.
+				writeCacheFile(t, outDir, runID, "_cache/research_cache.json",
+					`{"scp_id":"049","source_version":"v1-old"}`)
+			},
+			runID:            "scp-049-run-1",
+			expectedStatus:   http.StatusOK,
+			expectedStages:   []string{"research"},
+			expectedSourceVs: map[string]string{"research": "v1-old"},
+		},
+		{
+			name: "malformed_json_in_cache",
 			seed: func(t *testing.T, outDir, runID string) {
 				// Unparseable JSON — entry must still surface, source_version=""
-				writeCacheFile(t, outDir, runID, "research_cache.json", `{not-json{`)
+				writeCacheFile(t, outDir, runID, "_cache/research_cache.json", `{not-json{`)
 			},
 			runID:            "scp-049-run-1",
 			expectedStatus:   http.StatusOK,
@@ -857,6 +896,41 @@ func TestRunHandler_Cache_TableDriven(t *testing.T) {
 	}
 }
 
+// TestRunHandler_Cache_StalenessReason_Surfaced verifies that a legacy flat-JSON
+// file in the _cache/ path (no envelope_version field) surfaces staleness_reason
+// "envelope_corrupt" in the GET /cache response, letting the operator know the
+// cache is unusable without the runner having to be invoked.
+func TestRunHandler_Cache_StalenessReason_Surfaced(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	h, outDir := newTestRunHandler(t)
+
+	runID := "scp-049-run-1"
+	createBody, _ := json.Marshal(map[string]string{"scp_id": "049"})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	h.Create(httptest.NewRecorder(), createReq)
+
+	// Write legacy flat JSON (no envelope_version) to the _cache/ path.
+	writeCacheFile(t, outDir, runID, "_cache/research_cache.json",
+		`{"scp_id":"049","source_version":"v1-old"}`)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs/"+runID+"/cache", nil)
+	req.SetPathValue("id", runID)
+	rec := httptest.NewRecorder()
+	h.Cache(rec, req)
+
+	testutil.AssertEqual(t, rec.Code, http.StatusOK)
+	env := testutil.ReadJSON[cacheEnvelope](t, rec.Body)
+	if env.Data == nil || len(env.Data.Caches) != 1 {
+		t.Fatalf("expected 1 cache entry, got data=%+v", env.Data)
+	}
+	got := env.Data.Caches[0]
+	testutil.AssertEqual(t, got.Stage, "research")
+	testutil.AssertEqual(t, got.StalenessReason, "envelope_corrupt")
+	// source_version still surfaced from legacy probe
+	testutil.AssertEqual(t, got.SourceVersion, "v1-old")
+}
+
 // TestRunHandler_Advance_DropCaches covers the drop_caches matrix:
 // (a) drop existing file deletes it before the goroutine launches, (b) drop
 // missing file is a no-op (no error), (c) unknown stage rejected with 400,
@@ -869,9 +943,7 @@ func TestRunHandler_Advance_DropCaches_Existing_DeletedBeforeGoroutine(t *testin
 	h, outDir := newTestRunHandlerWithEngine(t, "049", "pending", "pending")
 
 	runID := "scp-049-run-1"
-	writeCacheFile(t, outDir, runID, "research_cache.json",
-		`{"scp_id":"049","source_version":"v1-deterministic"}`)
-	cachePath := filepath.Join(outDir, runID, "research_cache.json")
+	cachePath := writeCacheEnvelope(t, outDir, runID, "research", "v1-deterministic")
 
 	// Sanity precondition.
 	if _, err := os.Stat(cachePath); err != nil {
@@ -890,7 +962,7 @@ func TestRunHandler_Advance_DropCaches_Existing_DeletedBeforeGoroutine(t *testin
 	// Synchronous deletion contract: by the time Advance has returned, the
 	// file must already be gone — independent of when the goroutine runs.
 	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
-		t.Fatalf("research_cache.json should be gone after Advance returns; stat err = %v", err)
+		t.Fatalf("_cache/research_cache.json should be gone after Advance returns; stat err = %v", err)
 	}
 }
 
@@ -900,7 +972,7 @@ func TestRunHandler_Advance_DropCaches_Missing_NoError(t *testing.T) {
 	runID := "scp-049-run-1"
 
 	// No cache file seeded — but the request asks to drop it. Idempotent.
-	cachePath := filepath.Join(outDir, runID, "research_cache.json")
+	cachePath := filepath.Join(outDir, runID, "_cache", "research_cache.json")
 	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
 		t.Fatalf("precondition: cache file should not exist; stat err = %v", err)
 	}
@@ -922,10 +994,8 @@ func TestRunHandler_Advance_DropCaches_UnknownStage_Rejected(t *testing.T) {
 
 	// Seed both real caches; the request includes one valid + one typo. The
 	// validator rejects the entire request — neither file should be deleted.
-	writeCacheFile(t, outDir, runID, "research_cache.json",
-		`{"scp_id":"049","source_version":"v1-deterministic"}`)
-	writeCacheFile(t, outDir, runID, "structure_cache.json",
-		`{"scp_id":"049","source_version":"v1-deterministic"}`)
+	researchPath := writeCacheEnvelope(t, outDir, runID, "research", "v1-deterministic")
+	structurePath := writeCacheEnvelope(t, outDir, runID, "structure", "v1-deterministic")
 
 	body, _ := json.Marshal(map[string]any{"drop_caches": []string{"research", "typo"}})
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/advance", bytes.NewReader(body))
@@ -939,11 +1009,11 @@ func TestRunHandler_Advance_DropCaches_UnknownStage_Rejected(t *testing.T) {
 	testutil.AssertEqual(t, env.Error.Code, "VALIDATION_ERROR")
 
 	// Neither file should have been deleted on the failed-validation path.
-	if _, err := os.Stat(filepath.Join(outDir, runID, "research_cache.json")); err != nil {
-		t.Errorf("research_cache.json was deleted despite validation failure: %v", err)
+	if _, err := os.Stat(researchPath); err != nil {
+		t.Errorf("research cache was deleted despite validation failure: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(outDir, runID, "structure_cache.json")); err != nil {
-		t.Errorf("structure_cache.json was deleted despite validation failure: %v", err)
+	if _, err := os.Stat(structurePath); err != nil {
+		t.Errorf("structure cache was deleted despite validation failure: %v", err)
 	}
 }
 

@@ -767,10 +767,15 @@ func assertNoNarrationCache(t *testing.T, outputDir, runID, when string) {
 	if err != nil {
 		t.Fatalf("read run dir %q: %v", runDir, err)
 	}
+	// Phase A artifacts at the run-dir root are limited to scenario.json.
+	// Resume caches now live under "_cache/" (CacheEnvelope format) and
+	// debug traces under "traces/" — both are directories, allowlisted by
+	// name so the contents are not walked here.
 	allowed := map[string]bool{
-		"research_cache.json":  true,
-		"structure_cache.json": true,
-		"scenario.json":        true,
+		"scenario.json": true,
+		"_cache":        true,
+		"traces":        true,
+		"audit.log":     true,
 	}
 	for _, e := range entries {
 		name := e.Name()
