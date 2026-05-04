@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "next_index": 4,
+  "last_refreshed_at": "2026-05-03T12:54:39Z",
+  "last_successful_run_at": "2026-05-03T12:54:39Z",
+  "last_successful_prompt_hash": "d5c400f38beed14e63f835dd97c6850b4a754d5111050a0c964c2d21f1a866c4",
+  "last_report": {
+    "recall": 1,
+    "total_negative": 3,
+    "detected_negative": 3,
+    "false_rejects": 0,
+    "pairs": [
+      {
+        "index": 1,
+        "neg_verdict": "retry",
+        "pos_verdict": "pass"
+      },
+      {
+        "index": 2,
+        "neg_verdict": "retry",
+        "pos_verdict": "pass"
+      },
+      {
+        "index": 3,
+        "neg_verdict": "retry",
+        "pos_verdict": "pass"
+      }
+    ]
+  },
+  "pairs": [
+    {
+      "index": 1,
+      "created_at": "2026-04-18T09:30:00Z",
+      "positive_path": "eval/000001/positive.json",
+      "negative_path": "eval/000001/negative.json"
+    },
+    {
+      "index": 2,
+      "created_at": "2026-04-18T09:35:00Z",
+      "positive_path": "eval/000002/positive.json",
+      "negative_path": "eval/000002/negative.json"
+    },
+    {
+      "index": 3,
+      "created_at": "2026-04-18T11:15:00Z",
+      "positive_path": "eval/000003/positive.json",
+      "negative_path": "eval/000003/negative.json"
+    }
+  ]
+}

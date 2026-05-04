@@ -1,0 +1,201 @@
+{
+  "fixture_id": "scp-999-pass-001",
+  "kind": "positive",
+  "checkpoint": "post_writer",
+  "input": {
+    "scp_id": "SCP-999",
+    "title": "SCP-999 - 웃음을 퍼뜨리는 존재",
+    "scenes": [
+      {
+        "scene_num": 1,
+        "act_id": "act_hook",
+        "narration": "당신이 가장 무너진 날, 재단은 오히려 이 존재를 당신 곁에 두고 싶어 합니다.",
+        "fact_tags": [
+          {
+            "key": "class",
+            "content": "안전"
+          }
+        ],
+        "mood": "curious",
+        "entity_visible": true,
+        "location": "재단 연구실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "warm_orange",
+        "atmosphere": "comforting",
+        "narration_beats": [
+          "당신이 가장 무너진 날, 재단은 오히려 이 존재를 당신 곁에 두고 싶어 합니다."
+        ]
+      },
+      {
+        "scene_num": 2,
+        "act_id": "act_intro",
+        "narration": "SCP-999는 오렌지빛 점액질 생명체로, 접촉한 사람의 불안을 빠르게 누그러뜨립니다.",
+        "fact_tags": [
+          {
+            "key": "effect",
+            "content": "감정 안정"
+          }
+        ],
+        "mood": "gentle",
+        "entity_visible": true,
+        "location": "관찰실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "soft_orange",
+        "atmosphere": "playful",
+        "narration_beats": [
+          "SCP-999는 오렌지빛 점액질 생명체로, 접촉한 사람의 불안을 빠르게 누그러뜨립니다."
+        ]
+      },
+      {
+        "scene_num": 3,
+        "act_id": "act_behavior",
+        "narration": "대상은 사람의 다리를 감싸며 장난스럽게 몸을 흔들고, 그 순간 주변의 표정이 눈에 띄게 풀립니다.",
+        "fact_tags": [
+          {
+            "key": "behavior",
+            "content": "장난스러운 접촉"
+          }
+        ],
+        "mood": "uplifting",
+        "entity_visible": true,
+        "location": "재단 휴게 구역",
+        "characters_present": [
+          "연구원",
+          "D급 인원"
+        ],
+        "color_palette": "honey_yellow",
+        "atmosphere": "light",
+        "narration_beats": [
+          "대상은 사람의 다리를 감싸며 장난스럽게 몸을 흔들고, 그 순간 주변의 표정이 눈에 띄게 풀립니다."
+        ]
+      },
+      {
+        "scene_num": 4,
+        "act_id": "act_case",
+        "narration": "한 실험 기록에서는 공황 상태의 직원이 SCP-999와 접촉한 뒤 몇 분 만에 정상적인 대화를 되찾았습니다.",
+        "fact_tags": [
+          {
+            "key": "record",
+            "content": "공황 완화 사례"
+          }
+        ],
+        "mood": "hopeful",
+        "entity_visible": false,
+        "location": "재단 기록실",
+        "characters_present": [
+          "기록 담당자"
+        ],
+        "color_palette": "archival_gold",
+        "atmosphere": "reassuring",
+        "narration_beats": [
+          "한 실험 기록에서는 공황 상태의 직원이 SCP-999와 접촉한 뒤 몇 분 만에 정상적인 대화를 되찾았습니다."
+        ]
+      },
+      {
+        "scene_num": 5,
+        "act_id": "act_mystery",
+        "narration": "하지만 재단은 이 존재의 기원을 끝내 밝혀내지 못했습니다. 왜 이런 생명체가 존재하는지는 아직 미지수입니다.",
+        "fact_tags": [
+          {
+            "key": "origin",
+            "content": "기원 불명"
+          }
+        ],
+        "mood": "mysterious",
+        "entity_visible": false,
+        "location": "격리 기록 데이터베이스",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "amber_shadow",
+        "atmosphere": "intriguing",
+        "narration_beats": [
+          "하지만 재단은 이 존재의 기원을 끝내 밝혀내지 못했습니다. 왜 이런 생명체가 존재하는지는 아직 미지수입니다."
+        ]
+      },
+      {
+        "scene_num": 6,
+        "act_id": "act_scale",
+        "narration": "SCP-999의 진짜 가치가 무서운 이유는, 그것이 단순한 애완 존재가 아니라 사람의 심리를 직접 바꾸는 힘이라는 점입니다.",
+        "fact_tags": [
+          {
+            "key": "risk",
+            "content": "정서에 직접 영향"
+          }
+        ],
+        "mood": "uneasy",
+        "entity_visible": true,
+        "location": "격리 구역 복도",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gold_on_gray",
+        "atmosphere": "thoughtful",
+        "narration_beats": [
+          "SCP-999의 진짜 가치가 무서운 이유는, 그것이 단순한 애완 존재가 아니라 사람의 심리를 직접 바꾸는 힘이라는 점입니다."
+        ]
+      },
+      {
+        "scene_num": 7,
+        "act_id": "act_viewer",
+        "narration": "만약 재단이 아닌 누군가가 이 존재를 먼저 손에 넣는다면, 그 따뜻함은 과연 치유일까요, 통제일까요?",
+        "fact_tags": [
+          {
+            "key": "question",
+            "content": "치유와 통제의 경계"
+          }
+        ],
+        "mood": "tense",
+        "entity_visible": false,
+        "location": "시청자 시점",
+        "characters_present": [
+          "시청자"
+        ],
+        "color_palette": "dim_gold",
+        "atmosphere": "reflective",
+        "narration_beats": [
+          "만약 재단이 아닌 누군가가 이 존재를 먼저 손에 넣는다면, 그 따뜻함은 과연 치유일까요, 통제일까요?"
+        ]
+      },
+      {
+        "scene_num": 8,
+        "act_id": "act_close",
+        "narration": "그래서 SCP-999는 재단 기록에서 가장 귀여운 존재인 동시에, 가장 조용히 인간을 바꿀 수 있는 존재로도 남아 있습니다.",
+        "fact_tags": [
+          {
+            "key": "status",
+            "content": "안전 등급 유지"
+          }
+        ],
+        "mood": "lingering",
+        "entity_visible": false,
+        "location": "재단 본부",
+        "characters_present": [
+          "나레이터"
+        ],
+        "color_palette": "sunset_orange",
+        "atmosphere": "haunting",
+        "narration_beats": [
+          "그래서 SCP-999는 재단 기록에서 가장 귀여운 존재인 동시에, 가장 조용히 인간을 바꿀 수 있는 존재로도 남아 있습니다."
+        ]
+      }
+    ],
+    "metadata": {
+      "language": "ko",
+      "scene_count": 8,
+      "writer_model": "deepseek-v4-flash",
+      "writer_provider": "deepseek",
+      "prompt_template": "v1-scenario-writer",
+      "format_guide_template": "v1-format-guide",
+      "forbidden_terms_version": "v1"
+    },
+    "source_version": "v1-llm-writer"
+  },
+  "expected_verdict": "pass",
+  "category": "known_pass",
+  "notes": "Positive pair for minors known-fail coverage."
+}

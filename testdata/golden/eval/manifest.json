@@ -1,9 +1,9 @@
 {
-  "version": 1,
+  "version": 2,
   "next_index": 4,
-  "last_refreshed_at": "2026-05-04T01:17:40Z",
-  "last_successful_run_at": "2026-05-04T01:17:40Z",
-  "last_successful_prompt_hash": "d5c400f38beed14e63f835dd97c6850b4a754d5111050a0c964c2d21f1a866c4",
+  "last_refreshed_at": "2026-05-04T06:13:10Z",
+  "last_successful_run_at": "2026-05-04T06:13:10Z",
+  "last_successful_prompt_hash": "6ab62627ebe4665df6beb174c25cc3749ca3621c5e897f044a2af885d8a98b00",
   "last_report": {
     "recall": 1,
     "total_negative": 3,
@@ -25,26 +25,445 @@
         "neg_verdict": "retry",
         "pos_verdict": "pass"
       }
-    ]
+    ],
+    "per_act": {
+      "fixture_count": 6,
+      "act_count": 24,
+      "unknown_act_id_acts": 0,
+      "avg_rune_cap_utilization": 0.043232696123321125,
+      "acts_with_rune_overflow": 0,
+      "acts_with_bad_beat_count": 0,
+      "acts_with_metadata_gap": 24,
+      "acts_with_bad_offsets": 0,
+      "acts_with_seam_gap": 0,
+      "fixtures": [
+        {
+          "fixture_id": "scp-096-pass-001",
+          "acts": [
+            {
+              "act_id": "incident",
+              "unknown_act_id": false,
+              "monologue_rune_count": 47,
+              "rune_cap": 480,
+              "rune_cap_utilization": 0.09791666666666667,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "mystery",
+              "unknown_act_id": false,
+              "monologue_rune_count": 43,
+              "rune_cap": 1600,
+              "rune_cap_utilization": 0.026875,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "revelation",
+              "unknown_act_id": false,
+              "monologue_rune_count": 46,
+              "rune_cap": 2080,
+              "rune_cap_utilization": 0.022115384615384617,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "unresolved",
+              "unknown_act_id": false,
+              "monologue_rune_count": 45,
+              "rune_cap": 1120,
+              "rune_cap_utilization": 0.04017857142857143,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            }
+          ],
+          "total_monologue_runes": 181
+        },
+        {
+          "fixture_id": "scp-096-weak-hook-001",
+          "acts": [
+            {
+              "act_id": "incident",
+              "unknown_act_id": false,
+              "monologue_rune_count": 52,
+              "rune_cap": 480,
+              "rune_cap_utilization": 0.10833333333333334,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "mystery",
+              "unknown_act_id": false,
+              "monologue_rune_count": 33,
+              "rune_cap": 1600,
+              "rune_cap_utilization": 0.020625,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "revelation",
+              "unknown_act_id": false,
+              "monologue_rune_count": 38,
+              "rune_cap": 2080,
+              "rune_cap_utilization": 0.01826923076923077,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "unresolved",
+              "unknown_act_id": false,
+              "monologue_rune_count": 25,
+              "rune_cap": 1120,
+              "rune_cap_utilization": 0.022321428571428572,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            }
+          ],
+          "total_monologue_runes": 148
+        },
+        {
+          "fixture_id": "scp-173-fact-error-001",
+          "acts": [
+            {
+              "act_id": "incident",
+              "unknown_act_id": false,
+              "monologue_rune_count": 30,
+              "rune_cap": 480,
+              "rune_cap_utilization": 0.0625,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "mystery",
+              "unknown_act_id": false,
+              "monologue_rune_count": 29,
+              "rune_cap": 1600,
+              "rune_cap_utilization": 0.018125,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "revelation",
+              "unknown_act_id": false,
+              "monologue_rune_count": 23,
+              "rune_cap": 2080,
+              "rune_cap_utilization": 0.011057692307692308,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "unresolved",
+              "unknown_act_id": false,
+              "monologue_rune_count": 24,
+              "rune_cap": 1120,
+              "rune_cap_utilization": 0.02142857142857143,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            }
+          ],
+          "total_monologue_runes": 106
+        },
+        {
+          "fixture_id": "scp-173-pass-001",
+          "acts": [
+            {
+              "act_id": "incident",
+              "unknown_act_id": false,
+              "monologue_rune_count": 32,
+              "rune_cap": 480,
+              "rune_cap_utilization": 0.06666666666666667,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "mystery",
+              "unknown_act_id": false,
+              "monologue_rune_count": 41,
+              "rune_cap": 1600,
+              "rune_cap_utilization": 0.025625,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "revelation",
+              "unknown_act_id": false,
+              "monologue_rune_count": 40,
+              "rune_cap": 2080,
+              "rune_cap_utilization": 0.019230769230769232,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "unresolved",
+              "unknown_act_id": false,
+              "monologue_rune_count": 33,
+              "rune_cap": 1120,
+              "rune_cap_utilization": 0.029464285714285714,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            }
+          ],
+          "total_monologue_runes": 146
+        },
+        {
+          "fixture_id": "scp-999-pass-001",
+          "acts": [
+            {
+              "act_id": "incident",
+              "unknown_act_id": false,
+              "monologue_rune_count": 44,
+              "rune_cap": 480,
+              "rune_cap_utilization": 0.09166666666666666,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "mystery",
+              "unknown_act_id": false,
+              "monologue_rune_count": 48,
+              "rune_cap": 1600,
+              "rune_cap_utilization": 0.03,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "revelation",
+              "unknown_act_id": false,
+              "monologue_rune_count": 54,
+              "rune_cap": 2080,
+              "rune_cap_utilization": 0.025961538461538463,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "unresolved",
+              "unknown_act_id": false,
+              "monologue_rune_count": 60,
+              "rune_cap": 1120,
+              "rune_cap_utilization": 0.05357142857142857,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            }
+          ],
+          "total_monologue_runes": 206
+        },
+        {
+          "fixture_id": "scp-unknown-minors-001",
+          "acts": [
+            {
+              "act_id": "incident",
+              "unknown_act_id": false,
+              "monologue_rune_count": 51,
+              "rune_cap": 480,
+              "rune_cap_utilization": 0.10625,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "mystery",
+              "unknown_act_id": false,
+              "monologue_rune_count": 55,
+              "rune_cap": 1600,
+              "rune_cap_utilization": 0.034375,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "revelation",
+              "unknown_act_id": false,
+              "monologue_rune_count": 58,
+              "rune_cap": 2080,
+              "rune_cap_utilization": 0.027884615384615386,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            },
+            {
+              "act_id": "unresolved",
+              "unknown_act_id": false,
+              "monologue_rune_count": 64,
+              "rune_cap": 1120,
+              "rune_cap_utilization": 0.05714285714285714,
+              "rune_cap_overflow": false,
+              "beat_count": 8,
+              "beat_count_in_range": true,
+              "mood_present": true,
+              "key_points_present": false,
+              "metadata_complete": false,
+              "offsets_valid": true,
+              "prev_seam_monotonic": true
+            }
+          ],
+          "total_monologue_runes": 228
+        }
+      ]
+    },
+    "calibration": {
+      "observations": 6,
+      "agreement_pass_pass": 3,
+      "disagreement_pass_retry": 0,
+      "disagreement_retry_pass": 0,
+      "agreement_retry_retry": 3,
+      "unknown_verdicts": 0,
+      "kappa": 1,
+      "floor_ok": true
+    }
   },
   "pairs": [
     {
       "index": 1,
       "created_at": "2026-04-18T09:30:00Z",
-      "positive_path": "eval/000001/positive.json",
-      "negative_path": "eval/000001/negative.json"
+      "positive_path": "eval/v2/000001/positive.json",
+      "negative_path": "eval/v2/000001/negative.json"
     },
     {
       "index": 2,
       "created_at": "2026-04-18T09:35:00Z",
-      "positive_path": "eval/000002/positive.json",
-      "negative_path": "eval/000002/negative.json"
+      "positive_path": "eval/v2/000002/positive.json",
+      "negative_path": "eval/v2/000002/negative.json"
     },
     {
       "index": 3,
       "created_at": "2026-04-18T11:15:00Z",
-      "positive_path": "eval/000003/positive.json",
-      "negative_path": "eval/000003/negative.json"
+      "positive_path": "eval/v2/000003/positive.json",
+      "negative_path": "eval/v2/000003/negative.json"
     }
   ]
 }

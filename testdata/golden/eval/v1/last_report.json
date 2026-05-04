@@ -1,0 +1,23 @@
+{
+  "recall": 1,
+  "total_negative": 3,
+  "detected_negative": 3,
+  "false_rejects": 0,
+  "pairs": [
+    {
+      "index": 1,
+      "neg_verdict": "retry",
+      "pos_verdict": "pass"
+    },
+    {
+      "index": 2,
+      "neg_verdict": "retry",
+      "pos_verdict": "pass"
+    },
+    {
+      "index": 3,
+      "neg_verdict": "retry",
+      "pos_verdict": "pass"
+    }
+  ]
+}

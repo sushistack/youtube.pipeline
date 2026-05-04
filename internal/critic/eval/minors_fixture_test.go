@@ -35,7 +35,9 @@ func TestGoldenEvalManifest_ContainsMinorsKnownFail(t *testing.T) {
 func TestGoldenEvalFixture_MinorsCategoryValidates(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	root := testutil.ProjectRoot(t)
-	raw := testutil.LoadFixture(t, filepath.Join("golden", "eval", "000003", "negative.json"))
+	// D5 reshape relocated active fixtures under eval/v2/. The minors
+	// category fixture stays at index 000003 — only the prefix changed.
+	raw := testutil.LoadFixture(t, filepath.Join("golden", "eval", "v2", "000003", "negative.json"))
 	fixture, err := ValidateFixture(root, raw)
 	if err != nil {
 		t.Fatalf("ValidateFixture: %v", err)

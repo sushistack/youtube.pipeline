@@ -1,0 +1,188 @@
+{
+  "fixture_id": "scp-096-weak-hook-001",
+  "kind": "negative",
+  "checkpoint": "post_writer",
+  "input": {
+    "scp_id": "SCP-096",
+    "title": "SCP-096 정보",
+    "scenes": [
+      {
+        "scene_num": 1,
+        "act_id": "act_intro",
+        "narration": "SCP-096은 재단에 의해 격리된 변칙 개체입니다. 이 보고서에서 그 특성을 설명하겠습니다.",
+        "fact_tags": [
+          {
+            "key": "class",
+            "content": "유클리드"
+          }
+        ],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "격리실",
+        "characters_present": [
+          "보고자"
+        ],
+        "color_palette": "white",
+        "atmosphere": "administrative",
+        "narration_beats": [
+          "SCP-096은 재단에 의해 격리된 변칙 개체입니다. 이 보고서에서 그 특성을 설명하겠습니다."
+        ]
+      },
+      {
+        "scene_num": 2,
+        "act_id": "act_desc",
+        "narration": "SCP-096은 인간형 생물체로 키는 약 2.38미터입니다.",
+        "fact_tags": [
+          {
+            "key": "height",
+            "content": "2.38m"
+          }
+        ],
+        "mood": "descriptive",
+        "entity_visible": true,
+        "location": "격리실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "clinical_white",
+        "atmosphere": "sterile",
+        "narration_beats": [
+          "SCP-096은 인간형 생물체로 키는 약 2.38미터입니다."
+        ]
+      },
+      {
+        "scene_num": 3,
+        "act_id": "act_behavior",
+        "narration": "SCP-096의 얼굴을 보면 SCP-096이 해당 인원을 추적합니다.",
+        "fact_tags": [
+          {
+            "key": "trigger",
+            "content": "얼굴 인식"
+          }
+        ],
+        "mood": "factual",
+        "entity_visible": false,
+        "location": "격리실",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "gray",
+        "atmosphere": "dry",
+        "narration_beats": [
+          "SCP-096의 얼굴을 보면 SCP-096이 해당 인원을 추적합니다."
+        ]
+      },
+      {
+        "scene_num": 4,
+        "act_id": "act_sound",
+        "narration": "추적 전 SCP-096은 울음 소리를 냅니다.",
+        "fact_tags": [
+          {
+            "key": "behavior",
+            "content": "울음"
+          }
+        ],
+        "mood": "neutral",
+        "entity_visible": false,
+        "location": "격리실",
+        "characters_present": [],
+        "color_palette": "gray",
+        "atmosphere": "plain",
+        "narration_beats": [
+          "추적 전 SCP-096은 울음 소리를 냅니다."
+        ]
+      },
+      {
+        "scene_num": 5,
+        "act_id": "act_containment",
+        "narration": "격리를 위해서는 불투명한 방에 보관하면 됩니다.",
+        "fact_tags": [
+          {
+            "key": "containment",
+            "content": "불투명 방"
+          }
+        ],
+        "mood": "procedural",
+        "entity_visible": false,
+        "location": "격리 구역",
+        "characters_present": [
+          "격리 팀"
+        ],
+        "color_palette": "beige",
+        "atmosphere": "routine",
+        "narration_beats": [
+          "격리를 위해서는 불투명한 방에 보관하면 됩니다."
+        ]
+      },
+      {
+        "scene_num": 6,
+        "act_id": "act_history",
+        "narration": "SCP-096는 여러 격리 실패 사례가 있습니다.",
+        "fact_tags": [],
+        "mood": "reporting",
+        "entity_visible": false,
+        "location": "기록 보관소",
+        "characters_present": [
+          "기록관"
+        ],
+        "color_palette": "beige",
+        "atmosphere": "administrative",
+        "narration_beats": [
+          "SCP-096는 여러 격리 실패 사례가 있습니다."
+        ]
+      },
+      {
+        "scene_num": 7,
+        "act_id": "act_status",
+        "narration": "현재 SCP-096은 안전하게 격리되어 있습니다.",
+        "fact_tags": [
+          {
+            "key": "status",
+            "content": "격리 유지"
+          }
+        ],
+        "mood": "concluding",
+        "entity_visible": false,
+        "location": "재단",
+        "characters_present": [
+          "연구원"
+        ],
+        "color_palette": "neutral",
+        "atmosphere": "calm",
+        "narration_beats": [
+          "현재 SCP-096은 안전하게 격리되어 있습니다."
+        ]
+      },
+      {
+        "scene_num": 8,
+        "act_id": "act_close",
+        "narration": "이상으로 SCP-096에 대한 보고를 마칩니다.",
+        "fact_tags": [],
+        "mood": "closing",
+        "entity_visible": false,
+        "location": "없음",
+        "characters_present": [
+          "보고자"
+        ],
+        "color_palette": "white",
+        "atmosphere": "flat",
+        "narration_beats": [
+          "이상으로 SCP-096에 대한 보고를 마칩니다."
+        ]
+      }
+    ],
+    "metadata": {
+      "language": "ko",
+      "scene_count": 8,
+      "writer_model": "deepseek-v4-flash",
+      "writer_provider": "deepseek",
+      "prompt_template": "v1-scenario-writer",
+      "format_guide_template": "v1-format-guide",
+      "forbidden_terms_version": "v1"
+    },
+    "source_version": "v1-llm-writer"
+  },
+  "expected_verdict": "retry",
+  "category": "weak_hook",
+  "notes": "Flat Wikipedia-style narration, no hook, no emotional variation, no viewer engagement"
+}

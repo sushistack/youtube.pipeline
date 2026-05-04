@@ -115,6 +115,35 @@ func TestGolden_LocalReport_PersistsToManifest(t *testing.T) {
 	testutil.AssertEqual(t, report.FalseRejects, m.LastReport.FalseRejects)
 }
 
+// TestGolden_CalibrationFloor asserts the v2 calibration kappa stays at or
+// above the spec D5 floor of 0.6. This is the "Ask First — HALT before
+// locking the v2 rubric" gate, surfaced as a Go test failure rather than
+// a buried JSON flag so a reviewer running the regular `go test ./...`
+// (without -v) cannot miss a regression.
+func TestGolden_CalibrationFloor(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	root := testutil.ProjectRoot(t)
+
+	report, err := RunGolden(context.Background(), root, &fakeEvaluator{}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("RunGolden: %v", err)
+	}
+	if report.Calibration == nil {
+		t.Fatal("expected Calibration snapshot on populated manifest")
+	}
+	if report.Calibration.UnknownVerdicts > 0 {
+		t.Errorf("calibration: unexpected UnknownVerdicts=%d (evaluator drift)", report.Calibration.UnknownVerdicts)
+	}
+	if !report.Calibration.FloorOK {
+		kappa := "<nil>"
+		if report.Calibration.Kappa != nil {
+			kappa = fmt.Sprintf("%.4f", *report.Calibration.Kappa)
+		}
+		t.Errorf("calibration floor breach: kappa=%s reason=%q — spec D5 mandates HALT before locking v2 rubric",
+			kappa, report.Calibration.Reason)
+	}
+}
+
 // TestGolden is the on-demand test target: go test ./internal/critic/eval -run TestGolden -v
 func TestGolden(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
@@ -127,6 +156,34 @@ func TestGolden(t *testing.T) {
 
 	t.Logf("Golden run complete — recall=%.2f total_negative=%d detected=%d false_rejects=%d",
 		report.Recall, report.TotalNegative, report.DetectedNegative, report.FalseRejects)
+
+	if report.PerAct != nil {
+		t.Logf("Golden per-act — fixtures=%d acts=%d avg_utilization=%.4f overflow=%d bad_beat_count=%d metadata_gap=%d bad_offsets=%d seam_gap=%d",
+			report.PerAct.FixtureCount, report.PerAct.ActCount, report.PerAct.AvgRuneCapUtilization,
+			report.PerAct.ActsWithRuneOverflow, report.PerAct.ActsWithBadBeatCount,
+			report.PerAct.ActsWithMetadataGap, report.PerAct.ActsWithBadOffsets, report.PerAct.ActsWithSeamGap)
+	}
+	if report.Calibration != nil {
+		kappaStr := "<nil>"
+		if report.Calibration.Kappa != nil {
+			kappaStr = fmt.Sprintf("%.4f", *report.Calibration.Kappa)
+		}
+		t.Logf("Golden calibration — observations=%d kappa=%s floor_ok=%v unknown_verdicts=%d reason=%q (a=%d b=%d c=%d d=%d)",
+			report.Calibration.Observations, kappaStr, report.Calibration.FloorOK,
+			report.Calibration.UnknownVerdicts, report.Calibration.Reason,
+			report.Calibration.AgreementPassPass, report.Calibration.DisagreementPassRetry,
+			report.Calibration.DisagreementRetryPass, report.Calibration.AgreementRetryRetry)
+	}
+
+	v1, err := LoadV1ArchiveReport(root)
+	if err != nil {
+		t.Logf("v1 archive: not loadable (%v)", err)
+		return
+	}
+	t.Logf("v1 archive — recall=%.2f total_negative=%d detected=%d false_rejects=%d",
+		v1.Recall, v1.TotalNegative, v1.DetectedNegative, v1.FalseRejects)
+	t.Logf("v1→v2 verdict-recall delta — recall=%+.2f false_rejects=%+d (per-criterion deltas: see _bmad-output/implementation-artifacts/4-2-shadow-eval-runner.md)",
+		report.Recall-v1.Recall, report.FalseRejects-v1.FalseRejects)
 }
 
 // setupRootWithSeedPairs creates a self-contained temp root with 2 pairs.

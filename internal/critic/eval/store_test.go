@@ -242,6 +242,71 @@ func TestValidateBalancedSetOnDisk_MissingFileRejected(t *testing.T) {
 	}
 }
 
+// TestAddPair_V2ManifestRoutesUnderEvalV2 covers the v2 routing decision
+// in activePairSubdir(). Pre-D5 setupTestRoot seeds a Version=1 manifest
+// (legacy flat path), so without this test the v2-only code path was
+// effectively uncovered. We bump the seeded manifest to Version=2 and
+// assert that AddPair writes under eval/v2/000001/.
+func TestAddPair_V2ManifestRoutesUnderEvalV2(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	root := setupTestRoot(t)
+
+	// Bump the seeded manifest from Version=1 to Version=2.
+	m, err := loadManifest(root)
+	if err != nil {
+		t.Fatalf("loadManifest: %v", err)
+	}
+	m.Version = ManifestVersionV2
+	if err := saveManifest(root, m); err != nil {
+		t.Fatalf("saveManifest: %v", err)
+	}
+
+	posPath := writeTempFixture(t, root, "positive")
+	negPath := writeTempFixture(t, root, "negative")
+	meta, err := AddPair(root, posPath, negPath, testNow)
+	if err != nil {
+		t.Fatalf("AddPair: %v", err)
+	}
+	testutil.AssertEqual(t, "eval/v2/000001/positive.json", meta.PositivePath)
+	testutil.AssertEqual(t, "eval/v2/000001/negative.json", meta.NegativePath)
+
+	// File must exist on disk under the v2 prefix.
+	posAbs := filepath.Join(root, "testdata", "golden", "eval", "v2", "000001", "positive.json")
+	if _, err := os.Stat(posAbs); err != nil {
+		t.Fatalf("expected file at %s: %v", posAbs, err)
+	}
+}
+
+// TestLoadManifest_RejectsUnknownVersion guards against a hand-edited
+// manifest with a far-future or negative version silently routing through
+// legacy handling.
+func TestLoadManifest_RejectsUnknownVersion(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	root := setupTestRoot(t)
+
+	// Hand-edit the manifest to an unknown version.
+	manifestRaw, err := os.ReadFile(filepath.Join(root, "testdata", "golden", "eval", "manifest.json"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(manifestRaw, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	raw["version"] = 99
+	corrupted, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "testdata", "golden", "eval", "manifest.json"), corrupted, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, err := loadManifest(root); err == nil {
+		t.Fatal("expected error loading manifest with unknown version")
+	}
+}
+
 func TestAddPair_ManifestIndentation(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 	root := setupTestRoot(t)

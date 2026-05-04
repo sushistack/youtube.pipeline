@@ -45,7 +45,8 @@ func AddPair(projectRoot string, positiveSrc string, negativeSrc string, now tim
 
 	idx := m.NextIndex
 	dirName := fmt.Sprintf("%06d", idx)
-	pairDir := filepath.Join(projectRoot, "testdata", "golden", "eval", dirName)
+	subdir := activePairSubdir(m)
+	pairDir := filepath.Join(projectRoot, "testdata", "golden", "eval", subdir, dirName)
 	if err := os.MkdirAll(pairDir, 0o755); err != nil {
 		return PairMeta{}, fmt.Errorf("create pair directory: %w", err)
 	}
@@ -60,8 +61,8 @@ func AddPair(projectRoot string, positiveSrc string, negativeSrc string, now tim
 		}
 	}()
 
-	posRelPath := filepath.Join("eval", dirName, "positive.json")
-	negRelPath := filepath.Join("eval", dirName, "negative.json")
+	posRelPath := joinPairRelPath(subdir, dirName, "positive.json")
+	negRelPath := joinPairRelPath(subdir, dirName, "negative.json")
 
 	if err := os.WriteFile(filepath.Join(pairDir, "positive.json"), posData, 0o644); err != nil {
 		return PairMeta{}, fmt.Errorf("write positive fixture: %w", err)
@@ -149,6 +150,29 @@ func ValidateBalancedSetOnDisk(projectRoot string, m Manifest) error {
 		}
 	}
 	return nil
+}
+
+// activePairSubdir returns the subdirectory under testdata/golden/eval/ where
+// AddPair writes new pairs. v2+ manifests use the "v2" subdir; pre-v2 (legacy
+// or test fixtures that seed Version=1 directly) keeps the historical flat
+// layout so v1 archive scoring and unit tests do not regress.
+func activePairSubdir(m Manifest) string {
+	if m.Version >= ManifestVersionV2 {
+		return activeSampleSubdirV2
+	}
+	return ""
+}
+
+// joinPairRelPath builds a manifest-friendly forward-slash relative path for
+// a fixture under testdata/golden/. Manifest paths are forward-slash even on
+// Windows (golden_eval_manifest.schema.json explicitly uses POSIX paths) so
+// we do not use filepath.Join here — that would produce backslashes on
+// Windows and make manifest entries platform-specific.
+func joinPairRelPath(subdir, dirName, file string) string {
+	if subdir == "" {
+		return "eval/" + dirName + "/" + file
+	}
+	return "eval/" + subdir + "/" + dirName + "/" + file
 }
 
 // readAndValidate reads a fixture source file, validates it, and returns the

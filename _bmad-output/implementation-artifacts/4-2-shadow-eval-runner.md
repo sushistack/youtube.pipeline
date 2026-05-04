@@ -1,6 +1,14 @@
 # Story 4.2: Shadow Eval Runner
 
-Status: done
+Status: done (v2 rubric refit appended below — 2026-05-04, D5)
+
+> **D5 v2 rubric refit (2026-05-04):** the original 4.2 spec scored a per-scene
+> v1 rubric. After D1–D4 monologue-mode v2, scenes no longer exist as a
+> runtime unit; the unit is `state.Narration.Acts[].Monologue`. The
+> [_bmad-output/implementation-artifacts/spec-d5-golden-eval-v2.md](spec-d5-golden-eval-v2.md)
+> story refits the golden rubric. The "v2 Rubric — D5 refit" section at the
+> bottom of this file documents the new per-act scoring criteria and the
+> v1→v2 comparability method. Read it before interpreting any post-D5 score.
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -406,3 +414,164 @@ Modified files:
 
 - 2026-04-18 — Story 4.2 implemented end-to-end: config wiring, SQLite-backed `ShadowSource`, artifact loader reusing the Golden fixture shape, `RunShadow` report with verdict/score drift and false-rejection counting, seed fixtures, integration tests, and FR28/FR51 coverage updates. Adapter placed in `internal/critic/eval` rather than `internal/db` to avoid an `internal/db → internal/critic/eval` import cycle through `internal/testutil`; spec allows this under "preserves existing boundaries".
 - 2026-04-18 — Addressed 9 code review findings (3 layers: Blind Hunter + Edge Case Hunter + Acceptance Auditor): (1) `LoadShadowInput` now rejects `"narration": null` via `bytes.Equal` guard; (2) query-plan test hard-fails on missing `idx_runs_status_created_at` (was `t.Logf`); (3) `RunShadow` honors `ctx.Err()` between cases; (4) `LoadShadowInput` validates narration against `writer_output.schema.json`; (5) `ShadowReport.Empty` flag distinguishes zero-case runs from all-pass replays; (6) `FalseRejection` gated on baseline `== "pass"` AND flags unknown/empty verdicts via `knownShadowVerdicts` allow-list; (7) `doc.go` corrected to reference the actual adapter location; (8) `fakeShadowSource` guards negative limit. New tests: `TestLoadShadowInput_RejectsNullNarration`, `TestLoadShadowInput_RejectsSchemaViolatingNarration`, `TestRunShadow_EmptyResultSetMarksEmpty`, `TestRunShadow_NonEmptyResultSetLeavesEmptyFalse`, `TestRunShadow_UnknownVerdictFlaggedAsFalseRejection`, `TestRunShadow_HonorsContextCancellation`. 2 findings deferred to Story 10.4 (production `scenario_path="scenario.json"` resolution, `normalizeCriticScore` out-of-range warnings).
+
+---
+
+## v2 Rubric — D5 refit (2026-05-04)
+
+### Scoring unit changed: scene → act monologue
+
+Pre-D5 the golden rubric and the shadow runner both consumed v1
+`NarrationScript.Scenes[]` and scored per-scene. After D1's domain rewrite
+and D4's bridge removal, the only runtime unit is
+`NarrationScript.Acts[i].Monologue` (continuous KR text per act) +
+`Acts[i].Beats[j]` (rune-offset slices for visual cuts). The v1 rubric and
+its sample fixtures became shape-mismatched; v1 scores can no longer be
+compared to v2 scores directly. D5 refits the rubric to score per-act, and
+this section documents the comparability method that lets post-D5 scores
+be interpreted alongside v1's last-cycle score without claiming false
+equivalence.
+
+### Sample-set versioning
+
+The on-disk layout is now version-tagged:
+
+```
+testdata/golden/eval/
+  manifest.json           # version=2, paths under eval/v2/
+  v1/
+    manifest.json         # frozen pre-D5 manifest snapshot
+    last_report.json      # frozen pre-D5 last_report — the v1 baseline
+    000001..000003/       # v1-shape NarrationScene samples (recovered from
+                          # baseline commit eb5a30d for archive only;
+                          # NOT replayable against the current evaluator
+                          # because v1 critic prompt + writer_output schema
+                          # are gone with D1/D4)
+  v2/
+    000001..000003/       # active v2-shape ActScript[] samples
+```
+
+`internal/critic/eval/archive.go` exposes read-only `LoadV1ArchiveReport`
+and `LoadV1ArchiveManifest` for byte-identical reproducibility of the v1
+last-cycle score. There is intentionally no `RunGoldenArchive(v1)` —
+the v1 evaluator stack (prompt + schema + per-scene scorer) was deleted by
+D1/D4 in line with the "no dead layers" constraint, so live re-evaluation
+of v1 fixtures is not meaningful. The frozen `last_report.json` is the
+canonical source of the v1 score.
+
+### v2 per-act criteria
+
+Per-act metrics are deterministic (no LLM call) and live in
+`internal/critic/eval/per_act.go`. They sit alongside the existing
+4-criterion LLM rubric (Hook / FactAccuracy / EmotionalVariation /
+Immersion), which still keys per-fixture in `VerdictResult.OverallScore`
+and `CriticRubricScores`.
+
+| Criterion | Definition | Source |
+|---|---|---|
+| `monologue_rune_count` | Rune count of `act.Monologue` (`utf8.RuneCountInString`) | derived from fixture |
+| `rune_cap_utilization` | `monologue_rune_count / domain.ActMonologueRuneCap[act_id]` | new in v2 |
+| `rune_cap_overflow` | `monologue_rune_count > cap` (writer producing past the floor) | new in v2 |
+| `beat_count_in_range` | `8 <= len(act.Beats) <= 10` per D1 stage-2 validator | new in v2 |
+| `mood_present` / `key_points_present` / `metadata_complete` | per-act metadata gate (D2/D4 forbidden-term gate sister) | renamed from v1 per-scene |
+| `offsets_valid` | beats are monotonic non-overlapping rune slices in `[0, runeCount]` | new in v2 (D1 validator floor) |
+| `prev_seam_monotonic` | i-th act's first beat at offset 0 AND (i-1)-th act's last beat ended on its monologue boundary | new in v2 (deterministic act-seam continuity floor) |
+
+`PerActAggregate` rolls these per-act metrics into run-level summaries
+(`avg_rune_cap_utilization`, `acts_with_*` counts) and is persisted in
+`manifest.json`'s `last_report.per_act`.
+
+### Cohen's kappa floor (calibration)
+
+`internal/critic/eval/calibration.go` collapses each fixture's
+`expected_verdict` (binary: pass for positive, retry for negative) and the
+evaluator's actual verdict (`accept_with_notes` collapsed to `pass`) into
+a 2×2 contingency and computes unweighted binary Cohen's kappa. The
+algorithm matches `internal/service.CohensKappa` byte-for-byte; the
+duplication is intentional because `internal/critic/eval` may not import
+`internal/service` per `scripts/lintlayers/main.go`.
+
+`CalibrationFloor = 0.6` mirrors the spec D5 inter-rater agreement floor.
+`FloorOK=false` is surfaced as a warning in the report, not a runtime
+error, so a single bad run still produces an inspectable artifact. The
+spec requires a HALT (manual gate) before locking the v2 rubric on a
+sub-floor calibration — this is enforced by the human reviewer reading
+`manifest.json.last_report.calibration.floor_ok`, not by RunGolden itself.
+
+### v1→v2 comparability method
+
+Direct numeric comparison is restricted to the criteria that survived
+unchanged:
+
+| Criterion | v1 | v2 | Comparable? |
+|---|---|---|---|
+| Verdict recall (`detected_negative / total_negative`) | per-pair | per-pair | **Yes** — same definition, different fixture shape but same expected_verdict per pair. |
+| False rejects (positive expected, evaluator returns retry) | per-pair | per-pair | **Yes** — same definition. |
+| Hook / FactAccuracy / EmotionalVariation / Immersion (`CriticRubricScores`) | per-fixture, per-scene rubric semantics | per-fixture, per-act rubric semantics | **Not deliverable from persisted v1 data.** The v1 `last_report.json` snapshot at `testdata/golden/eval/v1/last_report.json` only stored `{recall, total_negative, detected_negative, false_rejects, pairs:[verdict]}` — it did not persist sub-rubric scores. The runtime evaluator's `VerdictResult.OverallScore` carries a single int, not the four sub-scores, so `RunGolden` has nothing to diff against. Wiring per-criterion sub-scores into both v1 archive and v2 reports is deferred (see deferred-work entry "per-criterion CriticRubricScores in Golden report"). |
+| Per-act metrics (rune-cap utilization, beat-count, metadata, offsets, seams) | did not exist | first-class | **No v1 baseline.** Reported as v2-only baseline; future v2 cycles compare to this. |
+
+The v1 last-cycle score (from `testdata/golden/eval/v1/last_report.json`):
+
+```
+recall=1.00 total_negative=3 detected=3 false_rejects=0
+```
+
+The v2 first baseline score (post-D4, polisher NOT in line per D plan
+resolution P5; logged from `go test ./internal/critic/eval -run TestGolden -v`):
+
+```
+recall=1.00 total_negative=3 detected=3 false_rejects=0
+per_act: fixtures=6 acts=24 avg_utilization=0.043 overflow=0
+         bad_beat_count=0 metadata_gap=24 bad_offsets=0 seam_gap=0
+calibration: pairs=6 kappa=1.0000 floor_ok=true (a=3 b=0 c=0 d=3)
+```
+
+**v1→v2 verdict-recall delta: +0.00 / false-rejects: +0.** The verdict
+layer is identical, which is the correct signal — D1–D4 was a domain
+rewrite, not a critic-prompt change. The new per-act layer surfaces a
+baseline-only measurement: 24/24 acts have `metadata_gap=true` because
+D1's mechanical reshape of the v1 samples filled `key_points: []` rather
+than synthesizing new key_points. That is a fixture-data thinness signal,
+not a regression — future fixture refresh cycles can lift it.
+
+`avg_rune_cap_utilization=0.043` is similarly a fixture-data signal: the
+v1 samples were short toy monologues (~30–50 runes/act) reshaped
+mechanically. They underutilize the v2 caps (480–2080 runes/act). The
+metric flags this faithfully so future fixture curation (FR-tracked)
+knows what to lift.
+
+### Plan acceptance signal
+
+Per the D-plan acceptance signal #6 ("v2 score ≥ v1 + 15 absolute
+points"), the verdict-recall layer is unchanged so this signal is
+neutral.
+
+The plan's retrospective-trigger threshold ("v2 score < v1 + 5")
+**arguably fires on a literal reading**: v1 recall = 1.00, v2 recall =
+1.00 → delta = 0, which is `< +5`. The retrospective is NOT triggered
+in practice because:
+
+1. The verdict-recall **ceiling was already reached in v1** (3/3
+   negatives detected on a 3-pair set). v2 cannot exceed it on the
+   same pair count without a fixture refresh. The +15 / +5 thresholds
+   were drafted against an assumed v1 baseline below ceiling; against
+   a saturated v1 baseline they are vacuously breached and not
+   informative.
+2. The v1 archive `last_report.json` does not persist per-criterion
+   sub-scores, so a non-recall delta (the kind +15/+5 was actually
+   reaching for) cannot be computed from current data — see the
+   "Not deliverable from persisted v1 data" row in the table above.
+
+The honest interpretation: the verdict-recall layer is identical (a
+ceiling artifact, not a regression), and the substantive v1→v2 deltas
+will land when the deferred-work item "per-criterion CriticRubricScores
+in Golden report" persists the sub-scores into both the v1 archive and
+v2 reports. The non-trivial v1→v2 delta this cycle lives entirely in
+the per-act layer (newly first-class) and the calibration kappa (newly
+recorded), neither of which has a v1 reference.
+
+### Polisher posture (P5)
+
+This v2 baseline is **without polisher in line**. D7 (polisher v2) will
+re-measure on top of this baseline to justify its existence, comparing
+v2-with-polisher against the numbers above.

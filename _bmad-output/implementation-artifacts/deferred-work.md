@@ -620,3 +620,65 @@ Spec: `_bmad-output/implementation-artifacts/spec-polisher-whole-scenario-polish
 **Scope sketch.** Replace `domain.ErrValidation` wrap with a new `domain.ErrAssetLoad` (or just propagate the underlying error, no wrap) in all four loaders. Add unit tests asserting the error class. One commit, four-line touch + one new error sentinel.
 
 **Files.** `internal/pipeline/agents/assets.go` (~4 sites), `internal/domain/errors.go` (new sentinel if introduced), `internal/pipeline/agents/assets_test.go` (new tests).
+
+---
+
+## Per-criterion CriticRubricScores in Golden report (deferred from D5 review, 2026-05-04)
+
+**What.** Persist the four LLM rubric sub-scores (`Hook`, `FactAccuracy`, `EmotionalVariation`, `Immersion`) per fixture in the Golden `Report.Pairs[]` and in the v1 archive `last_report.json`. The `4-2-shadow-eval-runner.md` v1→v2 comparability table currently marks "Per-criterion delta" as **Not deliverable from persisted v1 data**; closing this requires both (a) extending `VerdictResult` + `PairResult` to carry sub-scores in v2, and (b) back-filling the v1 archive snapshot with sub-scores recovered from the v1 critic stack at commit `eb5a30d` (or accepting that v1 baseline starts from "v2 first cycle" rather than the true pre-D1 v1).
+
+**Why deferred.** The spec D5 acceptance signal for the +15/+5 retrospective trigger relies on per-criterion deltas, but the verdict-recall ceiling reached in v1 already short-circuits the literal threshold reading. Adding sub-score plumbing now would expand D5's surface beyond the eval package (`VerdictResult` is consumed by Shadow runner; touching it ripples into 4.2 / 10.4). Better: a focused cycle that updates the Golden Report shape, the v1 archive snapshot generator, and the comparability table together.
+
+**Dequeue trigger.**
+1. The next D7 polisher cycle needs per-criterion deltas to justify the polisher's existence (per D plan acceptance signal #6).
+2. OR: a future Critic prompt change ships and the Hook/FactAccuracy/EmotionalVariation/Immersion balance shifts in a way the verdict-only recall cannot detect.
+
+**Files.** `internal/critic/eval/eval.go` (`VerdictResult` + sub-scores), `internal/critic/eval/runner.go` (`PairResult` + sub-scores; aggregate average), `testdata/golden/eval/v1/last_report.json` (back-fill or document non-back-fillable), `_bmad-output/implementation-artifacts/4-2-shadow-eval-runner.md` (table update).
+
+---
+
+## BeatIndexAt boundary at monologue end drops valid critic findings (deferred from D5 review, 2026-05-04)
+
+**What.** `internal/domain/narration.go:BeatIndexAt` matches `[StartOffset, EndOffset)` (strict less-than on EndOffset). `internal/pipeline/agents/critic.go:validateMinorPolicyFindings` accepts `RuneOffset == utf8.RuneCountInString(monologue)` as in-range (upper bound inclusive). A finding at exactly the monologue's last rune passes critic validation but `BeatIndexAt` returns `0`, and `MergeMinorSignals` / `PrepareBatchReview` then silently drops it.
+
+**Why deferred.** Pre-existing in critic.go (D4-era), not introduced by D5. D5 review surfaced it via the Blind Hunter pass. Out of scope for the D5 commit per `feedback_commit_scope`.
+
+**Dequeue trigger.** A real production critic finding lands at the act monologue's terminal rune and an operator notices the minor-policy review item missing from HITL.
+
+**Files.** `internal/domain/narration.go:BeatIndexAt` (boundary semantics), `internal/pipeline/agents/critic.go:validateMinorPolicyFindings` + tests.
+
+---
+
+## MinorSensitivePatterns scan misses act-level Mood / KeyPoints (deferred from D5 review, 2026-05-04)
+
+**What.** `internal/pipeline/agents/policy.go:MatchNarration` for `MinorSensitivePatterns` scans `act.Monologue` + per-beat metadata only. The sister method `ForbiddenTerms.MatchNarration` scans `act.Mood` + `act.KeyPoints` in addition. v1 scanned the equivalent `scene.Mood` consistently for both paths; the v2 reshape lost minor-pattern coverage on the per-act fields.
+
+**Why deferred.** Pre-existing in policy.go (D4-era cleanup gap), not introduced by D5. D5 review surfaced via the Blind Hunter pass. Out of scope per `feedback_commit_scope`.
+
+**Dequeue trigger.** A minor-policy term seeded into `act.KeyPoints` or `act.Mood` reaches a production run and the precheck silently passes.
+
+**Files.** `internal/pipeline/agents/policy.go:MinorSensitivePatterns.MatchNarration` + tests in `policy_test.go`.
+
+---
+
+## Forbidden term hit duplication across multiple metadata fields (deferred from D5 review, 2026-05-04)
+
+**What.** When `act.Mood`, `act.KeyPoints`, `beat.Location`, and `beat.Atmosphere` independently match the same forbidden term at the same StartOffset, `ForbiddenTerms.MatchNarration` emits multiple `ForbiddenTermHit` entries with identical `(ActID, RuneOffset, Pattern)` triples. The renderer (`flattenForbiddenTermHits`) emits visually-identical lines, and `sort.Slice` (not Stable) reorders them non-deterministically across runs.
+
+**Why deferred.** Pre-existing in policy.go and critic_precheck.go (D4-era). D5 review surfaced via the Blind Hunter pass.
+
+**Dequeue trigger.** A reviewer notices duplicate-looking forbidden-term lines in HITL or test logs and asks "why two?".
+
+**Files.** `internal/pipeline/agents/policy.go` (de-dup at emission OR field-source tag in `ForbiddenTermHit`), `internal/pipeline/agents/critic_precheck.go:flattenForbiddenTermHits`, related tests.
+
+---
+
+## Manifest write race in concurrent RunGolden (deferred from D5 review, 2026-05-04)
+
+**What.** `internal/critic/eval/runner.go:RunGolden` does a non-locked load-modify-write on `testdata/golden/eval/manifest.json` via `os.WriteFile`. Two parallel callers (CI matrix runner, `go test -p 2`, two operators on the same checkout) race on `LastReport` / `LastSuccessfulRunAt`. `os.WriteFile` is also not atomic, so a crash mid-write leaves a half-written manifest.
+
+**Why deferred.** Pre-existing in 4.1-era code, not introduced by D5. D5 review surfaced via the Edge Case Hunter pass. The single-writer assumption holds in current operations (one Jay, one CI lane); a rename-into-place pattern + advisory lock is a focused infra cycle.
+
+**Dequeue trigger.** First time a CI parallelism bump or operator concurrency causes a corrupted manifest in trunk.
+
+**Files.** `internal/critic/eval/manifest.go:saveManifest` (atomic write via `os.Rename`), optional flock around load+save.
