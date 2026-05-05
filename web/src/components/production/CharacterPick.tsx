@@ -380,7 +380,7 @@ export function CharacterPick({ run }: CharacterPickProps) {
           <img
             alt={`Canonical for ${canonical.scp_id}`}
             className="character-pick__canonical-preview"
-            src={canonical.image_url}
+            src={canonicalImageSrc(canonical)}
           />
           <div className="character-pick__reuse-actions">
             <button
@@ -531,7 +531,7 @@ export function CharacterPick({ run }: CharacterPickProps) {
           <img
             alt={`Canonical for ${canonical.scp_id}`}
             className="character-pick__canonical-preview"
-            src={canonical.image_url}
+            src={canonicalImageSrc(canonical)}
           />
           <div className="character-pick__preview-actions">
             <button
@@ -560,5 +560,14 @@ export function CharacterPick({ run }: CharacterPickProps) {
       )}
     </section>
   )
+}
+
+// canonicalImageSrc appends the library row version as a query string so the
+// browser refetches the image after a regenerate. The static-serve handler
+// sets Cache-Control: no-cache, but some browsers skip the revalidation
+// roundtrip entirely when the <img src> attribute is byte-identical to the
+// previous render — version-busting forces a fresh GET on every version bump.
+function canonicalImageSrc(canonical: ScpCanonicalImage): string {
+  return `${canonical.image_url}?v=${canonical.version}`
 }
 
