@@ -22,6 +22,9 @@ e2e/node_modules/
 # Pipeline run artifacts (project-root layout)
 /output/
 
+# SCP canonical image library (ScpImageDir default — generated, per-machine)
+/scp_images/
+
 # IDE / tool
 .claude
 .agent
