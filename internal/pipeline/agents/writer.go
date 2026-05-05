@@ -227,7 +227,7 @@ func runWriterActMonologue(
 	priorTail string,
 	qualityFeedback string,
 ) (writerMonologueResponse, actCallMeta, error) {
-	prompt, err := renderWriterActPrompt(state, prompts, terms, spec, priorTail, qualityFeedback)
+	prompt, err := renderWriterActPrompt(state, prompts, terms, spec, priorTail, qualityFeedback, "")
 	if err != nil {
 		return writerMonologueResponse{}, actCallMeta{}, err
 	}
@@ -724,6 +724,41 @@ func validateBeatSentenceBoundary(actID string, idx int, beat domain.BeatAnchor,
 	)
 }
 
+// formatMonologueLengthRetryFeedback returns a within-stage retry feedback
+// message describing how the previous attempt's monologue rune count missed
+// the per-act band [floor, capV]. Returns "" on degenerate inputs
+// (floor <= 0, capV <= 0, floor > capV) or when actual is in band — callers
+// MUST NOT inject feedback in those cases.
+//
+// Why this signal exists: the writer LLM cannot count Korean runes precisely
+// while generating, so the same prompt re-called after a length miss tends
+// to repeat the miss. Telling the LLM the actual count plus the band middle
+// as a numeric target breaks the loop.
+func formatMonologueLengthRetryFeedback(actual, floor, capV int) string {
+	if floor <= 0 || capV <= 0 || floor > capV {
+		return ""
+	}
+	if actual >= floor && actual <= capV {
+		return ""
+	}
+	middle := (floor + capV) / 2
+	if actual < floor {
+		return fmt.Sprintf(
+			"PREVIOUS ATTEMPT FAILED: monologue was %d runes — BELOW the floor of %d.\n"+
+				"Target the middle of the band [%d, %d] = ~%d runes.\n"+
+				"Add factual anchors, sensory detail, and narrator-aside commentary to expand.\n"+
+				"Do NOT pad with filler.",
+			actual, floor, floor, capV, middle,
+		)
+	}
+	return fmt.Sprintf(
+		"PREVIOUS ATTEMPT FAILED: monologue was %d runes — OVER the cap of %d.\n"+
+			"Target the middle of the band [%d, %d] = ~%d runes.\n"+
+			"Tighten by removing redundant phrases and shortening sentences.",
+		actual, capV, floor, capV, middle,
+	)
+}
+
 func renderWriterActPrompt(
 	state *PipelineState,
 	prompts PromptAssets,
@@ -731,6 +766,7 @@ func renderWriterActPrompt(
 	spec writerActSpec,
 	priorTail string,
 	qualityFeedback string,
+	retryFeedback string,
 ) (string, error) {
 	visualJSON, err := json.MarshalIndent(state.Research.VisualIdentity, "", "  ")
 	if err != nil {
@@ -772,6 +808,7 @@ func renderWriterActPrompt(
 		"{forbidden_terms_section}", forbidden,
 		"{glossary_section}", "",
 		"{quality_feedback}", qualityFeedback,
+		"{retry_feedback}", retryFeedback,
 		"{exemplar_scenes}", exemplar,
 	)
 	return replacer.Replace(prompts.WriterTemplate), nil

@@ -78,6 +78,12 @@ The other acts are written in separate stage-1 calls. Stay strictly inside the a
 
 {quality_feedback}
 
+## Retry Feedback (in-stage 직전 attempt 길이 미스, 있으면 참고)
+
+> 비어 있으면 첫 attempt — 무시하세요. 채워져 있으면 직전 attempt의 실제 rune 수가 target band를 벗어났다는 뜻입니다. 메시지가 지정한 방향(BELOW/OVER)과 middle 값을 참고해 길이를 조정하세요.
+
+{retry_feedback}
+
 ## Output Contract (Stage 1)
 
 You MUST output **exactly one JSON object** (no surrounding prose, no markdown fences):

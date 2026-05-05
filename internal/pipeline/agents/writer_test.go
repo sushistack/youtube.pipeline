@@ -134,7 +134,7 @@ func sampleWriterAssets() PromptAssets {
 			"scp={scp_id} synopsis={act_synopsis}\nprior={prior_act_summary}\nkp={act_key_points}\n" +
 			"ref={scp_visual_reference}\ncont={containment_constraints}\nfg={format_guide}\n" +
 			"forbidden={forbidden_terms_section}\nglossary={glossary_section}\n" +
-			"qf={quality_feedback}\nexemplar={exemplar_scenes}",
+			"qf={quality_feedback}\nrf={retry_feedback}\nexemplar={exemplar_scenes}",
 		SegmenterTemplate: "[SEG:{act_id}]\nmood={act_mood}\nkp={act_key_points}\n" +
 			"monologue={monologue}\nrunes={monologue_rune_count}\nref={scp_visual_reference}\n" +
 			"facts={fact_tag_catalog}",
@@ -1066,6 +1066,108 @@ func TestSnapBeatBoundariesToSentences_TableDriven(t *testing.T) {
 				if i+1 < len(beats) && beats[i+1].StartOffset != beats[i].EndOffset {
 					t.Errorf("adjacency broken: beat[%d].end=%d, beat[%d].start=%d",
 						i, beats[i].EndOffset, i+1, beats[i+1].StartOffset)
+				}
+			}
+		})
+	}
+}
+
+// TestFormatMonologueLengthRetryFeedback locks the within-stage retry
+// feedback formatter behavior: under-floor / over-cap messages must include
+// the actual count, the band middle as a numeric target, and the action verb
+// the LLM should follow. In-band and degenerate-band inputs must return ""
+// so the caller never injects a useless "previous attempt was fine" line.
+func TestFormatMonologueLengthRetryFeedback(t *testing.T) {
+	cases := []struct {
+		name        string
+		actual      int
+		floor       int
+		capV        int
+		wantEmpty   bool
+		mustContain []string
+		mustNotHave []string
+	}{
+		{
+			name:   "under_floor_revelation",
+			actual: 800, floor: 900, capV: 2080,
+			mustContain: []string{
+				"PREVIOUS ATTEMPT FAILED",
+				"800 runes",
+				"BELOW the floor of 900",
+				"[900, 2080]",
+				"~1490 runes", // (900+2080)/2 = 1490
+				"expand",
+				"Do NOT pad with filler",
+			},
+			mustNotHave: []string{"OVER the cap", "Tighten"},
+		},
+		{
+			name:   "over_cap_unresolved",
+			actual: 1500, floor: 672, capV: 1400,
+			mustContain: []string{
+				"PREVIOUS ATTEMPT FAILED",
+				"1500 runes",
+				"OVER the cap of 1400",
+				"[672, 1400]",
+				"~1036 runes", // (672+1400)/2 = 1036
+				"Tighten",
+			},
+			mustNotHave: []string{"BELOW the floor", "expand", "filler"},
+		},
+		{
+			name:      "in_band_returns_empty",
+			actual:    500, floor: 288, capV: 720,
+			wantEmpty: true,
+		},
+		{
+			name:      "exactly_at_floor_is_in_band",
+			actual:    288, floor: 288, capV: 720,
+			wantEmpty: true,
+		},
+		{
+			name:      "exactly_at_cap_is_in_band",
+			actual:    720, floor: 288, capV: 720,
+			wantEmpty: true,
+		},
+		{
+			name:      "zero_floor_is_degenerate",
+			actual:    100, floor: 0, capV: 720,
+			wantEmpty: true,
+		},
+		{
+			name:      "zero_cap_is_degenerate",
+			actual:    100, floor: 288, capV: 0,
+			wantEmpty: true,
+		},
+		{
+			name:      "inverted_band_is_degenerate",
+			actual:    500, floor: 720, capV: 288,
+			wantEmpty: true,
+		},
+		{
+			name:      "negative_floor_is_degenerate",
+			actual:    100, floor: -1, capV: 720,
+			wantEmpty: true,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatMonologueLengthRetryFeedback(tc.actual, tc.floor, tc.capV)
+			if tc.wantEmpty {
+				if got != "" {
+					t.Fatalf("expected empty string, got %q", got)
+				}
+				return
+			}
+			for _, want := range tc.mustContain {
+				if !strings.Contains(got, want) {
+					t.Errorf("output missing %q\n  full:\n%s", want, got)
+				}
+			}
+			for _, banned := range tc.mustNotHave {
+				if strings.Contains(got, banned) {
+					t.Errorf("output unexpectedly contains %q\n  full:\n%s", banned, got)
 				}
 			}
 		})
