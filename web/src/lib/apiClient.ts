@@ -14,6 +14,7 @@ import {
   runStatusResponseSchema,
   sceneEditResponseSchema,
   sceneListResponseSchema,
+  scpCanonicalImageResponseSchema,
   sourceManifestSchema,
   timelineListResponseSchema,
   undoResponseSchema,
@@ -413,6 +414,42 @@ export function pickCharacterWithDescriptor(
     {
       method: "POST",
       body: JSON.stringify({ candidate_id, frozen_descriptor }),
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+export function fetchScpCanonical(run_id: string) {
+  return apiRequest(
+    `/runs/${encodeURIComponent(run_id)}/characters/canonical`,
+    scpCanonicalImageResponseSchema,
+  );
+}
+
+// generateScpCanonical posts to the canonical endpoint. regenerate=false is
+// idempotent: when a library hit exists the server returns the stored record
+// without invoking ComfyUI. regenerate=true forces a new image-edit call and
+// bumps the version on success. When the run has not yet completed /pick
+// (the "preview before commit" miss flow), the operator's chosen candidate
+// and descriptor are passed as overrides so the server can generate without
+// requiring run.selected_character_id to be persisted.
+export function generateScpCanonical(
+  run_id: string,
+  options: {
+    regenerate: boolean;
+    candidate_id?: string;
+    frozen_descriptor?: string;
+  },
+) {
+  const body: Record<string, unknown> = { regenerate: options.regenerate };
+  if (options.candidate_id) body.candidate_id = options.candidate_id;
+  if (options.frozen_descriptor) body.frozen_descriptor = options.frozen_descriptor;
+  return apiRequest(
+    `/runs/${encodeURIComponent(run_id)}/characters/canonical`,
+    scpCanonicalImageResponseSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
       headers: { "Content-Type": "application/json" },
     },
   );

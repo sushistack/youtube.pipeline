@@ -1106,3 +1106,189 @@ func TestImageTrack_NilAuditLoggerDoesNotPanic(t *testing.T) {
 		t.Fatalf("track: %v", err)
 	}
 }
+
+// ---------------- canonical image resolver ----------------
+
+type fakeCanonicalResolver struct {
+	rec   *domain.ScpImageRecord
+	err   error
+	calls int
+}
+
+func (f *fakeCanonicalResolver) GetByRun(ctx context.Context, runID string) (*domain.ScpImageRecord, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.rec == nil {
+		return nil, domain.ErrNotFound
+	}
+	return f.rec, nil
+}
+
+// minimalPNG is a 1x1 PNG used by canonical-resolver tests so the loader's
+// http.DetectContentType correctly identifies the file as image/png.
+var minimalPNG = []byte{
+	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+	0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+	0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+	0x54, 0x78, 0x9C, 0x62, 0x00, 0x01, 0x00, 0x00,
+	0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+	0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+	0x42, 0x60, 0x82,
+}
+
+func newImageTrackWithCanonical(t *testing.T, canonicalResolver pipeline.CanonicalImageResolver, scpImageDir string) imageTrackFixture {
+	t.Helper()
+	outputDir := t.TempDir()
+	runID := "scp-049-run-1"
+	frozen := "Appearance: slender humanoid; Environment: concrete chamber"
+	scenes := []sceneFixture{
+		{sceneNum: 1, narration: "Scene one.", entityVisible: true, shots: []string{"wide shot"}},
+	}
+	state := scenarioStateForTest(runID, scenes, frozen)
+	scenarioPath := writeScenario(t, outputDir, runID, state)
+
+	f := imageTrackFixture{
+		outputDir: outputDir,
+		runID:     runID,
+		images:    newFakeImageGen(),
+		resolver: &fakeCharacterResolver{candidate: &domain.CharacterCandidate{
+			ID:       "scp-049#1",
+			PageURL:  "https://example.com/049",
+			ImageURL: "https://example.com/049/reference.jpg",
+		}},
+		shots:   newFakeShotStore(),
+		limiter: &passthroughLimiter{},
+	}
+	track, err := pipeline.NewImageTrack(pipeline.ImageTrackConfig{
+		OutputDir:         outputDir,
+		Provider:          "comfyui",
+		GenerateModel:     "qwen-image",
+		EditModel:         "qwen-image-edit",
+		Width:             1024,
+		Height:            1024,
+		Images:            f.images,
+		CharacterResolver: f.resolver,
+		CanonicalResolver: canonicalResolver,
+		ScpImageDir:       scpImageDir,
+		Shots:             f.shots,
+		Limiter:           f.limiter,
+		Clock:             clock.RealClock{},
+		Logger:            nil,
+		// Recognize the canonical-priority test by passing a refImageFetcher
+		// that errors out — we want to assert the canonical branch never
+		// touches it.
+		RefImageFetcher: func(_ context.Context, _ string) (string, error) {
+			return "", errors.New("ref fetcher must not be called when canonical exists")
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewImageTrack: %v", err)
+	}
+	f.track = track
+	f.req = pipeline.PhaseBRequest{
+		RunID:        runID,
+		Stage:        domain.StageImage,
+		ScenarioPath: scenarioPath,
+	}
+	return f
+}
+
+func TestImageTrack_CanonicalHit_UsesLocalDataURL(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	scpImageDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(scpImageDir, "049"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	canonicalPath := filepath.Join(scpImageDir, "049", "canonical.png")
+	if err := os.WriteFile(canonicalPath, minimalPNG, 0o644); err != nil {
+		t.Fatalf("write canonical: %v", err)
+	}
+
+	res := &fakeCanonicalResolver{rec: &domain.ScpImageRecord{
+		ScpID:    "049",
+		FilePath: filepath.Join("049", "canonical.png"),
+		Version:  1,
+	}}
+	f := newImageTrackWithCanonical(t, res, scpImageDir)
+
+	if _, err := f.track(context.Background(), f.req); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+	if res.calls == 0 {
+		t.Fatalf("expected canonical resolver to be queried, got 0 calls")
+	}
+	if len(f.images.editCalls) != 1 {
+		t.Fatalf("expected 1 Edit call (character shot), got %d", len(f.images.editCalls))
+	}
+	got := f.images.editCalls[0].ReferenceImageURL
+	if !strings.HasPrefix(got, "data:image/png;base64,") {
+		t.Fatalf("Edit ReferenceImageURL = %q, want data:image/png;base64,...", got)
+	}
+	// Ensure the DDG candidate URL was NOT used as the reference.
+	if strings.Contains(got, "example.com") {
+		t.Fatalf("canonical hit should bypass DDG URL; got %q", got)
+	}
+}
+
+func TestImageTrack_CanonicalMiss_FallsBackToDDG(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	scpImageDir := t.TempDir() // empty — no canonical file
+	res := &fakeCanonicalResolver{}    // returns ErrNotFound
+
+	outputDir := t.TempDir()
+	runID := "scp-049-run-1"
+	frozen := "Appearance: slender humanoid; Environment: concrete chamber"
+	scenes := []sceneFixture{
+		{sceneNum: 1, narration: "Scene one.", entityVisible: true, shots: []string{"wide shot"}},
+	}
+	state := scenarioStateForTest(runID, scenes, frozen)
+	scenarioPath := writeScenario(t, outputDir, runID, state)
+
+	images := newFakeImageGen()
+	resolver := &fakeCharacterResolver{candidate: &domain.CharacterCandidate{
+		ID: "scp-049#1", PageURL: "https://example.com/049",
+		ImageURL: "https://example.com/049/reference.jpg",
+	}}
+	fetchCalls := 0
+	track, err := pipeline.NewImageTrack(pipeline.ImageTrackConfig{
+		OutputDir:         outputDir,
+		Provider:          "comfyui",
+		GenerateModel:     "qwen-image",
+		EditModel:         "qwen-image-edit",
+		Width:             1024, Height: 1024,
+		Images:            images,
+		CharacterResolver: resolver,
+		CanonicalResolver: res,
+		ScpImageDir:       scpImageDir,
+		Shots:             newFakeShotStore(),
+		Limiter:           &passthroughLimiter{},
+		Clock:             clock.RealClock{},
+		RefImageFetcher: func(_ context.Context, url string) (string, error) {
+			fetchCalls++
+			return "data:image/jpeg;base64,FAKE-" + url, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewImageTrack: %v", err)
+	}
+	if _, err := track(context.Background(), pipeline.PhaseBRequest{
+		RunID: runID, Stage: domain.StageImage, ScenarioPath: scenarioPath,
+	}); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+	if fetchCalls != 1 {
+		t.Fatalf("expected DDG fetcher to be called once on canonical miss, got %d", fetchCalls)
+	}
+	if len(images.editCalls) != 1 {
+		t.Fatalf("expected 1 Edit call, got %d", len(images.editCalls))
+	}
+	if !strings.HasPrefix(images.editCalls[0].ReferenceImageURL, "data:image/jpeg;base64,FAKE-") {
+		t.Fatalf("expected fallback fetcher URL, got %q", images.editCalls[0].ReferenceImageURL)
+	}
+}

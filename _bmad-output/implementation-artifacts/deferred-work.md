@@ -702,3 +702,20 @@ Spec: `_bmad-output/implementation-artifacts/spec-polisher-whole-scenario-polish
 **Dequeue trigger.** Item 1: any operator hits a 400 on resume with FS mismatch and no `--force` UI option. Item 2: multi-operator usage or a real prior-attempt-still-running race observed. Item 5: stale retry_reason text confuses an operator post-rewind. Item 6: someone changes Phase A caching semantics and wants regression coverage. Item 7: trivially run `git grep` on next pass.
 
 **Files.** Item 1: `web/src/lib/apiClient.ts:resumeRun`, FailureBanner. Item 2: `internal/api/handler_run.go:Resume`, `internal/pipeline/resume.go:PrepareResume`. Item 5: `internal/pipeline/rewind_plan.go`, `internal/pipeline/rewind.go:applyRewindFS`+ApplyRewindReset, `internal/db/runstore.go`. Item 6: `internal/pipeline/rewind_integration_test.go`. Item 7: `web/src/components/**`.
+
+---
+
+## SCP Canonical Image Library — deferred follow-ups (2026-05-05)
+
+Surfaced by step-04 review of `spec-scp-canonical-image-library.md`. None of these are caused by the change but were flagged during the multi-reviewer pass.
+
+1. **Idempotent canonical lookup does not `os.Stat` the file.** `internal/service/scp_image_service.go:Generate` short-circuits on a library hit when `regenerate=false` without verifying the on-disk PNG still exists. If the operator has cleaned `scp_images/` or restored from a backup with a stale DB, Phase B's `loadLocalImageAsDataURL` later fails the entire run with "read canonical: no such file or directory". A self-heal would `os.Stat` and fall through to regenerate. Low priority while a single operator owns the disk.
+2. **Concurrent `POST /characters/canonical` on the same SCP_ID can race.** Two tabs (or a stale tab + fresh tab) submitting `regenerate=true` simultaneously will fire two ComfyUI jobs (doubled cost), race on the file write (last writer wins via temp+rename), and double-bump the version. The UI guard (`generate_mutation.isPending`) is per-tab. A server-side advisory lock on `scp_id` would close it. Acceptable for one-operator pipeline.
+3. **`resume.go` silently degrades to DDG when `buildCanonicalImageGenerator` returns an error.** If the canonical image client fails to construct during a resume (e.g., misconfigured ComfyUI endpoint), the resume continues with `canonicalSvc=nil` and image_track falls back to the DDG path — even when the SCP's library row is healthy. Operators expecting reproducibility would prefer a hard failure here. Low blast radius (resume is rare).
+4. **Canonical reference data URL leaked into `CharacterCandidate.ImageURL` field in image_track.** `internal/pipeline/image_track.go` synthesizes a `CharacterCandidate` whose `ImageURL` is a multi-MB base64 data URL on the canonical-hit branch. Any future logger using `%+v` or any cache layer that records candidate fields would balloon log size. Mitigation: rename the synthesized field, or add a separate "resolved bytes" field on the candidate.
+
+**Why deferred.** All four are low-probability edge cases on a single-operator personal pipeline. None block the spec's ACs.
+
+**Dequeue trigger.** Item 1: operator deletes `scp_images/` and observes a hard Phase B failure. Item 2: cost spike traced to a duplicate generate. Item 3: a resume picks up the wrong reference and the operator finds canonical drift. Item 4: log/disk bloat observed in production.
+
+**Files.** Item 1: `internal/service/scp_image_service.go:Generate`. Item 2: same + `cmd/pipeline/serve.go` (advisory lock). Item 3: `cmd/pipeline/resume.go`. Item 4: `internal/pipeline/image_track.go:runImageTrack`.

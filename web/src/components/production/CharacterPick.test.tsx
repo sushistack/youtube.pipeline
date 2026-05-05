@@ -57,6 +57,42 @@ function makePickResponse(run: RunSummary) {
   return jsonResponse({ version: 1, data: run })
 }
 
+// makeCanonicalNotFound matches the server's 404 envelope when the SCP_ID
+// has no canonical row. CharacterPick converts this into "no hit, fall
+// through to search/grid" rather than treating it as an error.
+function makeCanonicalNotFound() {
+  return jsonResponse(
+    { version: 1, error: { code: 'NOT_FOUND', message: 'no canonical' } },
+    404,
+  )
+}
+
+function makeCanonicalResponse(overrides: Partial<{
+  scp_id: string
+  source_query_key: string
+  source_candidate_id: string
+  frozen_descriptor: string
+  prompt_used: string
+  version: number
+}> = {}) {
+  return jsonResponse({
+    version: 1,
+    data: {
+      scp_id: overrides.scp_id ?? 'SCP-049',
+      file_path: 'SCP-049/canonical.png',
+      image_url: '/api/scp_images/SCP-049',
+      source_query_key: overrides.source_query_key ?? 'scp-049',
+      source_candidate_id: overrides.source_candidate_id ?? 'scp-049#1',
+      frozen_descriptor: overrides.frozen_descriptor ?? 'tall plague doctor',
+      seed: 12345,
+      prompt_used: overrides.prompt_used ?? 'cartoon style; tall plague doctor',
+      version: overrides.version ?? 1,
+      created_at: '2026-04-18T00:00:00Z',
+      updated_at: '2026-04-18T00:00:00Z',
+    },
+  })
+}
+
 interface FetchCall {
   url: string
   init?: RequestInit
@@ -79,6 +115,9 @@ afterEach(() => {
 describe('CharacterPick', () => {
   it('auto-loads candidates when character_query_key is already set', async () => {
     const { calls } = spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters/descriptor')) {
         return makeDescriptorResponse('auto-desc', null)
       }
@@ -100,6 +139,9 @@ describe('CharacterPick', () => {
 
   it('submits a search when no character_query_key is present', async () => {
     const { calls } = spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters?query=')) {
         return makeCandidatesResponse(10)
       }
@@ -110,7 +152,8 @@ describe('CharacterPick', () => {
     const user = userEvent.setup()
     renderWithProviders(<CharacterPick run={run} />)
 
-    const input = screen.getByLabelText(/search query/i)
+    // Wait for canonical query to settle so the search form renders.
+    const input = await screen.findByLabelText(/search query/i)
     await user.type(input, 'SCP-049')
     await user.click(screen.getByRole('button', { name: /search/i }))
 
@@ -121,6 +164,9 @@ describe('CharacterPick', () => {
 
   it('selects candidates via digit keys 1–9 and 0', async () => {
     spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters/descriptor')) {
         return makeDescriptorResponse('auto-desc', null)
       }
@@ -141,7 +187,12 @@ describe('CharacterPick', () => {
   })
 
   it('Esc in grid returns to the search phase', async () => {
-    spyFetch(() => makeCandidatesResponse(10))
+    spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
+      return makeCandidatesResponse(10)
+    })
 
     const run = makeRun({ character_query_key: 'scp-049' })
     const user = userEvent.setup()
@@ -154,6 +205,9 @@ describe('CharacterPick', () => {
 
   it('Enter after selection advances to descriptor phase and fetches prefill', async () => {
     const { calls } = spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters/descriptor')) {
         return makeDescriptorResponse('auto-desc-value', 'prior-desc-value')
       }
@@ -177,6 +231,9 @@ describe('CharacterPick', () => {
 
   it('falls back to search phase when cached candidate fetch returns 404', async () => {
     spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters')) {
         return jsonResponse(
           { version: 1, error: { code: 'NOT_FOUND', message: 'no cached group' } },
@@ -199,6 +256,9 @@ describe('CharacterPick', () => {
 
   it('Esc in grid clears the selection before returning to search', async () => {
     spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters/descriptor')) {
         return makeDescriptorResponse('auto-desc', null)
       }
@@ -231,25 +291,26 @@ describe('CharacterPick', () => {
 
   it('prefills the search input from the run character_query_key', async () => {
     spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters?query=')) {
         return makeCandidatesResponse(10)
       }
       throw new Error(`unexpected url: ${url}`)
     })
 
-    // Start at search phase (no character_query_key) then switch: actually
-    // simplest — pass character_query_key=null and no query. But the ask is
-    // that when a key exists, a search submit from the recovered phase uses
-    // the prior value without retyping. Assert via controlled input value.
     const run = makeRun({ character_query_key: null })
     const { unmount } = renderWithProviders(<CharacterPick run={run} />)
-    const input = screen.getByLabelText(/search query/i) as HTMLInputElement
-    expect(input.value).toBe('')
+    const input = await screen.findByLabelText(/search query/i)
+    expect((input as HTMLInputElement).value).toBe('')
     unmount()
 
     const runWithKey = makeRun({ character_query_key: 'scp-049-prior' })
-    // character_query_key → grid phase; simulate 404 to bounce back to search.
     spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters?query=')) {
         return makeCandidatesResponse(10)
       }
@@ -268,6 +329,9 @@ describe('CharacterPick', () => {
 
   it('renders Confirm selection disabled until candidate clicked, then advances to descriptor phase on click', async () => {
     spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters/descriptor')) {
         return makeDescriptorResponse('auto-desc-button', null)
       }
@@ -293,6 +357,9 @@ describe('CharacterPick', () => {
 
   it('renders Search again that returns to search phase and clears selection', async () => {
     spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters/descriptor')) {
         return makeDescriptorResponse('auto-desc', null)
       }
@@ -323,9 +390,15 @@ describe('CharacterPick', () => {
     expect(selected).toHaveLength(0)
   })
 
-  it('confirm triggers pickCharacterWithDescriptor mutation', async () => {
+  it('confirm triggers canonical generation, then pick after preview confirm', async () => {
     const run = makeRun({ character_query_key: 'scp-049' })
     const { calls } = spyFetch((url, init) => {
+      if (url.includes('/characters/canonical')) {
+        if (init?.method === 'POST') {
+          return makeCanonicalResponse({ source_candidate_id: 'scp-049#1' })
+        }
+        return makeCanonicalNotFound()
+      }
       if (url.includes('/characters/descriptor')) {
         return makeDescriptorResponse('auto-desc-value', null)
       }
@@ -343,11 +416,28 @@ describe('CharacterPick', () => {
     await user.keyboard('1')
     await user.keyboard('{Enter}')
 
+    // Descriptor confirm now generates canonical (not pick).
     const read_mode = await screen.findByRole('button', {
       name: /vision descriptor draft/i,
     })
     read_mode.focus()
     await user.keyboard('{Enter}')
+
+    // Wait for canonical generation POST then preview phase.
+    await waitFor(() => {
+      const canonical_post = calls.find(
+        (c) => c.url.includes('/characters/canonical') && c.init?.method === 'POST',
+      )
+      expect(canonical_post).toBeTruthy()
+      expect(canonical_post?.init?.body).toContain('auto-desc-value')
+      expect(canonical_post?.init?.body).toContain('scp-049#1')
+    })
+
+    const preview = await screen.findByTestId('character-pick-preview')
+    expect(preview).toBeInTheDocument()
+
+    // Confirm in preview → pick fires.
+    await user.click(within(preview).getByRole('button', { name: /confirm & continue/i }))
 
     await waitFor(() => {
       expect(calls.some((c) => c.url.includes('/characters/pick'))).toBe(true)
@@ -355,5 +445,60 @@ describe('CharacterPick', () => {
     const pick_call = calls.find((c) => c.url.includes('/characters/pick'))
     expect(pick_call?.init?.body).toContain('auto-desc-value')
     expect(pick_call?.init?.body).toContain('scp-049#1')
+  })
+
+  it('shows reuse card with three actions when canonical hit exists', async () => {
+    const run = makeRun({ character_query_key: null })
+    const { calls } = spyFetch((url, init) => {
+      if (url.includes('/characters/canonical')) {
+        if (init?.method === 'POST') {
+          return makeCanonicalResponse({ version: 2 })
+        }
+        return makeCanonicalResponse({ version: 1 })
+      }
+      throw new Error(`unexpected url: ${url}`)
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<CharacterPick run={run} />)
+
+    const reuse = await screen.findByTestId('character-pick-reuse')
+    expect(within(reuse).getByRole('button', { name: /use as-is/i })).toBeInTheDocument()
+    expect(within(reuse).getByRole('button', { name: /^regenerate$/i })).toBeInTheDocument()
+    expect(within(reuse).getByRole('button', { name: /search a different reference/i })).toBeInTheDocument()
+
+    // Regenerate posts to canonical with regenerate=true.
+    await user.click(within(reuse).getByRole('button', { name: /^regenerate$/i }))
+    await waitFor(() => {
+      const post = calls.find(
+        (c) => c.url.includes('/characters/canonical') && c.init?.method === 'POST',
+      )
+      expect(post).toBeTruthy()
+      expect(post?.init?.body).toContain('"regenerate":true')
+    })
+  })
+
+  it('reuse "Use as-is" advances to descriptor phase with prior candidate', async () => {
+    const run = makeRun({ character_query_key: null })
+    spyFetch((url) => {
+      if (url.includes('/characters/canonical')) {
+        return makeCanonicalResponse({ source_candidate_id: 'scp-049#7' })
+      }
+      if (url.includes('/characters/descriptor')) {
+        return makeDescriptorResponse('auto-desc-reuse', null)
+      }
+      throw new Error(`unexpected url: ${url}`)
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<CharacterPick run={run} />)
+
+    const reuse = await screen.findByTestId('character-pick-reuse')
+    await user.click(within(reuse).getByRole('button', { name: /use as-is/i }))
+
+    // Descriptor phase loads with the auto prefill from the descriptor endpoint.
+    await waitFor(() => {
+      expect(screen.getByText('auto-desc-reuse')).toBeInTheDocument()
+    })
   })
 })

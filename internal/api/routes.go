@@ -14,6 +14,7 @@ type Dependencies struct {
 	Settings  *SettingsHandler
 	Artifacts *ArtifactsHandler // NEW
 	Character *CharacterHandler
+	ScpImage  *ScpImageHandler
 	Scene     *SceneHandler
 	Media     *MediaHandler
 	Tuning    *TuningHandler
@@ -43,6 +44,11 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 	api.HandleFunc("GET /api/runs/{id}/characters", deps.Character.Search)
 	api.HandleFunc("GET /api/runs/{id}/characters/descriptor", deps.Character.Descriptor)
 	api.HandleFunc("POST /api/runs/{id}/characters/pick", deps.Character.Pick)
+	if deps.ScpImage != nil {
+		api.HandleFunc("GET /api/runs/{id}/characters/canonical", deps.ScpImage.Get)
+		api.HandleFunc("POST /api/runs/{id}/characters/canonical", deps.ScpImage.Generate)
+		api.HandleFunc("GET /api/scp_images/{scp_id}", deps.ScpImage.Static)
+	}
 	api.HandleFunc("GET /api/runs/{id}/scenes", deps.Scene.List)
 	api.HandleFunc("GET /api/runs/{id}/cache", deps.Run.Cache)
 	api.HandleFunc("GET /api/runs/{id}/review-items", deps.Scene.ListReviewItems)
@@ -99,15 +105,19 @@ func RegisterRoutes(mux *http.ServeMux, deps *Dependencies) {
 // that case /api/tuning/* routes are simply not registered.
 // segments may be nil; the per-scene media route is registered only when a
 // lookup is provided.
+// scpImage may be nil; the canonical image library routes are registered only
+// when both the service and its on-disk root directory are configured.
 func NewDependencies(
 	svc *service.RunService,
 	settings *service.SettingsService,
 	hitl *service.HITLService,
 	characters *service.CharacterService,
+	scpImage *service.ScpImageService,
 	scenes *service.SceneService,
 	segments SegmentLookup,
 	tuning TuningService,
 	outputDir string,
+	scpImageDir string,
 	logger *slog.Logger,
 	webFS fs.FS,
 ) *Dependencies {
@@ -126,6 +136,9 @@ func NewDependencies(
 	}
 	if tuning != nil {
 		deps.Tuning = NewTuningHandler(tuning)
+	}
+	if scpImage != nil && scpImageDir != "" {
+		deps.ScpImage = NewScpImageHandler(scpImage, scpImageDir)
 	}
 	return deps
 }

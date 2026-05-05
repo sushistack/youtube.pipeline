@@ -87,6 +87,28 @@ type PipelineConfig struct {
 	OutputDir string `yaml:"output_dir" mapstructure:"output_dir"`
 	DBPath    string `yaml:"db_path"    mapstructure:"db_path"`
 
+	// ScpImageDir is the on-disk root for the SCP canonical image library.
+	// Per SCP_ID a single canonical.png is stored under
+	// {ScpImageDir}/{SCP_ID}/canonical.png. Joined with the canonical
+	// resolver and the static-serve handler — both validate the SCP_ID
+	// shape and prefix-containment to prevent path traversal.
+	ScpImageDir string `yaml:"scp_image_dir" mapstructure:"scp_image_dir"`
+
+	// CartoonStylePrompt is the verbatim prefix prepended to the run's
+	// frozen_descriptor when generating a canonical cartoon image. The
+	// composed prompt is `CartoonStylePrompt + "; " + frozen_descriptor`;
+	// no normalization is applied. Operators tune the cartoon style by
+	// editing this string in config.yaml — no LoRA dependency.
+	CartoonStylePrompt string `yaml:"cartoon_style_prompt" mapstructure:"cartoon_style_prompt"`
+
+	// ScpCanonicalWidth/Height are the dimensions requested from ComfyUI
+	// for the canonical image. 16:9 is the YouTube-native frame; the
+	// canonical is used as a reference for per-shot edits, so it does
+	// not need to match shot resolution (ComfyUI's ImageScaleToTotalPixels
+	// node rescales as needed).
+	ScpCanonicalWidth  int `yaml:"scp_canonical_width"  mapstructure:"scp_canonical_width"`
+	ScpCanonicalHeight int `yaml:"scp_canonical_height" mapstructure:"scp_canonical_height"`
+
 	// Cost caps (USD per stage)
 	CostCapResearch float64 `yaml:"cost_cap_research" mapstructure:"cost_cap_research"`
 	CostCapWrite    float64 `yaml:"cost_cap_write"    mapstructure:"cost_cap_write"`
@@ -199,6 +221,10 @@ func DefaultConfig() PipelineConfig {
 		DataDir:                  "/mnt/data/raw",
 		OutputDir:                "./output",
 		DBPath:                   "./pipeline.db",
+		ScpImageDir:              "./scp_images",
+		CartoonStylePrompt:       "Kid-friendly cartoon illustration, Starcraft-inspired stylized art, clean vector lines, vibrant colors,",
+		ScpCanonicalWidth:        1280,
+		ScpCanonicalHeight:       720,
 		CostCapResearch:          0.50,
 		CostCapWrite:             0.50,
 		CostCapImage:             2.00,

@@ -74,7 +74,32 @@ func runResume(cmd *cobra.Command, runID string, force bool) error {
 	characterClient := service.NewDuckDuckGoClient(nil)
 	characterSvc := service.NewCharacterService(store, characterCache, characterClient)
 
-	if phaseBRunner, err := buildPhaseBRunner(cfg, os.Getenv("DASHSCOPE_API_KEY"), limiterFactory, store, segStore, characterSvc, logger); err == nil {
+	// Canonical resolver: when a canonical image exists for the run's SCP_ID,
+	// image_track prefers it over the DDG candidate URL. Resume must wire it
+	// so a mid-Phase-B retry uses the same reference the original run did.
+	scpImageStore := db.NewScpImageLibraryStore(database)
+	canonicalImageClient, err := buildCanonicalImageGenerator(cfg, os.Getenv("DASHSCOPE_API_KEY"), limiterFactory, logger)
+	var canonicalSvc *service.ScpImageService
+	if err == nil {
+		canonicalSvc, err = service.NewScpImageService(service.ScpImageServiceConfig{
+			Runs:           store,
+			Cache:          characterCache,
+			Library:        scpImageStore,
+			Images:         canonicalImageClient,
+			RefFetcher:     pipeline.FetchReferenceImageAsDataURL,
+			EditModel:      cfg.ImageEditModel,
+			StylePrompt:    cfg.CartoonStylePrompt,
+			ScpImageDir:    cfg.ScpImageDir,
+			CanonicalWidth: cfg.ScpCanonicalWidth,
+			CanonicalHt:    cfg.ScpCanonicalHeight,
+		})
+	}
+	if err != nil {
+		logger.Warn("canonical resolver unavailable in resume (Phase B will fall back to DDG)", "error", err.Error())
+		canonicalSvc = nil
+	}
+
+	if phaseBRunner, err := buildPhaseBRunner(cfg, os.Getenv("DASHSCOPE_API_KEY"), limiterFactory, store, segStore, characterSvc, canonicalSvc, logger); err == nil {
 		engine.SetPhaseBExecutor(phaseBRunner)
 	} else {
 		logger.Warn("phase b runner unavailable (resume retries disabled for phase b)", "error", err.Error())

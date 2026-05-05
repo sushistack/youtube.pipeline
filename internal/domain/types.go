@@ -168,6 +168,35 @@ type CharacterGroup struct {
 	Candidates []CharacterCandidate `json:"candidates"`
 }
 
+// ScpImageRecord is the stable schema for the scp_image_library table.
+// FilePath is stored relative to PipelineConfig.ScpImageDir so the row
+// remains valid across machines/checkouts as long as the directory is
+// regenerated. Version increments on each regenerate (starts at 1).
+//
+// SourceCandidateID is the DDG candidate ID (form `{queryKey}#{n}`) the
+// operator selected to seed canonical generation. It is preserved so a
+// later "reuse" flow on a fresh run can re-issue /characters/pick with a
+// candidate ID that survives in the shared character_search_cache row,
+// without forcing the operator to redo the search.
+type ScpImageRecord struct {
+	ScpID             string `json:"scp_id"`
+	FilePath          string `json:"file_path"`
+	SourceRefURL      string `json:"source_ref_url"`
+	SourceQueryKey    string `json:"source_query_key"`
+	SourceCandidateID string `json:"source_candidate_id"`
+	// FrozenDescriptor is the raw operator-edited descriptor used to
+	// generate this canonical (without the cartoon-style prefix). Stored
+	// separately from PromptUsed so the FE reuse flow does not need to
+	// parse the prompt — that string is operator-tunable and any "; "
+	// inside the style prefix would corrupt naive client-side splits.
+	FrozenDescriptor string `json:"frozen_descriptor"`
+	PromptUsed       string `json:"prompt_used"`
+	Seed             int64  `json:"seed"`
+	Version          int    `json:"version"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
+}
+
 // Episode represents a scene/segment. Maps to the segments database table.
 type Episode struct {
 	ID             int64        `json:"id"`

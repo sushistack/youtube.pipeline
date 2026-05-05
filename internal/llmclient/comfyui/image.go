@@ -140,9 +140,13 @@ func (c *ImageClient) Generate(ctx context.Context, req domain.ImageRequest) (do
 			domain.ErrValidation, req.Width, req.Height)
 	}
 
-	seed, err := newSeed()
-	if err != nil {
-		return domain.ImageResponse{}, fmt.Errorf("comfyui image generate: seed: %w", err)
+	seed := req.Seed
+	if seed == 0 {
+		generated, err := newSeed()
+		if err != nil {
+			return domain.ImageResponse{}, fmt.Errorf("comfyui image generate: seed: %w", err)
+		}
+		seed = generated
 	}
 	workflow, outputID, err := prepareWorkflow(WorkflowT2I, substitution{
 		Prompt:            req.Prompt,
@@ -156,7 +160,7 @@ func (c *ImageClient) Generate(ctx context.Context, req domain.ImageRequest) (do
 	if err != nil {
 		return domain.ImageResponse{}, err
 	}
-	return c.run(ctx, workflow, outputID, req.Model, req.OutputPath)
+	return c.run(ctx, workflow, outputID, req.Model, req.OutputPath, seed)
 }
 
 // Edit runs the edit workflow. The reference image arrives as a
@@ -193,9 +197,13 @@ func (c *ImageClient) Edit(ctx context.Context, req domain.ImageEditRequest) (do
 		return domain.ImageResponse{}, err
 	}
 
-	seed, err := newSeed()
-	if err != nil {
-		return domain.ImageResponse{}, fmt.Errorf("comfyui image edit: seed: %w", err)
+	seed := req.Seed
+	if seed == 0 {
+		generated, err := newSeed()
+		if err != nil {
+			return domain.ImageResponse{}, fmt.Errorf("comfyui image edit: seed: %w", err)
+		}
+		seed = generated
 	}
 	workflow, outputID, err := prepareWorkflow(WorkflowEdit, substitution{
 		Prompt:             req.Prompt,
@@ -211,7 +219,7 @@ func (c *ImageClient) Edit(ctx context.Context, req domain.ImageEditRequest) (do
 	if err != nil {
 		return domain.ImageResponse{}, err
 	}
-	return c.run(ctx, workflow, outputID, req.Model, req.OutputPath)
+	return c.run(ctx, workflow, outputID, req.Model, req.OutputPath, seed)
 }
 
 func (c *ImageClient) uploadReference(ctx context.Context, mimeType, ext string, payload []byte) (string, error) {
@@ -229,8 +237,9 @@ func (c *ImageClient) uploadReference(ctx context.Context, mimeType, ext string,
 
 // run submits the workflow, polls history, downloads the result, and writes
 // atomically to outputPath. HTTP status taxonomy and polling timeout follow
-// the spec's Boundaries & Constraints block.
-func (c *ImageClient) run(ctx context.Context, workflow []byte, outputID, model, outputPath string) (domain.ImageResponse, error) {
+// the spec's Boundaries & Constraints block. seed is propagated to the caller
+// so it can be persisted (e.g. SCP canonical image library) for reproducibility.
+func (c *ImageClient) run(ctx context.Context, workflow []byte, outputID, model, outputPath string, seed int64) (domain.ImageResponse, error) {
 	start := c.clk.Now()
 
 	promptID, err := submitPrompt(ctx, c.httpClient, c.cfg.Endpoint, c.clientID, workflow)
@@ -269,6 +278,7 @@ func (c *ImageClient) run(ctx context.Context, workflow []byte, outputID, model,
 		Provider:   imageProvider,
 		CostUSD:    0,
 		DurationMs: durationMs,
+		Seed:       seed,
 	}, nil
 }
 

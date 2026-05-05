@@ -16,15 +16,20 @@ type TextResponse struct {
 }
 
 // ImageRequest contains parameters for image generation.
+// Seed, when non-zero, requests deterministic noise from providers that
+// support it (ComfyUI). Zero means "let the provider generate one." Providers
+// that ignore the input still return the actual seed via ImageResponse.Seed.
 type ImageRequest struct {
 	Prompt     string `json:"prompt"`
 	Model      string `json:"model"`
 	Width      int    `json:"width"`
 	Height     int    `json:"height"`
 	OutputPath string `json:"output_path,omitempty"`
+	Seed       int64  `json:"seed,omitempty"`
 }
 
 // ImageEditRequest contains parameters for image editing with a reference.
+// Seed semantics match ImageRequest.Seed.
 type ImageEditRequest struct {
 	Prompt             string `json:"prompt"`
 	Model              string `json:"model"`
@@ -32,15 +37,19 @@ type ImageEditRequest struct {
 	Width              int    `json:"width"`
 	Height             int    `json:"height"`
 	OutputPath         string `json:"output_path,omitempty"`
+	Seed               int64  `json:"seed,omitempty"`
 }
 
 // ImageResponse contains the result of an image generation or edit.
+// Seed is the actual noise seed used by the provider. For providers that
+// don't expose seed control (DashScope), Seed is 0.
 type ImageResponse struct {
 	ImagePath  string  `json:"image_path"`
 	Model      string  `json:"model"`
 	Provider   string  `json:"provider"`
 	CostUSD    float64 `json:"cost_usd"`
 	DurationMs int64   `json:"duration_ms"`
+	Seed       int64   `json:"seed,omitempty"`
 }
 
 // TTSRequest contains parameters for text-to-speech synthesis.

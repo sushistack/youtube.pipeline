@@ -65,6 +65,7 @@ func buildPhaseBRunner(
 	runStore *db.RunStore,
 	segStore *db.SegmentStore,
 	characterResolver pipeline.CharacterResolver,
+	canonicalResolver pipeline.CanonicalImageResolver,
 	logger *slog.Logger,
 ) (*pipeline.PhaseBRunner, error) {
 	if limiterFactory == nil {
@@ -181,6 +182,8 @@ func buildPhaseBRunner(
 		Height:            1536,
 		Images:            imageClient,
 		CharacterResolver: characterResolver,
+		CanonicalResolver: canonicalResolver,
+		ScpImageDir:       cfg.ScpImageDir,
 		Shots:             segStore,
 		Limiter:           imageLimiter,
 		Clock:             clock.RealClock{},
@@ -581,11 +584,67 @@ func buildPhaseCRuntime(
 	return phaseC, metaBuilder, nil
 }
 
+// buildCanonicalImageGenerator constructs the ImageGenerator used for SCP
+// canonical cartoon image generation. Pinned at server start using bootstrap
+// config — separate from Phase B's per-run image client (which reads runtime
+// settings via dynamicPhaseBExecutor) because canonical generation is a
+// rare HITL-triggered operation where mid-flight provider swap has no
+// real-world value. Operator restarts the server to pick up provider changes.
+func buildCanonicalImageGenerator(
+	cfg domain.PipelineConfig,
+	dashScopeKey string,
+	limiterFactory *llmclient.ProviderLimiterFactory,
+	logger *slog.Logger,
+) (domain.ImageGenerator, error) {
+	httpClient := &http.Client{Timeout: 10 * time.Minute}
+	switch cfg.ImageProvider {
+	case "comfyui":
+		client, err := comfyui.NewImageClient(httpClient, comfyui.ImageClientConfig{
+			Endpoint:          cfg.ComfyUIEndpoint,
+			Clock:             clock.RealClock{},
+			LoRAName:          cfg.ComfyUILoRAName,
+			LoRAStrengthModel: cfg.ComfyUILoRAStrengthModel,
+			LoRAStrengthClip:  cfg.ComfyUILoRAStrengthClip,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("comfyui client: %w", err)
+		}
+		logger.Info("canonical image provider: comfyui",
+			"endpoint", cfg.ComfyUIEndpoint, "edit_model", cfg.ImageEditModel)
+		return client, nil
+	case "dashscope":
+		if dashScopeKey == "" {
+			return nil, fmt.Errorf("DASHSCOPE_API_KEY required when image_provider=dashscope")
+		}
+		client, err := dashscope.NewImageClient(httpClient, dashscope.ImageClientConfig{
+			APIKey:   dashScopeKey,
+			Endpoint: dashscope.DefaultImageEndpointIntl,
+			Clock:    clock.RealClock{},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("dashscope client: %w", err)
+		}
+		logger.Info("canonical image provider: dashscope",
+			"endpoint", dashscope.DefaultImageEndpointIntl, "edit_model", cfg.ImageEditModel)
+		return client, nil
+	default:
+		return nil, fmt.Errorf("unknown image_provider %q", cfg.ImageProvider)
+	}
+}
+
+// dashScopeAPIKey reads the DashScope API key from process env. The .env file
+// has already been loaded into the process at config.Load time. Empty when
+// unset — only fatal if the active image/TTS provider is dashscope.
+func dashScopeAPIKey() string {
+	return os.Getenv("DASHSCOPE_API_KEY")
+}
+
 type dynamicPhaseBExecutor struct {
 	settings          *service.SettingsService
 	runStore          *db.RunStore
 	segStore          *db.SegmentStore
 	characterResolver pipeline.CharacterResolver
+	canonicalResolver pipeline.CanonicalImageResolver
 	logger            *slog.Logger
 	limiterFactory    *llmclient.ProviderLimiterFactory
 }
@@ -619,6 +678,7 @@ func (e *dynamicPhaseBExecutor) Run(ctx context.Context, req pipeline.PhaseBRequ
 		e.runStore,
 		e.segStore,
 		e.characterResolver,
+		e.canonicalResolver,
 		e.logger,
 	)
 	if err != nil {
@@ -725,11 +785,39 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	characterSvc.SetOutputDir(cfg.OutputDir)
 	characterSvc.SetDescriptorRecorder(decisionStore)
 
+	// SCP canonical image library — Cast-stage cartoon canonical generation
+	// + Phase B reference fallback. Pinned at server start using bootstrap
+	// config; Settings changes to image provider/endpoint require a restart
+	// to take effect for canonical generation. Phase B's image_track still
+	// reads runtime settings via dynamicPhaseBExecutor — it just consults
+	// this resolver before falling back to the DDG candidate URL.
+	scpImageStore := db.NewScpImageLibraryStore(database)
+	canonicalImageClient, err := buildCanonicalImageGenerator(cfg, dashScopeAPIKey(), limiterFactory, logger)
+	if err != nil {
+		return fmt.Errorf("build canonical image generator: %w", err)
+	}
+	scpImageSvc, err := service.NewScpImageService(service.ScpImageServiceConfig{
+		Runs:           store,
+		Cache:          characterCache,
+		Library:        scpImageStore,
+		Images:         canonicalImageClient,
+		RefFetcher:     pipeline.FetchReferenceImageAsDataURL,
+		EditModel:      cfg.ImageEditModel,
+		StylePrompt:    cfg.CartoonStylePrompt,
+		ScpImageDir:    cfg.ScpImageDir,
+		CanonicalWidth: cfg.ScpCanonicalWidth,
+		CanonicalHt:    cfg.ScpCanonicalHeight,
+	})
+	if err != nil {
+		return fmt.Errorf("build scp image service: %w", err)
+	}
+
 	engine.SetPhaseBExecutor(&dynamicPhaseBExecutor{
 		settings:          settingsSvc,
 		runStore:          store,
 		segStore:          segStore,
 		characterResolver: characterSvc,
+		canonicalResolver: scpImageSvc,
 		logger:            logger,
 		limiterFactory:    limiterFactory,
 	})
@@ -811,7 +899,7 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 	// change in-flight or completed runs.
 	svc.SetDryRunProvider(settingsSvc)
 
-	deps := api.NewDependencies(svc, settingsSvc, hitlSvc, characterSvc, sceneSvc, segStore, tuningSvc, cfg.OutputDir, logger, web.FS)
+	deps := api.NewDependencies(svc, settingsSvc, hitlSvc, characterSvc, scpImageSvc, sceneSvc, segStore, tuningSvc, cfg.OutputDir, cfg.ScpImageDir, logger, web.FS)
 	mux := http.NewServeMux()
 	if err := configureServeMux(mux, deps, devMode, mustParseURL(viteDevServerURL), cmd.OutOrStdout()); err != nil {
 		return err

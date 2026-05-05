@@ -19,6 +19,7 @@ export const queryKeys = {
   runs: {
     all: ['runs'] as const,
     cache: (run_id: string) => ['runs', 'cache', run_id] as const,
+    canonical: (run_id: string) => ['runs', 'canonical', run_id] as const,
     characters: (run_id: string) => ['runs', 'characters', run_id] as const,
     descriptor: (run_id: string) => ['runs', 'descriptor', run_id] as const,
     detail: (run_id: string) => ['runs', 'detail', run_id] as const,

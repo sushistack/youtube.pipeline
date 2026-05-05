@@ -5,11 +5,14 @@ import type {
   CharacterGroup,
   DescriptorPrefill,
   RunSummary,
+  ScpCanonicalImage,
 } from '../../contracts/runContracts'
 import {
   ApiClientError,
   fetchCharacterCandidates,
   fetchDescriptorPrefill,
+  fetchScpCanonical,
+  generateScpCanonical,
   pickCharacterWithDescriptor,
   searchCharacterCandidates,
 } from '../../lib/apiClient'
@@ -21,9 +24,14 @@ interface CharacterPickProps {
   run: RunSummary
 }
 
-type Phase = 'search' | 'grid' | 'descriptor'
+// 'reuse' is the entry phase when the SCP_ID has a canonical in the library:
+// the operator can adopt it as-is, regenerate it, or override the reference
+// with a fresh DDG search. 'preview' is the post-descriptor stage in the miss
+// flow — the canonical has been generated but /pick has not fired yet, so
+// the operator can still regenerate or back out before committing the stage
+// advance.
+type Phase = 'reuse' | 'search' | 'grid' | 'descriptor' | 'preview'
 
-// Digit-to-candidate-index: 1–9 select positions 0–8, 0 selects position 9.
 function digitToIndex(digit: string): number | null {
   if (digit === '0') return 9
   if (digit >= '1' && digit <= '9') return Number.parseInt(digit, 10) - 1
@@ -46,8 +54,6 @@ function CharacterGrid({
   on_escape,
 }: CharacterGridInternalProps) {
   const container_ref = useRef<HTMLDivElement>(null)
-
-  // Autofocus the grid container so 1–9/0/Esc/Enter flow without a click.
   useEffect(() => {
     container_ref.current?.focus()
   }, [])
@@ -116,24 +122,50 @@ function CharacterGrid({
 export function CharacterPick({ run }: CharacterPickProps) {
   const query_client = useQueryClient()
   const push_undo_command = useUIStore((s) => s.push_undo_command)
-  const initial_phase: Phase = run.character_query_key ? 'grid' : 'search'
-  const [phase, set_phase] = useState<Phase>(initial_phase)
-  // Initialize query_input from the run's stored query key so the input is
-  // controlled from first render. Using `defaultValue` left the input showing
-  // the prefilled text while internal state stayed '', causing the first
-  // Enter/submit to silently no-op.
+
+  // Canonical lookup decides initial phase: hit → 'reuse', miss → existing
+  // search/grid flow. 404 is a normal outcome (no canonical yet); we surface
+  // it as null data, not as a query error, so the UI doesn't render an error
+  // banner for the expected first-time case.
+  const canonical_query = useQuery<ScpCanonicalImage | null, ApiClientError>({
+    queryFn: async () => {
+      try {
+        const result = await fetchScpCanonical(run.id)
+        return result
+      } catch (e) {
+        if (e instanceof ApiClientError && e.status === 404) return null
+        throw e
+      }
+    },
+    queryKey: queryKeys.runs.canonical(run.id),
+    staleTime: 30_000,
+    retry: false,
+  })
+
+  // Phase is derived: the canonical query decides the entry phase (reuse vs.
+  // search/grid), and a navigation override takes over once the operator
+  // drives a transition (e.g. "Search a different reference"). Deriving
+  // instead of mirroring with useEffect avoids cascading-render lint and
+  // keeps loading states stable: while the canonical query is pending we
+  // return null, which renders the spinner without flicker.
+  const [phase_override, set_phase] = useState<Phase | null>(null)
+  const phase: Phase | null = useMemo(() => {
+    if (phase_override !== null) return phase_override
+    if (canonical_query.isPending) return null
+    if (canonical_query.data) return 'reuse'
+    return run.character_query_key ? 'grid' : 'search'
+  }, [
+    phase_override,
+    canonical_query.data,
+    canonical_query.isPending,
+    run.character_query_key,
+  ])
+
   const [query_input, set_query_input] = useState(run.character_query_key ?? '')
   const [selected_candidate_id, set_selected_candidate_id] = useState<string | null>(
     run.selected_character_id ?? null,
   )
-  // current_descriptor_ref mirrors the editor's latest draft without forcing a
-  // re-render on every keystroke. At confirm time we prefer the edited value
-  // when non-empty, otherwise fall back to the prefill.
   const current_descriptor_ref = useRef<string>('')
-  // Preload guard keyed on the candidate group identity — new search or cache
-  // refresh yields a new CharacterGroup reference, which reopens the preload
-  // window. A single boolean ref silently skipped preloading for every
-  // post-first candidate set.
   const preload_last_ref = useRef<CharacterGroup | undefined>(undefined)
 
   const candidates_query = useQuery<CharacterGroup, ApiClientError>({
@@ -159,6 +191,17 @@ export function CharacterPick({ run }: CharacterPickProps) {
     },
   })
 
+  const generate_mutation = useMutation<
+    ScpCanonicalImage,
+    ApiClientError,
+    { regenerate: boolean; candidate_id?: string; frozen_descriptor?: string }
+  >({
+    mutationFn: (opts) => generateScpCanonical(run.id, opts),
+    onSuccess: (rec) => {
+      query_client.setQueryData(queryKeys.runs.canonical(run.id), rec)
+    },
+  })
+
   const pick_mutation = useMutation<
     RunSummary,
     ApiClientError,
@@ -167,7 +210,6 @@ export function CharacterPick({ run }: CharacterPickProps) {
     mutationFn: ({ candidate_id, frozen_descriptor }) =>
       pickCharacterWithDescriptor(run.id, candidate_id, frozen_descriptor),
     onSuccess: (_result, variables) => {
-      // Push descriptor_edit undo command when the descriptor actually changes.
       const prev_descriptor = run.frozen_descriptor ?? ''
       if (variables.frozen_descriptor !== prev_descriptor) {
         push_undo_command({
@@ -178,24 +220,15 @@ export function CharacterPick({ run }: CharacterPickProps) {
           created_at: new Date().toISOString(),
         })
       }
-      // Narrow invalidation: only the list + this run's status/detail need
-      // to refetch. Using queryKeys.runs.all would refetch characters and
-      // descriptor queries for a run that has just advanced past the
-      // character_pick stage — those calls would then 404 or return stale
-      // data while the component unmounts. We also remove the now-consumed
-      // character/descriptor caches so a future re-entry starts clean.
       query_client.invalidateQueries({ queryKey: queryKeys.runs.list() })
       query_client.invalidateQueries({ queryKey: queryKeys.runs.status(run.id) })
       query_client.invalidateQueries({ queryKey: queryKeys.runs.detail(run.id) })
       query_client.removeQueries({ queryKey: queryKeys.runs.characters(run.id) })
       query_client.removeQueries({ queryKey: queryKeys.runs.descriptor(run.id) })
+      query_client.removeQueries({ queryKey: queryKeys.runs.canonical(run.id) })
     },
   })
 
-  // Image preloading — fires each time a new candidate group arrives (keyed
-  // on the group reference itself, not a one-shot boolean). TanStack Query v5
-  // removed onSuccess from useQuery options, so this is the canonical pattern
-  // and it survives re-searches that produce fresh candidate sets.
   useEffect(() => {
     if (!candidates_query.data) return
     if (preload_last_ref.current === candidates_query.data) return
@@ -206,12 +239,6 @@ export function CharacterPick({ run }: CharacterPickProps) {
     }
   }, [candidates_query.data])
 
-  // Cache-fallback 404 recovery: when we auto-loaded the grid based on
-  // run.character_query_key but the cache row has been evicted, the server
-  // returns 404 and the UI would otherwise be stranded at phase='grid' with
-  // no input to recover. Fall back to the search phase during render (the
-  // React-recommended pattern for deriving state from props/query results)
-  // so the operator can re-issue a query.
   if (
     phase === 'grid' &&
     candidates_query.isError &&
@@ -231,8 +258,6 @@ export function CharacterPick({ run }: CharacterPickProps) {
   const handle_search_submit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault()
-      // Guard against double-submit from repeat Enter presses while the
-      // DDG search mutation is in flight.
       if (search_mutation.isPending) return
       const trimmed = query_input.trim()
       if (trimmed === '') return
@@ -247,9 +272,6 @@ export function CharacterPick({ run }: CharacterPickProps) {
   }, [selected_candidate_id])
 
   const handle_grid_escape = useCallback(() => {
-    // Clearing the selection on Esc prevents a stale candidate ID (from a
-    // prior search) from leaking into a fresh pick after the operator
-    // re-searches with a different query.
     set_selected_candidate_id(null)
     set_phase('search')
   }, [])
@@ -258,9 +280,42 @@ export function CharacterPick({ run }: CharacterPickProps) {
     current_descriptor_ref.current = v
   }, [])
 
-  const handle_descriptor_confirm = useCallback(() => {
+  // Miss-flow descriptor confirm: trigger canonical generation with the picked
+  // candidate + descriptor as overrides (run.selected_character_id is still
+  // null at this point — /pick has not been called). On success we move to
+  // the preview phase so the operator can review before committing.
+  const handle_descriptor_confirm_to_preview = useCallback(() => {
     if (!selected_candidate_id) return
-    // Guard against double-Enter landing while pick is already in flight.
+    if (generate_mutation.isPending) return
+    const edited = current_descriptor_ref.current.trim()
+    const value = edited !== '' ? edited : descriptor_prefill.trim()
+    if (value === '') return
+    generate_mutation.mutate(
+      {
+        regenerate: false,
+        candidate_id: selected_candidate_id,
+        frozen_descriptor: value,
+      },
+      {
+        onSuccess: () => set_phase('preview'),
+      },
+    )
+  }, [descriptor_prefill, generate_mutation, selected_candidate_id])
+
+  const handle_preview_regenerate = useCallback(() => {
+    if (!selected_candidate_id) return
+    if (generate_mutation.isPending) return
+    const edited = current_descriptor_ref.current.trim()
+    const value = edited !== '' ? edited : descriptor_prefill.trim()
+    generate_mutation.mutate({
+      regenerate: true,
+      candidate_id: selected_candidate_id,
+      frozen_descriptor: value,
+    })
+  }, [descriptor_prefill, generate_mutation, selected_candidate_id])
+
+  const handle_preview_confirm = useCallback(() => {
+    if (!selected_candidate_id) return
     if (pick_mutation.isPending) return
     const edited = current_descriptor_ref.current.trim()
     const value = edited !== '' ? edited : descriptor_prefill.trim()
@@ -269,6 +324,40 @@ export function CharacterPick({ run }: CharacterPickProps) {
       frozen_descriptor: value,
     })
   }, [descriptor_prefill, pick_mutation, selected_candidate_id])
+
+  // Reuse-flow handlers. The canonical's source_candidate_id is the DDG row
+  // selected in a prior run — it survives in character_search_cache as long
+  // as that cache row is intact, so /pick on this fresh run can reuse it
+  // without forcing the operator to redo the search.
+  const canonical = canonical_query.data ?? null
+  const handle_reuse_adopt = useCallback(() => {
+    if (!canonical) return
+    set_selected_candidate_id(canonical.source_candidate_id)
+    set_phase('descriptor')
+  }, [canonical])
+
+  const handle_reuse_regenerate = useCallback(() => {
+    if (generate_mutation.isPending) return
+    if (!canonical) return
+    generate_mutation.mutate({
+      regenerate: true,
+      candidate_id: canonical.source_candidate_id,
+      frozen_descriptor: canonical.frozen_descriptor,
+    })
+  }, [canonical, generate_mutation])
+
+  const handle_reuse_search_again = useCallback(() => {
+    set_selected_candidate_id(null)
+    set_phase('search')
+  }, [])
+
+  if (phase === null) {
+    return (
+      <section className="character-pick" aria-busy="true">
+        <p className="character-pick__loading">Loading…</p>
+      </section>
+    )
+  }
 
   return (
     <section
@@ -282,6 +371,48 @@ export function CharacterPick({ run }: CharacterPickProps) {
           Pick a reference &amp; confirm the Vision Descriptor
         </h2>
       </header>
+
+      {phase === 'reuse' && canonical && (
+        <div className="character-pick__reuse" data-testid="character-pick-reuse">
+          <p className="character-pick__hint">
+            Existing canonical found for {canonical.scp_id} (v{canonical.version}).
+          </p>
+          <img
+            alt={`Canonical for ${canonical.scp_id}`}
+            className="character-pick__canonical-preview"
+            src={canonical.image_url}
+          />
+          <div className="character-pick__reuse-actions">
+            <button
+              className="character-pick__primary"
+              onClick={handle_reuse_adopt}
+              type="button"
+            >
+              Use as-is
+            </button>
+            <button
+              className="character-pick__secondary"
+              disabled={generate_mutation.isPending}
+              onClick={handle_reuse_regenerate}
+              type="button"
+            >
+              {generate_mutation.isPending ? 'Regenerating…' : 'Regenerate'}
+            </button>
+            <button
+              className="character-pick__secondary"
+              onClick={handle_reuse_search_again}
+              type="button"
+            >
+              Search a different reference
+            </button>
+          </div>
+          {generate_mutation.isError && (
+            <p className="character-pick__error" role="alert">
+              {generate_mutation.error?.message ?? 'Regeneration failed.'}
+            </p>
+          )}
+        </div>
+      )}
 
       {phase === 'search' && (
         <form className="character-pick__search" onSubmit={handle_search_submit}>
@@ -373,19 +504,61 @@ export function CharacterPick({ run }: CharacterPickProps) {
           )}
           {descriptor_query.data && (
             <VisionDescriptorEditor
-              is_submitting={pick_mutation.isPending}
-              onConfirm={handle_descriptor_confirm}
+              is_submitting={generate_mutation.isPending}
+              onConfirm={
+                canonical_query.data
+                  ? handle_preview_confirm
+                  : handle_descriptor_confirm_to_preview
+              }
               onDescriptorChange={handle_descriptor_change}
               prefill={descriptor_prefill}
             />
           )}
+          {generate_mutation.isError && (
+            <p className="character-pick__error" role="alert">
+              {generate_mutation.error?.message ?? 'Failed to generate cartoon.'}
+            </p>
+          )}
+        </>
+      )}
+
+      {phase === 'preview' && canonical && (
+        <div className="character-pick__preview" data-testid="character-pick-preview">
+          <p className="character-pick__hint">
+            Cartoon canonical generated. Confirm to advance, or regenerate to try a
+            different seed.
+          </p>
+          <img
+            alt={`Canonical for ${canonical.scp_id}`}
+            className="character-pick__canonical-preview"
+            src={canonical.image_url}
+          />
+          <div className="character-pick__preview-actions">
+            <button
+              className="character-pick__secondary"
+              disabled={generate_mutation.isPending}
+              onClick={handle_preview_regenerate}
+              type="button"
+            >
+              {generate_mutation.isPending ? 'Regenerating…' : 'Regenerate'}
+            </button>
+            <button
+              className="character-pick__primary"
+              disabled={pick_mutation.isPending}
+              onClick={handle_preview_confirm}
+              type="button"
+            >
+              {pick_mutation.isPending ? 'Advancing…' : 'Confirm & continue'}
+            </button>
+          </div>
           {pick_mutation.isError && (
             <p className="character-pick__error" role="alert">
               {pick_mutation.error?.message ?? 'Failed to confirm pick.'}
             </p>
           )}
-        </>
+        </div>
       )}
     </section>
   )
 }
+

@@ -32,6 +32,15 @@ type CharacterResolver interface {
 	GetSelectedCandidate(ctx context.Context, runID string) (*domain.CharacterCandidate, error)
 }
 
+// CanonicalImageResolver looks up the SCP canonical cartoon image for a run.
+// When non-nil and a hit exists, image_track prefers the canonical's local
+// file over the operator-selected DDG candidate URL — see runImageTrack's
+// reference selection block. ErrNotFound means "no canonical, fall through to
+// the DDG path"; other errors propagate.
+type CanonicalImageResolver interface {
+	GetByRun(ctx context.Context, runID string) (*domain.ScpImageRecord, error)
+}
+
 // ImageShotStore is the minimal persistence surface the image track needs to
 // refresh `segments.shots` rows after a Phase B regeneration. *db.SegmentStore
 // satisfies it structurally.
@@ -65,6 +74,13 @@ type ImageTrackConfig struct {
 	Height            int
 	Images            domain.ImageGenerator
 	CharacterResolver CharacterResolver
+	// CanonicalResolver is optional. When wired and a canonical image exists
+	// for the run's SCP_ID, image_track uses that local file as the reference
+	// instead of the DDG candidate URL — keeping every character shot visually
+	// anchored to the same canonical artwork. ScpImageDir is the on-disk root
+	// the resolver's FilePath is relative to.
+	CanonicalResolver CanonicalImageResolver
+	ScpImageDir       string
 	Shots             ImageShotStore
 	Limiter           Limiter
 	Clock             clock.Clock
@@ -220,26 +236,55 @@ func runImageTrack(
 
 	var selected *domain.CharacterCandidate
 	if anyCharacterScene(state, sceneCharacterMap) {
-		selected, err = cfg.CharacterResolver.GetSelectedCandidate(ctx, req.RunID)
-		if err != nil {
-			return ImageTrackResult{}, fmt.Errorf("image track: resolve selected character: %w", err)
-		}
-		if selected == nil || selected.ImageURL == "" {
-			return ImageTrackResult{}, fmt.Errorf("image track: %w: selected character has no image reference", domain.ErrValidation)
-		}
-		if cfg.RefImageFetcher != nil {
-			// DashScope cannot fetch DDG/Bing-CDN URLs directly (redirects, UA
-			// gating). Production wires a fetcher that downloads the reference
-			// once and rewrites to a base64 data URL the qwen-image-edit
-			// endpoint accepts inline.
-			rewritten, fetchErr := cfg.RefImageFetcher(ctx, selected.ImageURL)
-			if fetchErr != nil {
-				return ImageTrackResult{}, fmt.Errorf("image track: prepare reference image: %w", fetchErr)
+		// Reference-image priority order:
+		//   1. SCP canonical (local file in scp_image_library) — preferred
+		//      because every character shot then anchors to the same
+		//      operator-approved cartoon artwork.
+		//   2. DDG candidate URL → FetchReferenceImageAsDataURL — original
+		//      story-5.3 path used when no canonical exists yet.
+		canonicalApplied := false
+		if cfg.CanonicalResolver != nil && cfg.ScpImageDir != "" {
+			rec, lookupErr := cfg.CanonicalResolver.GetByRun(ctx, req.RunID)
+			if lookupErr != nil && !errors.Is(lookupErr, domain.ErrNotFound) {
+				return ImageTrackResult{}, fmt.Errorf("image track: lookup canonical: %w", lookupErr)
 			}
-			// Operate on a local copy so the cache row stays untouched.
-			copy := *selected
-			copy.ImageURL = rewritten
-			selected = &copy
+			if rec != nil {
+				dataURL, encodeErr := loadLocalImageAsDataURL(filepath.Join(cfg.ScpImageDir, rec.FilePath))
+				if encodeErr != nil {
+					return ImageTrackResult{}, fmt.Errorf("image track: encode canonical: %w", encodeErr)
+				}
+				selected = &domain.CharacterCandidate{
+					ID:       rec.ScpID,
+					ImageURL: dataURL,
+					PageURL:  rec.SourceRefURL,
+				}
+				canonicalApplied = true
+				logger.Info("image track: using canonical reference",
+					"run_id", req.RunID, "scp_id", rec.ScpID, "version", rec.Version)
+			}
+		}
+		if !canonicalApplied {
+			selected, err = cfg.CharacterResolver.GetSelectedCandidate(ctx, req.RunID)
+			if err != nil {
+				return ImageTrackResult{}, fmt.Errorf("image track: resolve selected character: %w", err)
+			}
+			if selected == nil || selected.ImageURL == "" {
+				return ImageTrackResult{}, fmt.Errorf("image track: %w: selected character has no image reference", domain.ErrValidation)
+			}
+			if cfg.RefImageFetcher != nil {
+				// DashScope cannot fetch DDG/Bing-CDN URLs directly (redirects, UA
+				// gating). Production wires a fetcher that downloads the reference
+				// once and rewrites to a base64 data URL the qwen-image-edit
+				// endpoint accepts inline.
+				rewritten, fetchErr := cfg.RefImageFetcher(ctx, selected.ImageURL)
+				if fetchErr != nil {
+					return ImageTrackResult{}, fmt.Errorf("image track: prepare reference image: %w", fetchErr)
+				}
+				// Operate on a local copy so the cache row stays untouched.
+				copy := *selected
+				copy.ImageURL = rewritten
+				selected = &copy
+			}
 		}
 	}
 
@@ -412,6 +457,33 @@ func loadScenarioState(req PhaseBRequest) (*agents.PipelineState, error) {
 		return nil, fmt.Errorf("image track: %w: decode scenario.json: %v", domain.ErrValidation, err)
 	}
 	return &state, nil
+}
+
+// loadLocalImageAsDataURL reads a local image file and returns a base64
+// `data:<mime>;base64,...` URL. Used by the canonical-image branch where the
+// reference is already on disk (no HTTP fetch needed). Mime type is sniffed
+// from the file's magic bytes to keep the function caller-agnostic about the
+// extension on disk; only image/* mimes are accepted to mirror the DashScope
+// ref_imgs constraint.
+func loadLocalImageAsDataURL(path string) (string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read canonical: %w", err)
+	}
+	if len(body) == 0 {
+		return "", fmt.Errorf("%w: canonical file is empty", domain.ErrValidation)
+	}
+	if len(body) > referenceImageMaxBytes {
+		return "", fmt.Errorf("%w: canonical exceeds %d byte cap", domain.ErrValidation, referenceImageMaxBytes)
+	}
+	mime := http.DetectContentType(body)
+	if idx := strings.IndexByte(mime, ';'); idx >= 0 {
+		mime = strings.TrimSpace(mime[:idx])
+	}
+	if !strings.HasPrefix(mime, "image/") {
+		return "", fmt.Errorf("%w: canonical is not an image (%s)", domain.ErrValidation, mime)
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(body), nil
 }
 
 // FetchReferenceImageAsDataURL downloads imageURL and returns a base64 data

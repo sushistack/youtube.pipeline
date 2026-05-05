@@ -324,6 +324,25 @@ export const descriptorPrefillResponseSchema = z.object({
   version: z.literal(1),
 });
 
+export const scpCanonicalImageSchema = z.object({
+  scp_id: z.string().min(1),
+  file_path: z.string().min(1),
+  image_url: z.string().min(1),
+  source_query_key: z.string().min(1),
+  source_candidate_id: z.string().min(1),
+  frozen_descriptor: z.string(),
+  seed: z.number().int(),
+  prompt_used: z.string(),
+  version: z.number().int().min(1),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const scpCanonicalImageResponseSchema = z.object({
+  data: scpCanonicalImageSchema,
+  version: z.literal(1),
+});
+
 export const undoFocusTargetSchema = z.enum(["scene-card", "descriptor"]);
 
 export const undoResponseSchema = z.object({
@@ -345,6 +364,7 @@ export type TimelineDecision = z.infer<typeof timelineDecisionSchema>;
 export type CharacterCandidate = z.infer<typeof characterCandidateSchema>;
 export type CharacterGroup = z.infer<typeof characterGroupSchema>;
 export type DescriptorPrefill = z.infer<typeof descriptorPrefillSchema>;
+export type ScpCanonicalImage = z.infer<typeof scpCanonicalImageSchema>;
 export type RunStatusChange = z.infer<typeof runStatusChangeSchema>;
 export type SceneDecisionRequest = z.infer<typeof sceneDecisionRequestSchema>;
 export type SceneDecisionResponse = z.infer<
