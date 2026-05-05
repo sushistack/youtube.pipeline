@@ -311,13 +311,13 @@ export function ProductionShell() {
       const is_active_advance = advance_mutation.variables?.run_id === current_run.id
       const is_pending = advance_mutation.isPending && is_active_advance
       return (
-        <section className="production__pending-state" aria-label="Asset generation gate">
+        <section className="production__pending-state" aria-label="Media generation gate">
           <div className="production__pending-state-copy">
             <p className="production-dashboard__eyebrow">Ready to generate</p>
-            <h2 className="production-dashboard__section-title">Generate Assets</h2>
+            <h2 className="production-dashboard__section-title">Generate Media</h2>
           </div>
           <p className="route-shell__body">
-            Scenario and character confirmed. Click <strong>Generate Assets</strong> to start
+            Scenario and character confirmed. Click <strong>Generate Media</strong> to start
             image generation and voice rendering for all scenes.
           </p>
           <div className="production__pending-state-actions">
@@ -327,7 +327,7 @@ export function ProductionShell() {
               disabled={is_pending}
               onClick={() => advance_mutation.mutate({ run_id: current_run.id })}
             >
-              {is_pending ? 'Starting…' : 'Generate Assets'}
+              {is_pending ? 'Starting…' : 'Generate Media'}
             </button>
             {advance_mutation.isError && is_active_advance ? (
               <span className="production__pending-resume-error" role="status">
@@ -385,6 +385,7 @@ export function ProductionShell() {
           approved_scenes={approved_scenes}
           on_toggle_scene_approval={toggle_scene_approval}
           on_revoke_scene_approval={revoke_scene_approval}
+          on_approve_all_scenes={approve_all_scenes}
         />
       )
     }
@@ -484,6 +485,9 @@ export function ProductionShell() {
       next.delete(scene_index)
       return next
     })
+  }, [])
+  const approve_all_scenes = useCallback((scene_indices: number[]) => {
+    set_approved_scenes(new Set(scene_indices))
   }, [])
   const is_scenario_review =
     current_run?.stage === 'scenario_review' && current_run.status === 'waiting'

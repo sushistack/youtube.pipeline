@@ -19,6 +19,7 @@ interface ScenarioInspectorProps {
   approved_scenes?: Set<number>
   on_toggle_scene_approval?: (scene_index: number) => void
   on_revoke_scene_approval?: (scene_index: number) => void
+  on_approve_all_scenes?: (scene_indices: number[]) => void
 }
 
 export function ScenarioInspector({
@@ -27,6 +28,7 @@ export function ScenarioInspector({
   approved_scenes: approved_scenes_prop,
   on_toggle_scene_approval,
   on_revoke_scene_approval,
+  on_approve_all_scenes,
 }: ScenarioInspectorProps) {
   const scenes_query = useRunScenes(run_id)
   const mutation = useEditNarration(run_id)
@@ -77,6 +79,14 @@ export function ScenarioInspector({
       }
       return next
     })
+  }
+
+  function approve_all_scenes(all_indices: number[]) {
+    if (on_approve_all_scenes) {
+      on_approve_all_scenes(all_indices)
+      return
+    }
+    set_local_approved_scenes(new Set(all_indices))
   }
 
   function revoke_scene_approval(scene_index: number) {
@@ -188,6 +198,20 @@ export function ScenarioInspector({
         <div className="scenario-inspector__footer-actions">
           <button
             type="button"
+            className="scenario-inspector__scene-approve-all"
+            onClick={() => approve_all_scenes(scenes.map((s) => s.scene_index))}
+            disabled={is_busy || all_approved}
+            aria-label={`Approve all ${scenes.length} scenes`}
+            title={
+              all_approved
+                ? 'All scenes already approved'
+                : `Mark all ${scenes.length} scenes as approved`
+            }
+          >
+            Approve All
+          </button>
+          <button
+            type="button"
             className="scenario-inspector__regen"
             onClick={handle_regen}
             disabled={is_busy}
@@ -204,7 +228,7 @@ export function ScenarioInspector({
             aria-label="Approve scenario and advance to character pick"
             title={!all_approved ? `Approve all ${scenes.length} scenes first` : undefined}
           >
-            {approve_mutation.isPending ? 'Approving…' : 'Approve Story'}
+            {approve_mutation.isPending ? 'Advancing…' : 'Next'}
           </button>
         </div>
         {approve_mutation.isError ? (
