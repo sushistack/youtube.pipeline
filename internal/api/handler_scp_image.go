@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,14 +17,18 @@ import (
 type ScpImageHandler struct {
 	svc         *service.ScpImageService
 	scpImageDir string
+	logger      *slog.Logger
 }
 
 // NewScpImageHandler wires the service and the on-disk root for static serving.
 // scpImageDir is the same path the service writes files under and is treated
 // as the trust boundary — every served path is rejoined and verified to live
-// inside this directory.
-func NewScpImageHandler(svc *service.ScpImageService, scpImageDir string) *ScpImageHandler {
-	return &ScpImageHandler{svc: svc, scpImageDir: scpImageDir}
+// inside this directory. logger may be nil; the handler falls back to slog.Default.
+func NewScpImageHandler(svc *service.ScpImageService, scpImageDir string, logger *slog.Logger) *ScpImageHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &ScpImageHandler{svc: svc, scpImageDir: scpImageDir, logger: logger}
 }
 
 // scpCanonicalResponse is the on-the-wire shape returned by the per-run
@@ -56,8 +62,15 @@ type generateCanonicalRequest struct {
 // Get handles GET /api/runs/{id}/characters/canonical.
 // Returns 404 when the run's SCP_ID has no canonical record yet.
 func (h *ScpImageHandler) Get(w http.ResponseWriter, r *http.Request) {
-	rec, err := h.svc.GetByRun(r.Context(), r.PathValue("id"))
+	runID := r.PathValue("id")
+	rec, err := h.svc.GetByRun(r.Context(), runID)
 	if err != nil {
+		// 404 (no canonical yet) is the expected first-call outcome — not
+		// an error worth alerting on. Other failures (validation, IO) get
+		// logged so the operator has something to grep for.
+		if !errors.Is(err, domain.ErrNotFound) {
+			h.logger.Error("scp image get", "run_id", runID, "error", err)
+		}
 		writeDomainError(w, err)
 		return
 	}
@@ -75,12 +88,24 @@ func (h *ScpImageHandler) Generate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error(), false)
 		return
 	}
-	rec, err := h.svc.Generate(r.Context(), r.PathValue("id"), service.GenerateCanonicalInput{
+	runID := r.PathValue("id")
+	rec, err := h.svc.Generate(r.Context(), runID, service.GenerateCanonicalInput{
 		Regenerate:       req.Regenerate,
 		CandidateID:      req.CandidateID,
 		FrozenDescriptor: req.FrozenDescriptor,
 	})
 	if err != nil {
+		// Canonical generation can fail anywhere: cache miss, DDG fetcher
+		// error, ComfyUI submit/poll failure, file write. Without server-side
+		// logging the operator only sees the JSON envelope's generic
+		// clientMessage, which strips the chain. Always log the wrapped error
+		// so `grep run_id` returns the root cause.
+		h.logger.Error("scp image generate",
+			"run_id", runID,
+			"regenerate", req.Regenerate,
+			"candidate_id", req.CandidateID,
+			"error", err,
+		)
 		writeDomainError(w, err)
 		return
 	}

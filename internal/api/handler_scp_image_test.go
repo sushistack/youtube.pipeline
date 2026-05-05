@@ -69,7 +69,7 @@ func newScpImageHandlerFixture(t *testing.T) scpImageHandlerFixture {
 		t.Fatalf("NewScpImageService: %v", err)
 	}
 	return scpImageHandlerFixture{
-		handler:  api.NewScpImageHandler(svc, imageDir),
+		handler:  api.NewScpImageHandler(svc, imageDir, nil),
 		runStore: runStore,
 		database: database,
 		imageDir: imageDir,

@@ -138,7 +138,7 @@ func NewDependencies(
 		deps.Tuning = NewTuningHandler(tuning)
 	}
 	if scpImage != nil && scpImageDir != "" {
-		deps.ScpImage = NewScpImageHandler(scpImage, scpImageDir)
+		deps.ScpImage = NewScpImageHandler(scpImage, scpImageDir, logger)
 	}
 	return deps
 }
