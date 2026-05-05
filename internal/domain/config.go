@@ -101,6 +101,16 @@ type PipelineConfig struct {
 	// editing this string in config.yaml — no LoRA dependency.
 	CartoonStylePrompt string `yaml:"cartoon_style_prompt" mapstructure:"cartoon_style_prompt"`
 
+	// SceneStylePrompt is the per-shot style prefix layered in front of
+	// the frozen_descriptor when composing Phase B image prompts and
+	// substituted into the visual_breakdowner template's `## Style
+	// Directive` section. Distinct from CartoonStylePrompt — that one is
+	// shaped for the canonical character sheet ("single character,
+	// front-facing, neutral pose…") and would fight per-shot scene
+	// composition. Empty value is a no-op: per-shot prompts and the
+	// rendered visual_breakdowner template fall back to pre-cycle bytes.
+	SceneStylePrompt string `yaml:"scene_style_prompt" mapstructure:"scene_style_prompt"`
+
 	// ScpCanonicalWidth/Height are the dimensions requested from ComfyUI
 	// for the canonical image. 16:9 is the YouTube-native frame; the
 	// canonical is used as a reference for per-shot edits, so it does
@@ -223,6 +233,7 @@ func DefaultConfig() PipelineConfig {
 		DBPath:                   "./pipeline.db",
 		ScpImageDir:              "./scp_images",
 		CartoonStylePrompt:       "Single-character reference sheet illustration: full body, front-facing neutral standing pose, plain neutral studio background, no scene composition, no multiple panels, no action, no other characters. Style: kid-friendly cartoon, Starcraft-inspired stylized art, clean vector lines, vibrant colors.",
+		SceneStylePrompt:         "Style: kid-friendly cartoon, Starcraft-inspired stylized art, clean vector lines, vibrant colors, soft cinematic lighting, expressive character poses.",
 		ScpCanonicalWidth:        1280,
 		ScpCanonicalHeight:       720,
 		CostCapResearch:          0.50,

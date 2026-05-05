@@ -22,5 +22,8 @@ golden_staleness_days: 30
 shadow_eval_window: 10
 auto_approval_threshold: 0.85
 artifact_retention_days: 30
+# Per-shot cartoon style; canonical character sheet uses cartoon_style_prompt instead.
+scene_style_prompt: "Style: kid-friendly cartoon, Starcraft-inspired stylized art, clean vector lines, vibrant colors, soft cinematic lighting, expressive character poses."
+
 observability:
   debug_traces: true

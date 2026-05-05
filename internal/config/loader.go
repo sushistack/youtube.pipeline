@@ -51,6 +51,7 @@ func Load(cfgPath, envPath string) (domain.PipelineConfig, error) {
 	v.SetDefault("db_path", cfg.DBPath)
 	v.SetDefault("scp_image_dir", cfg.ScpImageDir)
 	v.SetDefault("cartoon_style_prompt", cfg.CartoonStylePrompt)
+	v.SetDefault("scene_style_prompt", cfg.SceneStylePrompt)
 	v.SetDefault("scp_canonical_width", cfg.ScpCanonicalWidth)
 	v.SetDefault("scp_canonical_height", cfg.ScpCanonicalHeight)
 	v.SetDefault("cost_cap_research", cfg.CostCapResearch)
