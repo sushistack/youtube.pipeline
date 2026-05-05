@@ -678,10 +678,56 @@ func sampleVisualAssets() PromptAssets {
 	return PromptAssets{
 		// Mirror the v2 placeholder set the agent's renderer substitutes —
 		// must include "Act ID: `{act_id}`" so parseActPromptID can route.
-		VisualBreakdownTemplate: "Act ID: `{act_id}`\nMood: {act_mood}\nMonologue: {monologue}\nBeats: {beats_table}\nIdentity: {scp_visual_reference}\nFrozen: {frozen_descriptor}\nShots: {shot_count}\n",
+		VisualBreakdownTemplate: "Act ID: `{act_id}`\nMood: {act_mood}\nMonologue: {monologue}\nBeats: {beats_table}\nIdentity: {scp_visual_reference}\nFrozen: {frozen_descriptor}\nShots: {shot_count}\nStyle: {scene_style_prompt}\n",
 		ReviewerTemplate:        "unused",
 		WriterTemplate:          "unused",
 		CriticTemplate:          "unused",
 		FormatGuide:             "guide",
+	}
+}
+
+// TestRenderVisualBreakdownActPrompt_SubstitutesSceneStylePrompt confirms the
+// renderer copies prompts.SceneStylePrompt into the {scene_style_prompt}
+// placeholder verbatim. This is the seam Phase B per-shot images depend on
+// for cartoon-style propagation; if the substitution silently breaks, the
+// prompt's `## Style Directive` section becomes a literal placeholder string
+// shipped to the LLM and per-shot images regress to photorealistic output.
+func TestRenderVisualBreakdownActPrompt_SubstitutesSceneStylePrompt(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	state := sampleVisualBreakdownState4Acts()
+	assets := sampleVisualAssets()
+	const styleText = "Style: kid-friendly cartoon, vibrant"
+	assets.SceneStylePrompt = styleText
+
+	got, err := renderVisualBreakdownActPrompt(state, assets, state.Narration.Acts[0], "frozen-test", 8)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(got, styleText) {
+		t.Fatalf("rendered prompt missing scene style text %q:\n%s", styleText, got)
+	}
+	if strings.Contains(got, "{scene_style_prompt}") {
+		t.Fatalf("rendered prompt still contains literal {scene_style_prompt} placeholder:\n%s", got)
+	}
+}
+
+// TestRenderVisualBreakdownActPrompt_EmptySceneStylePromptIsNoop confirms an
+// empty SceneStylePrompt substitutes to "" with no error and no leftover
+// placeholder. Empty is the backwards-safe fallback documented on the field —
+// operators may clear scene_style_prompt in config.yaml without disabling
+// visual_breakdowner.
+func TestRenderVisualBreakdownActPrompt_EmptySceneStylePromptIsNoop(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	state := sampleVisualBreakdownState4Acts()
+	assets := sampleVisualAssets() // SceneStylePrompt zero-value
+
+	got, err := renderVisualBreakdownActPrompt(state, assets, state.Narration.Acts[0], "frozen-test", 8)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if strings.Contains(got, "{scene_style_prompt}") {
+		t.Fatalf("rendered prompt still contains literal {scene_style_prompt} placeholder:\n%s", got)
 	}
 }

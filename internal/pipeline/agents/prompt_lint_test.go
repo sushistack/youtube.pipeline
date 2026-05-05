@@ -67,6 +67,7 @@ var promptRendererContract = []struct {
 		substitutes: []string{
 			"act_id", "act_mood", "monologue", "beats_table",
 			"scp_visual_reference", "frozen_descriptor", "shot_count",
+			"scene_style_prompt",
 		},
 	},
 	{

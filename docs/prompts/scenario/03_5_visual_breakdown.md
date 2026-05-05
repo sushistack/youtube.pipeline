@@ -24,6 +24,16 @@ Each beat below carries the rune-offset slice of the monologue you are illustrat
 
 {beats_table}
 
+## Style Directive
+
+All shots are rendered in: {scene_style_prompt}
+
+Every `visual_descriptor` you write MUST be compatible with this style.
+Do NOT include words that conflict with it (e.g. "photorealistic",
+"cinematic", "live action", "documentary photo", "hyperrealistic").
+Use vocabulary that fits a stylized cartoon (e.g. "expressive pose",
+"vibrant", "stylized", "clean line art").
+
 ## Frozen Visual Identity
 
 Use this descriptor as the source of truth for visual identity (proportions, palette, distinguishing features). You no longer need to copy it verbatim into every `visual_descriptor` — instead, **preserve visual-identity continuity across shots while shifting focal subject per beat**:
@@ -72,4 +82,5 @@ Rules:
 - the `transition` field MUST be present and non-empty on every shot — omitting it or returning `""` is a contract violation
 - the `transition` value MUST be exactly one of: `ken_burns`, `cross_dissolve`, `hard_cut` — no other values are permitted
 - focus on factual consistency with each beat's monologue slice (use `start_offset`/`end_offset` to locate the precise text) and the SCP visual identity
+- every `visual_descriptor` MUST visually realize the **literal subject and action** from the beat's monologue slice (start_offset/end_offset). If the slice mentions "수술대 위에 누운 사람", the descriptor MUST depict a person on an operating table — not a metaphor, not an ambient mood shot. Identity preservation does NOT override this: the focal action of the slice always wins.
 - do not add commentary, explanations, or extra keys

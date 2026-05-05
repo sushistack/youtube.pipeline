@@ -300,6 +300,7 @@ func renderVisualBreakdownActPrompt(
 		"{scp_visual_reference}", string(visualJSON),
 		"{frozen_descriptor}", frozen,
 		"{shot_count}", strconv.Itoa(shotCount),
+		"{scene_style_prompt}", prompts.SceneStylePrompt,
 	)
 	return replacer.Replace(prompts.VisualBreakdownTemplate), nil
 }

@@ -23,6 +23,11 @@ type PromptAssets struct {
 	// writer prompt at render time so the LLM gets in-context tone/rhythm
 	// signal from native channels (Phase 1: 2 exemplars × 4 acts).
 	ExemplarsByAct map[string]string
+	// SceneStylePrompt is substituted into VisualBreakdownTemplate's
+	// `{scene_style_prompt}` placeholder. Set by the caller after
+	// LoadPromptAssets returns — the loader stays file-IO-only.
+	// Empty value → placeholder substitutes to "" with no error.
+	SceneStylePrompt string
 }
 
 const (
