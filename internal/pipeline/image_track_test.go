@@ -425,6 +425,32 @@ func TestImagePromptComposer_StyleEndsWithSeparator(t *testing.T) {
 	}
 }
 
+// TestImagePromptComposer_VisualAlreadyPrefixedWithStyleSkipsDoublePrefix
+// guards against a worst-case LLM output where the visual_descriptor
+// already begins with the configured Style Directive prefix verbatim. The
+// composer must short-circuit the style layer in that case so the final
+// prompt contains the style and frozen segments exactly once each —
+// symmetric to the existing HasPrefix(visual, frozen) idempotency guard
+// in composeFrozenAndVisual.
+func TestImagePromptComposer_VisualAlreadyPrefixedWithStyleSkipsDoublePrefix(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	style := "Style: cartoon"
+	frozen := "Appearance: humanoid"
+	composed := style + "; " + frozen + "; cinematic wide"
+
+	got := pipeline.ComposeImagePrompt(style, frozen, composed)
+	if got != composed {
+		t.Fatalf("composer added duplicate style prefix:\n  got:  %q\n  want: %q", got, composed)
+	}
+	if c := strings.Count(got, style); c != 1 {
+		t.Fatalf("style substring appears %d times, want 1: %q", c, got)
+	}
+	if c := strings.Count(got, frozen); c != 1 {
+		t.Fatalf("frozen substring appears %d times, want 1: %q", c, got)
+	}
+}
+
 // TestImageTrack_SceneStyleAppearsAsPrefixOnEveryShot exercises the
 // end-to-end propagation: when SceneStylePrompt is set on ImageTrackConfig,
 // every per-shot prompt sent to the image provider begins with the style

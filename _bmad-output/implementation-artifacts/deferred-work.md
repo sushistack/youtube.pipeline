@@ -719,3 +719,16 @@ Surfaced by step-04 review of `spec-scp-canonical-image-library.md`. None of the
 **Dequeue trigger.** Item 1: operator deletes `scp_images/` and observes a hard Phase B failure. Item 2: cost spike traced to a duplicate generate. Item 3: a resume picks up the wrong reference and the operator finds canonical drift. Item 4: log/disk bloat observed in production.
 
 **Files.** Item 1: `internal/service/scp_image_service.go:Generate`. Item 2: same + `cmd/pipeline/serve.go` (advisory lock). Item 3: `cmd/pipeline/resume.go`. Item 4: `internal/pipeline/image_track.go:runImageTrack`.
+
+## visual_breakdowner style + alignment cycle — deferred (2026-05-05)
+
+Surfaced by step-04 review of `spec-visual-breakdowner-style-alignment.md`. Both items are pre-existing and orthogonal to this cycle's intent.
+
+1. **`SCENE_STYLE_PROMPT` env var silently shadows config.yaml.** `internal/config/loader.go` calls `v.AutomaticEnv()` without an env prefix or a key replacer, so any free-text config key (cartoon_style_prompt, scene_style_prompt, …) becomes implicitly env-bindable. Per project policy `feedback_config_not_env.md`, operator-tunable strings should live in config.yaml only — env binding is reserved for paths and secrets. CartoonStylePrompt has had this same gap since it was introduced; SceneStylePrompt inherits it. Fix would be either a `SetEnvPrefix("PIPELINE_")` to scope env binding, or explicit `BindEnv` calls only for path/secret keys instead of `AutomaticEnv`.
+2. **Resume Phase A never wires the visual_breakdowner.** `cmd/pipeline/resume.go` only calls `buildPhaseBRunner` and `buildPhaseCRuntime`; it never installs a Phase A executor. So a run that fails before scenario_review and is resumed re-enters `Engine.advancePhaseA`, which returns an error because `e.phaseA == nil`. This is a pre-existing gap, not regressed by the style cycle — but the spec's "no resume edits needed" note is incomplete: SceneStylePrompt now flows through `buildPhaseBRunner` correctly on resume (Phase B regeneration), but Phase A regeneration on resume is a separately-broken path that doesn't see SceneStylePrompt either way.
+
+**Why deferred.** Item 1 is a pipeline-wide policy issue, not a bug introduced this cycle. Item 2 is a pre-existing resume capability gap — fixing it would be a dedicated cycle (wire `dynamicPhaseAExecutor` from `cmd/pipeline/resume.go`).
+
+**Dequeue trigger.** Item 1: an operator clears style via env and is surprised. Item 2: a Phase A failure forces a resume and the operator discovers Phase A can't regenerate.
+
+**Files.** Item 1: `internal/config/loader.go`. Item 2: `cmd/pipeline/resume.go`.

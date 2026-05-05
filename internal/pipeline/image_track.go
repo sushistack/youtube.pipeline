@@ -150,6 +150,22 @@ func ComposeImagePrompt(style, frozen, visual string) string {
 	// Treat the Frozen Descriptor as immutable bytes: do not TrimSpace here.
 	// AC-2 requires the Frozen Descriptor segment to remain byte-stable
 	// across every shot in a run, so normalization is deliberately absent.
+	//
+	// Idempotency guard for the style layer: if the per-shot visual
+	// descriptor already begins with the style prefix verbatim (e.g. an
+	// LLM that echoes the Style Directive into its descriptor output),
+	// strip the duplicate before composing — symmetric to
+	// composeFrozenAndVisual's HasPrefix(visual, frozen) guard. Without
+	// this, a descriptor like "Style: cartoon; Appearance: humanoid; …"
+	// would compose to "Style: cartoon; Appearance: humanoid; Style:
+	// cartoon; Appearance: humanoid; …".
+	if style != "" && strings.HasPrefix(visual, style) {
+		sep := "; "
+		if strings.HasSuffix(style, "; ") {
+			sep = ""
+		}
+		visual = strings.TrimPrefix(strings.TrimPrefix(visual, style), sep)
+	}
 	base := composeFrozenAndVisual(frozen, visual)
 	if style == "" {
 		return base
