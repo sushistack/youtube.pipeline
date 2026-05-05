@@ -58,7 +58,7 @@ func sampleReviewReport() ReviewReport {
 			SceneNum:  4,
 			Field:     "visual_descriptor",
 			Original:  "rough stone statue",
-			Corrected: "Appearance: Concrete sentinel; Distinguishing features: cracks; Environment: chamber; Key visual moments: blink; rough stone statue",
+			Corrected: "Appearance: Concrete sentinel; Distinguishing features: cracks; Environment: chamber; rough stone statue",
 		}},
 		ReviewerModel:    "review-model",
 		ReviewerProvider: "anthropic",

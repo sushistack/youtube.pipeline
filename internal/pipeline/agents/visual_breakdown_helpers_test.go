@@ -2,6 +2,7 @@ package agents
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/sushistack/youtube.pipeline/internal/domain"
@@ -58,7 +59,10 @@ func TestBuildFrozenDescriptor_Stable(t *testing.T) {
 		EnvironmentSetting:     "Transit vault",
 		KeyVisualMoments:       []string{"Blink", "Dust trail"},
 	})
-	want := "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes, Red fractures; Environment: Transit vault; Key visual moments: Blink, Dust trail"
+	want := "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes, Red fractures; Environment: Transit vault"
 	testutil.AssertEqual(t, got, want)
+	if strings.Contains(got, "Key visual moments") {
+		t.Fatalf("KeyVisualMoments must not leak into frozen descriptor: %q", got)
+	}
 }
 

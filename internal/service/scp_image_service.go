@@ -283,11 +283,15 @@ func (s *ScpImageService) Generate(ctx context.Context, runID string, in Generat
 // composeCanonicalPrompt prepends the cartoon-style prompt to the
 // character-only segments of the operator's frozen descriptor. Phase A's
 // frozen_descriptor mixes character description (`Appearance`,
-// `Distinguishing features`) with scene cues (`Environment`, `Key visual
-// moments`); the latter caused FLUX.2 to render multi-panel scene comics
-// instead of a single character reference. We strip those cues here so the
-// canonical image is a clean character portrait. Phase B's per-shot prompt
-// re-introduces scene context via the per-shot visual_descriptor.
+// `Distinguishing features`) with scene cues (`Environment`); the latter
+// caused FLUX.2 to render multi-panel scene comics instead of a single
+// character reference. We strip those cues here so the canonical image is a
+// clean character portrait. Phase B's per-shot prompt re-introduces scene
+// context via the per-shot visual_descriptor.
+//
+// Legacy 4-field descriptors (pre-2026-05-05) also carried `Key visual
+// moments`; the strip path below still recognizes that label so legacy runs
+// regenerated through canonical do not regress.
 //
 // The stored library row keeps the FULL `frozen_descriptor` — only the
 // prompt fed to image-edit is filtered.
@@ -300,10 +304,12 @@ func composeCanonicalPrompt(stylePrompt, frozen string) string {
 }
 
 // extractCharacterDescriptor drops scene-level segments from a "; "-joined
-// frozen descriptor. Recognized scene labels: "Environment", "Key visual
-// moments". When filtering would empty the descriptor, falls back to the
-// original — defensive for descriptors that don't follow the expected label
-// scheme, so the image-edit call always receives some character context.
+// frozen descriptor. Recognized scene labels: "Environment" (current shape)
+// and "Key visual moments" (legacy 4-field shape, retained for
+// defense-in-depth on regenerated legacy runs). When filtering would empty
+// the descriptor, falls back to the original — defensive for descriptors
+// that don't follow the expected label scheme, so the image-edit call
+// always receives some character context.
 func extractCharacterDescriptor(frozen string) string {
 	segments := strings.Split(frozen, "; ")
 	kept := make([]string, 0, len(segments))

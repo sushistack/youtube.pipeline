@@ -1,7 +1,7 @@
 {
   "scp_id": "SCP-TEST",
   "title": "SCP-TEST",
-  "frozen_descriptor": "Appearance: A gaunt concrete sentinel with obsidian seams.; Distinguishing features: Obsidian eye sockets, Hairline fractures that glow red; Environment: A dim transit-platform containment vault.; Key visual moments: The sentinel stands motionless beneath a flickering platform light., A security monitor catches it one step closer after a blink., Red light leaks from the fractures as alarms begin to pulse.",
+  "frozen_descriptor": "Appearance: A gaunt concrete sentinel with obsidian seams.; Distinguishing features: Obsidian eye sockets, Hairline fractures that glow red; Environment: A dim transit-platform containment vault.",
   "acts": [
     {
       "act_id": "incident",

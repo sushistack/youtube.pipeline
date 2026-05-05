@@ -311,7 +311,7 @@ func newImageTrackFixture(t *testing.T, scenes []sceneFixture, opts ...func(*ima
 func TestImagePromptComposer_PrefixesFrozenDescriptorVerbatim(t *testing.T) {
 	testutil.BlockExternalHTTP(t)
 
-	frozen := "Appearance: slender humanoid; Distinguishing features: glossy jet-black skin; Environment: dim concrete chamber; Key visual moments: neck snap"
+	frozen := "Appearance: slender humanoid; Distinguishing features: glossy jet-black skin; Environment: dim concrete chamber"
 	shot := "camera: low wide shot revealing SCP-049 emerging from shadow"
 
 	// Empty style preserves pre-cycle two-layer behavior — frozen prefix

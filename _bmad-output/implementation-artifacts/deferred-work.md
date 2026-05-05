@@ -747,3 +747,15 @@ Surfaced by step-04 review of `spec-writer-retry-feedback-loop.md`. Defensive / 
 **Dequeue trigger.** Item 1: operator hits a marshal failure mid-run and can't trace the cause. Item 2: audit deduplication false-misses surface in compliance review. Item 3: another retry-exhaustion incident requires per-attempt narrative. Item 4: a provider returns invalid UTF-8 and a misleading length-miss claim is logged.
 
 **Files.** Item 1: `internal/pipeline/agents/writer.go` (renderErr branch). Item 2: same (`AuditLogger.Log` in retry closure). Item 3: `internal/pipeline/agents/retry.go`. Item 4: `internal/pipeline/agents/writer.go` (validate path) or `validateWriterMonologueResponse`.
+
+## frozen descriptor strip Key visual moments — undo of pre-change descriptor_edit (2026-05-05)
+
+Surfaced by edge-case review of `spec-frozen-descriptor-strip-key-moments.md`.
+
+1. **Undo of a pre-change descriptor_edit decision restores the legacy 4-field frozen verbatim.** `internal/db/decision_store.go:1196-1222` (descriptor_edit undo path) writes back the "before" snapshot, which for runs whose descriptor was edited under the old `BuildFrozenDescriptor` shape will be a 4-field string ending in `Key visual moments: …`. `extractCharacterDescriptor` still strips it on the canonical path (defense-in-depth retained), but Phase B `ComposeImagePrompt` will pass the legacy KVM list through to image-edit prompts — re-triggering the multi-panel grid bug for that one run on undo.
+
+**Why deferred.** Spec D4 explicitly accepts that pre-change persisted runs keep their old frozen — operator is expected to start a new run rather than regenerate old ones. Undo of pre-change descriptor_edit decisions is a narrow corner of that broader migration gap.
+
+**Dequeue trigger.** Operator undoes a descriptor_edit on a pre-2026-05-05 run AND regenerates Phase B for it AND notices the grid bug returning. Or: a future cycle migrates persisted frozen descriptors to 3-field shape (covering this case alongside Phase B regeneration of legacy runs).
+
+**Files.** `internal/db/decision_store.go:1196-1222` (undo restore path). Migration cycle would also touch `internal/pipeline/agents/visual_breakdown_helpers.go` for a `RewriteFrozenDescriptor` helper that reshapes legacy strings.

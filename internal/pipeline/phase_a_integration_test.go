@@ -877,7 +877,7 @@ func samplePhaseAVisualBreakdown() *domain.VisualScript {
 		for i := 0; i < 8; i++ {
 			shots = append(shots, domain.VisualShot{
 				ShotIndex:          i + 1,
-				VisualDescriptor:   fmt.Sprintf("Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; Key visual moments: Blink; act %d shot %d description", actIdx, i+1),
+				VisualDescriptor:   fmt.Sprintf("Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; act %d shot %d description", actIdx, i+1),
 				EstimatedDurationS: 7.0,
 				Transition:         domain.TransitionKenBurns,
 				NarrationAnchor: domain.BeatAnchor{
@@ -898,7 +898,7 @@ func samplePhaseAVisualBreakdown() *domain.VisualScript {
 	return &domain.VisualScript{
 		SCPID:            "SCP-TEST",
 		Title:            "SCP-TEST",
-		FrozenDescriptor: "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; Key visual moments: Blink",
+		FrozenDescriptor: "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault",
 		Acts:             acts,
 		ShotOverrides:    map[int]domain.ShotOverride{},
 		Metadata: domain.VisualBreakdownMetadata{

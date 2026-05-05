@@ -108,7 +108,7 @@ func sampleVisualScript() VisualScript {
 	return VisualScript{
 		SCPID:            "SCP-TEST",
 		Title:            "SCP-TEST",
-		FrozenDescriptor: "Appearance: Concrete sentinel; Distinguishing features: cracks; Environment: chamber; Key visual moments: blink",
+		FrozenDescriptor: "Appearance: Concrete sentinel; Distinguishing features: cracks; Environment: chamber",
 		Acts: []VisualAct{{
 			ActID: ActIncident,
 			Shots: []VisualShot{{

@@ -94,13 +94,15 @@ func NormalizeShotDurations(totalSeconds float64, shotCount int) []float64 {
 	return durations
 }
 
+// BuildFrozenDescriptor omits KeyVisualMoments — the joined list triggered
+// multi-panel image-edit output; visual_breakdowner still gets the full
+// identity JSON via the {scp_visual_reference} placeholder.
 func BuildFrozenDescriptor(v domain.VisualIdentity) string {
 	return fmt.Sprintf(
-		"Appearance: %s; Distinguishing features: %s; Environment: %s; Key visual moments: %s",
+		"Appearance: %s; Distinguishing features: %s; Environment: %s",
 		v.Appearance,
 		strings.Join(v.DistinguishingFeatures, ", "),
 		v.EnvironmentSetting,
-		strings.Join(v.KeyVisualMoments, ", "),
 	)
 }
 

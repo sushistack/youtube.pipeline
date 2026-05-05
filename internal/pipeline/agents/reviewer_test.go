@@ -128,7 +128,7 @@ func sampleVisualScriptForReview(narration *domain.NarrationScript) *domain.Visu
 		for i, beat := range srcAct.Beats {
 			shots = append(shots, domain.VisualShot{
 				ShotIndex:          i + 1,
-				VisualDescriptor:   "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; Key visual moments: Blink; shot description",
+				VisualDescriptor:   "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; shot description",
 				EstimatedDurationS: 7.0,
 				Transition:         domain.TransitionKenBurns,
 				NarrationAnchor:    beat,
@@ -139,7 +139,7 @@ func sampleVisualScriptForReview(narration *domain.NarrationScript) *domain.Visu
 	return &domain.VisualScript{
 		SCPID:            "SCP-TEST",
 		Title:            "SCP-TEST",
-		FrozenDescriptor: "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault; Key visual moments: Blink",
+		FrozenDescriptor: "Appearance: Concrete sentinel; Distinguishing features: Obsidian eyes; Environment: Transit vault",
 		Acts:             acts,
 		ShotOverrides:    map[int]domain.ShotOverride{},
 		Metadata: domain.VisualBreakdownMetadata{
