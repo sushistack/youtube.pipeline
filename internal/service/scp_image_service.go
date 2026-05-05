@@ -322,10 +322,14 @@ func IsValidSCPID(scpID string) bool {
 	return hasAlnum
 }
 
+// newRandSeed returns a non-negative seed masked to 53 bits so the value
+// round-trips through JSON without precision loss (JavaScript Number is
+// float64; integers above 2^53-1 are silently rounded). Mirrors the
+// constraint enforced by the FE Zod contract on scpCanonicalImageSchema.seed.
 func newRandSeed() (int64, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return 0, err
 	}
-	return int64(binary.BigEndian.Uint64(b[:]) & 0x7fffffffffffffff), nil
+	return int64(binary.BigEndian.Uint64(b[:]) & ((1 << 53) - 1)), nil
 }

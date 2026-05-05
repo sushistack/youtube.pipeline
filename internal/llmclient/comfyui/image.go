@@ -434,15 +434,18 @@ func newUUIDv4() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
 }
 
-// newSeed returns a positive-int63 seed for the RandomNoise node. ComfyUI
-// stores noise_seed as an int64; using crypto/rand keeps test runs from
-// trivially colliding across short test bursts.
+// newSeed returns a non-negative seed for the RandomNoise node, masked to
+// 53 bits so the value round-trips through JSON without precision loss.
+// JavaScript Number is float64 and silently rounds integers above
+// 2^53-1; the Zod contract on the FE explicitly rejects them. ComfyUI's
+// noise_seed is int64-typed but treats the value as opaque, so capping
+// entropy at 2^53 has no effect on noise quality.
 func newSeed() (int64, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return 0, err
 	}
-	v := int64(binary.BigEndian.Uint64(b[:]) & 0x7fffffffffffffff)
+	v := int64(binary.BigEndian.Uint64(b[:]) & ((1 << 53) - 1))
 	return v, nil
 }
 
