@@ -170,19 +170,22 @@ var ActScenesPerBeat = map[string]int{
 // so the v1 per-scene caps are rescaled ~4× to align with hada-golden density
 // (`docs/exemplars/scp-049-hada.txt`, ~5500 KR chars per ~10-min video).
 //
-// Sum: 720+1600+2080+1120 = 5520 runes — fits the ≥4500 Lever P parity floor
-// with headroom and stays near hada's ~5500 ceiling. Per-act ratios mirror v1
-// EXCEPT for incident, which was raised after the dogfood-observed overshoot
-// pattern (LLM cannot count Korean runes precisely; the original v1×4 → 480
-// gave only +45% headroom over hada's ~330-rune Act 1, the tightest band in
-// the set, and the writer chronically retried into rejection). The other
-// three caps already sit at +73–129% over their hada-act baselines, so
-// overshoot has not been observed there.
+// Sum: 720+1600+2080+1400 = 5800 runes — fits the ≥4500 Lever P parity floor
+// with headroom; modestly above hada's ~5500 ceiling (+5.5%) after both
+// dogfood-driven widenings below. Per-act ratios mirror v1 EXCEPT for
+// incident and unresolved, both raised after the dogfood-observed overshoot
+// pattern (LLM cannot count Korean runes precisely; the writer chronically
+// retried into rejection). Mystery and revelation already sit at +73–129%
+// over their hada-act baselines and have not exhibited the pattern.
 //
 //	incident   =  720 (raised from 480; hada Act 1 ~330, +118% headroom)
 //	mystery    = 1600 (~4× v1's 400 — abilities/protocol setup)
 //	revelation = 2080 (~4× v1's 520 — climax with sensory + numeric anchors)
-//	unresolved = 1120 (~4× v1's 280 — closer + reflective questions + CTA)
+//	unresolved = 1400 (raised from 1120; SCP-049 dogfood 2026-05-05 emitted
+//	             1286 runes — content-rich closers naturally exceed the
+//	             hada-baseline-derived cap. +9% safety buffer over the
+//	             observed overshoot keeps retries productive without an
+//	             unbounded raise.)
 //
 // Stage-2 beat segmentation (8–10 beats/act) operates within these monologue
 // boundaries; it neither rescales nor enforces this cap.
@@ -190,7 +193,7 @@ var ActMonologueRuneCap = map[string]int{
 	ActIncident:   720,
 	ActMystery:    1600,
 	ActRevelation: 2080,
-	ActUnresolved: 1120,
+	ActUnresolved: 1400,
 }
 
 // ActMonologueRuneFloor is the per-act inclusive lower bound on the act's
@@ -208,5 +211,8 @@ var ActMonologueRuneFloor = map[string]int{
 	ActIncident:   288,  // hada-realistic; cap=720 gives wide band for retries
 	ActMystery:    960,  // 1600 × 0.6
 	ActRevelation: 1248, // 2080 × 0.6
-	ActUnresolved: 672,  // 1120 × 0.6
+	ActUnresolved: 672,  // unchanged after the cap raise to 1400 — same
+	// philosophy as the incident widening: the wider band gives retry
+	// headroom without forcing length above golden density. Floor still
+	// well above hada Act 4's ~280-rune baseline.
 }
