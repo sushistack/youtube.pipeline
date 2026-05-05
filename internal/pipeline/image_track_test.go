@@ -124,14 +124,21 @@ func (p *passthroughLimiter) Do(ctx context.Context, fn func(context.Context) er
 }
 
 type imageTrackFixture struct {
-	outputDir string
-	runID     string
-	images    *fakeImageGen
-	resolver  *fakeCharacterResolver
-	shots     *fakeShotStore
-	limiter   *passthroughLimiter
-	track     pipeline.ImageTrack
-	req       pipeline.PhaseBRequest
+	outputDir   string
+	runID       string
+	images      *fakeImageGen
+	resolver    *fakeCharacterResolver
+	shots       *fakeShotStore
+	limiter     *passthroughLimiter
+	track       pipeline.ImageTrack
+	req         pipeline.PhaseBRequest
+	sceneStyle  string // optional; opt-in via withSceneStyle option
+}
+
+// withSceneStyle wires SceneStylePrompt into the fixture's ImageTrackConfig.
+// Default is empty (no-op fallback that yields pre-cycle two-layer prompts).
+func withSceneStyle(style string) func(*imageTrackFixture) {
+	return func(f *imageTrackFixture) { f.sceneStyle = style }
 }
 
 func scenarioStateForTest(runID string, scenes []sceneFixture, frozen string) *agents.PipelineState {
@@ -285,6 +292,7 @@ func newImageTrackFixture(t *testing.T, scenes []sceneFixture, opts ...func(*ima
 		Limiter:           f.limiter,
 		Clock:             clock.RealClock{},
 		Logger:            nil,
+		SceneStylePrompt:  f.sceneStyle,
 	})
 	if err != nil {
 		t.Fatalf("NewImageTrack: %v", err)
@@ -306,20 +314,156 @@ func TestImagePromptComposer_PrefixesFrozenDescriptorVerbatim(t *testing.T) {
 	frozen := "Appearance: slender humanoid; Distinguishing features: glossy jet-black skin; Environment: dim concrete chamber; Key visual moments: neck snap"
 	shot := "camera: low wide shot revealing SCP-049 emerging from shadow"
 
-	got := pipeline.ComposeImagePrompt(frozen, shot)
+	// Empty style preserves pre-cycle two-layer behavior — frozen prefix
+	// remains the load-bearing byte-stable contract from Story 5.4.
+	got := pipeline.ComposeImagePrompt("", frozen, shot)
 
 	if !strings.HasPrefix(got, frozen) {
 		t.Fatalf("prompt does not begin with frozen descriptor verbatim:\n  prompt: %q\n  frozen: %q", got, frozen)
 	}
-	// Byte-stable: append only; the frozen prefix must be untouched.
 	if !strings.Contains(got, shot) {
 		t.Fatalf("prompt does not contain shot descriptor: %q", got)
 	}
 
 	// Idempotent when frozen is already prefixed.
 	already := frozen + "; cinematic wide establishing shot"
-	if got2 := pipeline.ComposeImagePrompt(frozen, already); got2 != already {
+	if got2 := pipeline.ComposeImagePrompt("", frozen, already); got2 != already {
 		t.Fatalf("prompt composer mutated already-prefixed input: got %q, want %q", got2, already)
+	}
+}
+
+// TestImagePromptComposer_LayersStyleFrontmost confirms that a non-empty
+// scene style is layered in front of the frozen descriptor without mutating
+// frozen's bytes — Story 5.4's byte-stability contract is preserved
+// because style is a new outer layer, not a splice into frozen.
+func TestImagePromptComposer_LayersStyleFrontmost(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	style := "Style: kid-friendly cartoon, vibrant"
+	frozen := "Appearance: slender humanoid; Environment: concrete chamber"
+	visual := "low wide shot revealing the entity"
+
+	got := pipeline.ComposeImagePrompt(style, frozen, visual)
+	want := style + "; " + frozen + "; " + visual
+	if got != want {
+		t.Fatalf("layered prompt mismatch:\n  got:  %q\n  want: %q", got, want)
+	}
+	// Frozen substring appears verbatim exactly once (no double prefix).
+	if c := strings.Count(got, frozen); c != 1 {
+		t.Fatalf("frozen substring appears %d times, want exactly 1: %q", c, got)
+	}
+}
+
+// TestImagePromptComposer_StyleEmptyMatchesPreCycle locks in the no-op
+// fallback contract: an empty style yields a prompt byte-equal to the
+// pre-cycle two-layer composition, so operators can clear scene_style_prompt
+// in config.yaml without disabling Phase B image generation.
+func TestImagePromptComposer_StyleEmptyMatchesPreCycle(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	frozen := "F"
+	visual := "V"
+
+	got := pipeline.ComposeImagePrompt("", frozen, visual)
+	if got != "F; V" {
+		t.Fatalf("empty-style fallback drifted from pre-cycle: got %q, want %q", got, "F; V")
+	}
+}
+
+// TestImagePromptComposer_VisualAlreadyPrefixedSkipsDoubleFrozen preserves
+// the existing idempotency guard: if the per-shot visual descriptor already
+// begins with the frozen bytes, the composer must not double-prefix even
+// when a style layer is added in front.
+func TestImagePromptComposer_VisualAlreadyPrefixedSkipsDoubleFrozen(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	style := "S"
+	frozen := "F"
+	visual := frozen + "; extra"
+
+	got := pipeline.ComposeImagePrompt(style, frozen, visual)
+	want := "S; F; extra"
+	if got != want {
+		t.Fatalf("composer mismatch on already-prefixed visual:\n  got:  %q\n  want: %q", got, want)
+	}
+	if c := strings.Count(got, frozen); c != 1 {
+		t.Fatalf("frozen substring appears %d times, want exactly 1: %q", c, got)
+	}
+}
+
+// TestImagePromptComposer_FrozenEndsWithSeparator preserves the existing
+// separator-collapse guard. The new style layer must not introduce a
+// duplicate separator on the right edge of frozen.
+func TestImagePromptComposer_FrozenEndsWithSeparator(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	style := "S"
+	frozen := "F; "
+	visual := "V"
+
+	got := pipeline.ComposeImagePrompt(style, frozen, visual)
+	want := "S; F; V"
+	if got != want {
+		t.Fatalf("separator-collapse mismatch:\n  got:  %q\n  want: %q", got, want)
+	}
+}
+
+// TestImagePromptComposer_StyleEndsWithSeparator covers the symmetric case:
+// when the operator-supplied style ends with "; ", the composer must not
+// emit a doubled separator between style and the rest of the prompt.
+func TestImagePromptComposer_StyleEndsWithSeparator(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	style := "S; "
+	frozen := "F"
+	visual := "V"
+
+	got := pipeline.ComposeImagePrompt(style, frozen, visual)
+	want := "S; F; V"
+	if got != want {
+		t.Fatalf("style-trailing-sep mismatch:\n  got:  %q\n  want: %q", got, want)
+	}
+}
+
+// TestImageTrack_SceneStyleAppearsAsPrefixOnEveryShot exercises the
+// end-to-end propagation: when SceneStylePrompt is set on ImageTrackConfig,
+// every per-shot prompt sent to the image provider begins with the style
+// string, then the frozen descriptor verbatim, then the shot's visual
+// descriptor. The fixture covers both Generate and Edit paths in one run.
+func TestImageTrack_SceneStyleAppearsAsPrefixOnEveryShot(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	style := "Style: kid-friendly cartoon, vibrant"
+	scenes := []sceneFixture{
+		{sceneNum: 1, narration: "n1", entityVisible: true, shots: []string{"close-up"}},
+		{sceneNum: 2, narration: "n2", entityVisible: false, shots: []string{"wide shot"}},
+	}
+	f := newImageTrackFixture(t, scenes, withSceneStyle(style))
+	if _, err := f.track(context.Background(), f.req); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+
+	frozen := "Appearance: slender humanoid; Environment: concrete chamber"
+	var prompts []string
+	for _, c := range f.images.generateCalls {
+		prompts = append(prompts, c.Prompt)
+	}
+	for _, c := range f.images.editCalls {
+		prompts = append(prompts, c.Prompt)
+	}
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 prompts, got %d", len(prompts))
+	}
+	for i, p := range prompts {
+		if !strings.HasPrefix(p, style) {
+			t.Fatalf("prompt %d missing scene style prefix: %q", i, p)
+		}
+		if strings.Count(p, frozen) != 1 {
+			t.Fatalf("prompt %d frozen substring count != 1: %q", i, p)
+		}
+		if !strings.Contains(p, frozen) {
+			t.Fatalf("prompt %d missing frozen descriptor: %q", i, p)
+		}
 	}
 }
 
@@ -421,12 +565,17 @@ func TestImageTrack_AllShotsShareIdenticalFrozenDescriptorPrefix(t *testing.T) {
 	if len(prompts) != 5 {
 		t.Fatalf("expected 5 prompts, got %d", len(prompts))
 	}
+	// With no scene style configured (default fixture), the prompt is the
+	// pre-cycle two-layer shape: frozen prefix verbatim. The frozen substring
+	// still appears exactly once even when a style layer is later prepended,
+	// so we assert via Contains+count rather than HasPrefix to keep the
+	// invariant test orthogonal to the optional style layer.
 	for i, p := range prompts {
 		if !strings.HasPrefix(p, frozen) {
-			t.Fatalf("prompt %d missing frozen prefix: %q", i, p)
+			t.Fatalf("prompt %d missing frozen prefix (no style configured): %q", i, p)
 		}
 		if strings.Count(p, frozen) != 1 {
-			t.Fatalf("prompt %d does not include frozen prefix exactly once: %q", i, p)
+			t.Fatalf("prompt %d does not include frozen substring exactly once: %q", i, p)
 		}
 	}
 }

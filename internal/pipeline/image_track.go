@@ -92,6 +92,13 @@ type ImageTrackConfig struct {
 	// RefImageFetcher rewrites the selected character's image URL before it is
 	// handed to the image-edit provider. Nil disables rewriting.
 	RefImageFetcher ReferenceImageFetcher
+	// SceneStylePrompt is the per-shot style prefix layered in front of the
+	// frozen descriptor when composing each shot's image prompt. Empty value
+	// is a no-op (pre-cycle behavior preserved). Distinct from the canonical
+	// CartoonStylePrompt — that one is shaped for the canonical character
+	// sheet ("single character, front-facing, neutral pose…") and would
+	// fight per-shot scene composition.
+	SceneStylePrompt string
 }
 
 // NewImageTrack constructs the Phase B image track from cfg. The returned
@@ -132,16 +139,38 @@ func NewImageTrack(cfg ImageTrackConfig) (ImageTrack, error) {
 	}, nil
 }
 
-// ComposeImagePrompt returns the deterministic image prompt for one shot.
-// It prefixes the Frozen Descriptor verbatim when the shot-level descriptor
-// does not already begin with it, and never rewrites, trims, or paraphrases
-// the Frozen Descriptor segment. Callers must have non-empty frozen and
-// visual inputs; empty inputs are a programmer error surfaced via the image
-// track's validation path before this helper is called.
-func ComposeImagePrompt(frozen, visual string) string {
+// ComposeImagePrompt returns the deterministic image prompt for one shot,
+// composed as three layers: scene style (per-shot cartoon prefix) + Frozen
+// Descriptor (byte-stable across every shot in a run) + per-shot visual
+// descriptor. The Frozen Descriptor segment is never rewritten, trimmed, or
+// paraphrased — AC-2 requires byte-stability per Story 5.4, so style is a
+// new prefix layer in front of frozen rather than spliced inside. Empty
+// style is a no-op fallback that yields the pre-cycle frozen+visual prompt.
+func ComposeImagePrompt(style, frozen, visual string) string {
 	// Treat the Frozen Descriptor as immutable bytes: do not TrimSpace here.
 	// AC-2 requires the Frozen Descriptor segment to remain byte-stable
 	// across every shot in a run, so normalization is deliberately absent.
+	base := composeFrozenAndVisual(frozen, visual)
+	if style == "" {
+		return base
+	}
+	if base == "" {
+		return style
+	}
+	// Guard against double separator when style already ends with "; ".
+	sep := "; "
+	if strings.HasSuffix(style, "; ") {
+		sep = ""
+	}
+	return style + sep + base
+}
+
+// composeFrozenAndVisual is the pre-existing two-layer composition: prefix
+// the Frozen Descriptor verbatim when the shot-level descriptor does not
+// already begin with it, with empty-string and double-separator guards.
+// Extracted so ComposeImagePrompt can wrap it with the new style layer
+// without duplicating the byte-stability logic.
+func composeFrozenAndVisual(frozen, visual string) string {
 	if visual == "" {
 		return frozen
 	}
@@ -320,7 +349,7 @@ func runImageTrack(
 
 		persisted := make([]domain.Shot, 0, len(scene.Shots))
 		for _, shot := range scene.Shots {
-			prompt := ComposeImagePrompt(frozen, shot.VisualDescriptor)
+			prompt := ComposeImagePrompt(cfg.SceneStylePrompt, frozen, shot.VisualDescriptor)
 			relPath := filepath.Join("images",
 				fmt.Sprintf("scene_%02d", scene.SceneNum),
 				fmt.Sprintf("shot_%02d.png", shot.ShotIndex),
