@@ -304,3 +304,46 @@ func TestScpImageService_IsValidSCPID(t *testing.T) {
 		}
 	}
 }
+
+func TestScpImageService_Generate_StripsSceneSegmentsFromPrompt(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+	database, runStore, cache, lib, run := setupCanonicalRun(t, "SCP-049")
+	imgDir := t.TempDir()
+
+	// Replace the simple frozen descriptor with a full Phase A-shape one
+	// containing every standard label so we can assert the scene segments
+	// are filtered out of the prompt sent to image-edit while still
+	// being preserved verbatim on the library row.
+	full := "Appearance: tall plague doctor in black robes" +
+		"; Distinguishing features: ceramic beak mask, doctor's bag" +
+		"; Environment: sterile humanoid containment cell" +
+		"; Key visual moments: SCP-049 performing surgery, the entity reading a journal"
+	if _, err := database.ExecContext(context.Background(),
+		`UPDATE runs SET frozen_descriptor = ? WHERE id = ?`, full, run.ID); err != nil {
+		t.Fatalf("seed full descriptor: %v", err)
+	}
+
+	gen := &fakeImageGen{echoSeed: true}
+	svc := newCanonicalService(t, runStore, cache, lib, gen, imgDir)
+
+	rec, err := svc.Generate(context.Background(), run.ID, service.GenerateCanonicalInput{})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(gen.editCalls) != 1 {
+		t.Fatalf("expected 1 Edit call, got %d", len(gen.editCalls))
+	}
+	prompt := gen.editCalls[0].Prompt
+	if !strings.Contains(prompt, "plague doctor") || !strings.Contains(prompt, "ceramic beak mask") {
+		t.Fatalf("character segments missing from prompt: %q", prompt)
+	}
+	if strings.Contains(prompt, "Environment:") || strings.Contains(prompt, "Key visual moments:") ||
+		strings.Contains(prompt, "containment cell") || strings.Contains(prompt, "performing surgery") {
+		t.Fatalf("scene segments leaked into prompt: %q", prompt)
+	}
+	// Library row preserves the full descriptor (Phase B's per-shot prompts
+	// still need the unfiltered version).
+	if rec.FrozenDescriptor != full {
+		t.Fatalf("library row should preserve full descriptor, got %q", rec.FrozenDescriptor)
+	}
+}

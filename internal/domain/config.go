@@ -222,7 +222,7 @@ func DefaultConfig() PipelineConfig {
 		OutputDir:                "./output",
 		DBPath:                   "./pipeline.db",
 		ScpImageDir:              "./scp_images",
-		CartoonStylePrompt:       "Kid-friendly cartoon illustration, Starcraft-inspired stylized art, clean vector lines, vibrant colors,",
+		CartoonStylePrompt:       "Single-character reference sheet illustration: full body, front-facing neutral standing pose, plain neutral studio background, no scene composition, no multiple panels, no action, no other characters. Style: kid-friendly cartoon, Starcraft-inspired stylized art, clean vector lines, vibrant colors.",
 		ScpCanonicalWidth:        1280,
 		ScpCanonicalHeight:       720,
 		CostCapResearch:          0.50,

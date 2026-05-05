@@ -280,16 +280,49 @@ func (s *ScpImageService) Generate(ctx context.Context, runID string, in Generat
 	return rec, nil
 }
 
-// composeCanonicalPrompt prepends the cartoon-style prompt to the operator's
-// frozen descriptor with a "; " separator. Both inputs are trusted to be
-// non-empty (validated upstream); we still guard against double separator
-// when stylePrompt already ends with "; ".
+// composeCanonicalPrompt prepends the cartoon-style prompt to the
+// character-only segments of the operator's frozen descriptor. Phase A's
+// frozen_descriptor mixes character description (`Appearance`,
+// `Distinguishing features`) with scene cues (`Environment`, `Key visual
+// moments`); the latter caused FLUX.2 to render multi-panel scene comics
+// instead of a single character reference. We strip those cues here so the
+// canonical image is a clean character portrait. Phase B's per-shot prompt
+// re-introduces scene context via the per-shot visual_descriptor.
+//
+// The stored library row keeps the FULL `frozen_descriptor` — only the
+// prompt fed to image-edit is filtered.
 func composeCanonicalPrompt(stylePrompt, frozen string) string {
 	sep := "; "
 	if strings.HasSuffix(stylePrompt, "; ") || strings.HasSuffix(stylePrompt, ";") {
 		sep = " "
 	}
-	return stylePrompt + sep + frozen
+	return stylePrompt + sep + extractCharacterDescriptor(frozen)
+}
+
+// extractCharacterDescriptor drops scene-level segments from a "; "-joined
+// frozen descriptor. Recognized scene labels: "Environment", "Key visual
+// moments". When filtering would empty the descriptor, falls back to the
+// original — defensive for descriptors that don't follow the expected label
+// scheme, so the image-edit call always receives some character context.
+func extractCharacterDescriptor(frozen string) string {
+	segments := strings.Split(frozen, "; ")
+	kept := make([]string, 0, len(segments))
+	for _, s := range segments {
+		trimmed := strings.TrimSpace(s)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "environment:") ||
+			strings.HasPrefix(lower, "key visual moments:") {
+			continue
+		}
+		kept = append(kept, trimmed)
+	}
+	if len(kept) == 0 {
+		return frozen
+	}
+	return strings.Join(kept, "; ")
 }
 
 // IsValidSCPID enforces the path-safe shape used by both the static-serve
