@@ -227,11 +227,6 @@ func runWriterActMonologue(
 	priorTail string,
 	qualityFeedback string,
 ) (writerMonologueResponse, actCallMeta, error) {
-	prompt, err := renderWriterActPrompt(state, prompts, terms, spec, priorTail, qualityFeedback, "")
-	if err != nil {
-		return writerMonologueResponse{}, actCallMeta{}, err
-	}
-
 	type result struct {
 		decoded writerMonologueResponse
 		meta    actCallMeta
@@ -247,8 +242,20 @@ func runWriterActMonologue(
 		},
 	}
 
+	// retryFeedback carries within-stage length-miss feedback from the
+	// previous failed attempt into the next prompt rendering. Empty on
+	// attempt 0 and on attempts whose prior failure was not a rune-count
+	// miss (empty mood, sentence-terminal floor, schema, etc.) — those
+	// retries see the same prompt as before. See
+	// formatMonologueLengthRetryFeedback for the message shape.
+	var retryFeedback string
+
 	out, err := runWithRetry(ctx, opts, func(attempt int) (result, retryReason, error) {
 		callStart := time.Now()
+		prompt, renderErr := renderWriterActPrompt(state, prompts, terms, spec, priorTail, qualityFeedback, retryFeedback)
+		if renderErr != nil {
+			return result{}, retryReasonAbort, renderErr
+		}
 		if cfg.Logger != nil {
 			cfg.Logger.Info("writer monologue attempt start",
 				"run_id", state.RunID,
@@ -257,6 +264,7 @@ func runWriterActMonologue(
 				"provider", cfg.Provider,
 				"model", cfg.Model,
 				"prompt_chars", utf8.RuneCountInString(prompt),
+				"retry_feedback_chars", utf8.RuneCountInString(retryFeedback),
 			)
 		}
 		var (
@@ -303,6 +311,10 @@ func runWriterActMonologue(
 			})
 		}
 		if isTruncatedFinishReason(resp.FinishReason) {
+			// Truncated content cannot be measured; clear stale length
+			// feedback so the next attempt's prompt doesn't carry a claim
+			// referring to two attempts ago.
+			retryFeedback = ""
 			finalErr = fmt.Errorf(
 				"writer: act %s monologue: provider truncated completion (finish_reason=%q): %w",
 				spec.Act.ID, resp.FinishReason, domain.ErrValidation,
@@ -311,11 +323,33 @@ func runWriterActMonologue(
 		}
 		var decoded writerMonologueResponse
 		if err := decodeJSONResponse(resp.Content, &decoded); err != nil {
+			// Unparseable content has no measurable length; clear stale
+			// feedback for the same reason as the truncation branch above.
+			retryFeedback = ""
 			finalErr = fmt.Errorf("writer: act %s monologue: %w", spec.Act.ID, err)
 			return result{}, retryReasonJSONDecode, finalErr
 		}
 		if err := validateWriterMonologueResponse(spec, decoded); err != nil {
 			finalErr = err
+			// Refresh retryFeedback every validation failure based on what
+			// THIS attempt actually produced, not what some earlier attempt
+			// produced. Two cases:
+			//   1. Content is structurally usable (right act_id, non-empty
+			//      monologue) AND rune count is out of band → real length
+			//      miss; set the structured feedback.
+			//   2. Otherwise (wrong act_id, empty monologue, in-band length
+			//      with a different validator failure) → clear feedback so
+			//      the next prompt does not claim a length miss that does
+			//      not match the just-completed attempt's reality.
+			n := utf8.RuneCountInString(decoded.Monologue)
+			capV, capOK := domain.ActMonologueRuneCap[spec.Act.ID]
+			floor, floorOK := domain.ActMonologueRuneFloor[spec.Act.ID]
+			contentMeasurable := decoded.ActID == spec.Act.ID && strings.TrimSpace(decoded.Monologue) != ""
+			if contentMeasurable && capOK && floorOK && (n < floor || n > capV) {
+				retryFeedback = formatMonologueLengthRetryFeedback(n, floor, capV)
+			} else {
+				retryFeedback = ""
+			}
 			return result{}, retryReasonSchemaValidation, err
 		}
 		parsed = decoded
@@ -727,7 +761,7 @@ func validateBeatSentenceBoundary(actID string, idx int, beat domain.BeatAnchor,
 // formatMonologueLengthRetryFeedback returns a within-stage retry feedback
 // message describing how the previous attempt's monologue rune count missed
 // the per-act band [floor, capV]. Returns "" on degenerate inputs
-// (floor <= 0, capV <= 0, floor > capV) or when actual is in band — callers
+// (floor == 0, capV == 0, floor > capV) or when actual is in band — callers
 // MUST NOT inject feedback in those cases.
 //
 // Why this signal exists: the writer LLM cannot count Korean runes precisely

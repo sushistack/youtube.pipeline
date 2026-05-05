@@ -732,3 +732,18 @@ Surfaced by step-04 review of `spec-visual-breakdowner-style-alignment.md`. Both
 **Dequeue trigger.** Item 1: an operator clears style via env and is surprised. Item 2: a Phase A failure forces a resume and the operator discovers Phase A can't regenerate.
 
 **Files.** Item 1: `internal/config/loader.go`. Item 2: `cmd/pipeline/resume.go`.
+
+## writer monologue retry feedback loop — observability deferrals (2026-05-05)
+
+Surfaced by step-04 review of `spec-writer-retry-feedback-loop.md`. Defensive / observability gaps unrelated to the dogfood signal the cycle was meant to deliver.
+
+1. **Render-error inside the retry closure is no longer trace-emitted.** When `renderWriterActPrompt` fails inside the retry callback (e.g., visual identity marshal error), the `defer emitAgentTrace(...)` is set up AFTER the render call — so a render error at attempt N skips the trace entry and produces no per-attempt observability. Pre-diff this was also true for attempt 0 (render was outside the loop). Now applies to every attempt symmetrically. Fix would be to capture an empty trace before the render call or document the abort path explicitly.
+2. **Audit log prompt content drifts across attempts in the same act.** `cfg.AuditLogger.Log` records `truncatePrompt(prompt, 2048)` per attempt; with retry-feedback injection, attempt N>0 carries a different prompt than attempt 0. Anything downstream that deduplicates by prompt-hash now sees variation. Mitigation if needed: emit a separate `retry_feedback_injected` boolean field rather than letting the divergence appear silently in the prompt text.
+3. **`retry_exhausted` outcome carries only the last error string.** When all attempts fail with length miss, the operator can't see the trajectory (200 → 200 → 200 vs. 200 → 800 → 850) without re-grepping per-attempt logs. Could enrich the runWithRetry exhaustion event with `attempts_with_feedback` count.
+4. **Non-UTF8 / mojibake monologue is counted leniently by `utf8.RuneCountInString`.** A truncated-mid-codepoint response counts each invalid byte as 1 rune (RuneError). The "BELOW the floor" message in that case would reflect a corrupted count. In practice DashScope/qwen-max return valid UTF-8 reliably; defensive only.
+
+**Why deferred.** None block the dogfood signal (the LLM now sees actual rune counts on length-miss retries). All are low/medium severity.
+
+**Dequeue trigger.** Item 1: operator hits a marshal failure mid-run and can't trace the cause. Item 2: audit deduplication false-misses surface in compliance review. Item 3: another retry-exhaustion incident requires per-attempt narrative. Item 4: a provider returns invalid UTF-8 and a misleading length-miss claim is logged.
+
+**Files.** Item 1: `internal/pipeline/agents/writer.go` (renderErr branch). Item 2: same (`AuditLogger.Log` in retry closure). Item 3: `internal/pipeline/agents/retry.go`. Item 4: `internal/pipeline/agents/writer.go` (validate path) or `validateWriterMonologueResponse`.

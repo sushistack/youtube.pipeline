@@ -1173,3 +1173,300 @@ func TestFormatMonologueLengthRetryFeedback(t *testing.T) {
 		})
 	}
 }
+
+// queueAllValidActsExcept enqueues valid stage-1 + stage-2 fixture responses
+// for every act EXCEPT the ones listed in skip. Used by retry-feedback tests
+// that pre-seed the failing act's queue manually before letting the rest of
+// the pipeline complete.
+func queueAllValidActsExcept(gen *twoStageFakeGen, skip ...string) {
+	skipped := map[string]bool{}
+	for _, a := range skip {
+		skipped[a] = true
+	}
+	for _, a := range domain.ActOrder {
+		if skipped[a] {
+			continue
+		}
+		gen.enqueue(stageKeyWriter, a, validMonologueResponse(a), "")
+		gen.enqueue(stageKeySegmenter, a, validBeatsResponse(a), "")
+	}
+}
+
+// TestWriter_Stage1_RetryFeedback_InjectedOnUnderFloor verifies that when
+// stage-1 attempt 0 emits a monologue below the per-act floor and attempt 1
+// emits an in-band monologue, attempt 1's prompt carries the structured
+// `PREVIOUS ATTEMPT FAILED ... BELOW the floor of N` block while attempt 0's
+// prompt does not. This is the SCP-049 dogfood bug (2026-05-05): without
+// feedback the LLM repeated the under-floor miss verbatim across retries.
+func TestWriter_Stage1_RetryFeedback_InjectedOnUnderFloor(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// 200 runes, 20 sentence terminals: under incident floor (288) but well
+	// above the sentence-terminal floor (8). Isolates the rune-floor check.
+	underFloorMono := strings.Repeat(strings.Repeat("가", 9)+".", 20)
+	underFloorResp, _ := json.Marshal(map[string]any{
+		"act_id":     domain.ActIncident,
+		"monologue":  underFloorMono,
+		"mood":       "tense",
+		"key_points": []string{"first", "second"},
+	})
+
+	gen := newTwoStageFakeGen()
+	gen.enqueue(stageKeyWriter, domain.ActIncident, string(underFloorResp), "")
+	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, validBeatsResponse(domain.ActIncident), "")
+	queueAllValidActsExcept(gen, domain.ActIncident)
+
+	state := freshWriterState()
+	if err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state); err != nil {
+		t.Fatalf("writer should succeed on retry, got: %v", err)
+	}
+
+	gen.mu.Lock()
+	prompts := append([]string(nil), gen.prompts[stageKeyWriter][domain.ActIncident]...)
+	gen.mu.Unlock()
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 stage-1 prompts for incident, got %d", len(prompts))
+	}
+	if strings.Contains(prompts[0], "PREVIOUS ATTEMPT FAILED") {
+		t.Errorf("attempt 0 prompt unexpectedly carries retry feedback")
+	}
+	for _, want := range []string{
+		"PREVIOUS ATTEMPT FAILED",
+		"200 runes",
+		"BELOW the floor of 288",
+		"expand",
+	} {
+		if !strings.Contains(prompts[1], want) {
+			t.Errorf("attempt 1 prompt missing %q", want)
+		}
+	}
+}
+
+// TestWriter_Stage1_RetryFeedback_InjectedOnOverCap mirrors the under-floor
+// test for the symmetric over-cap branch — the unresolved act dogfood case
+// where 1286 > 1120 caused retry exhaustion before this loop existed.
+func TestWriter_Stage1_RetryFeedback_InjectedOnOverCap(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// 800 runes, 80 terminals: over incident cap (720), valid otherwise.
+	overCapMono := strings.Repeat(strings.Repeat("가", 9)+".", 80)
+	overCapResp, _ := json.Marshal(map[string]any{
+		"act_id":     domain.ActIncident,
+		"monologue":  overCapMono,
+		"mood":       "tense",
+		"key_points": []string{"first", "second"},
+	})
+
+	gen := newTwoStageFakeGen()
+	gen.enqueue(stageKeyWriter, domain.ActIncident, string(overCapResp), "")
+	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, validBeatsResponse(domain.ActIncident), "")
+	queueAllValidActsExcept(gen, domain.ActIncident)
+
+	state := freshWriterState()
+	if err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state); err != nil {
+		t.Fatalf("writer should succeed on retry, got: %v", err)
+	}
+
+	gen.mu.Lock()
+	prompts := append([]string(nil), gen.prompts[stageKeyWriter][domain.ActIncident]...)
+	gen.mu.Unlock()
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 stage-1 prompts for incident, got %d", len(prompts))
+	}
+	for _, want := range []string{
+		"PREVIOUS ATTEMPT FAILED",
+		"800 runes",
+		"OVER the cap of 720",
+		"Tighten",
+	} {
+		if !strings.Contains(prompts[1], want) {
+			t.Errorf("attempt 1 prompt missing %q", want)
+		}
+	}
+}
+
+// TestWriter_Stage1_RetryFeedback_NotInjectedOnEmptyMood mirrors I/O matrix
+// row 4 verbatim: an in-band monologue with empty `mood` fails validation
+// for a non-length reason and must NOT cause retry feedback to appear in
+// the next attempt's prompt.
+func TestWriter_Stage1_RetryFeedback_NotInjectedOnEmptyMood(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	emptyMoodResp, _ := json.Marshal(map[string]any{
+		"act_id":     domain.ActIncident,
+		"monologue":  validMonologueForAct(domain.ActIncident),
+		"mood":       "",
+		"key_points": []string{"first", "second"},
+	})
+
+	gen := newTwoStageFakeGen()
+	gen.enqueue(stageKeyWriter, domain.ActIncident, string(emptyMoodResp), "")
+	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, validBeatsResponse(domain.ActIncident), "")
+	queueAllValidActsExcept(gen, domain.ActIncident)
+
+	state := freshWriterState()
+	if err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state); err != nil {
+		t.Fatalf("writer should succeed on retry, got: %v", err)
+	}
+
+	gen.mu.Lock()
+	prompts := append([]string(nil), gen.prompts[stageKeyWriter][domain.ActIncident]...)
+	gen.mu.Unlock()
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 stage-1 prompts for incident, got %d", len(prompts))
+	}
+	if strings.Contains(prompts[1], "PREVIOUS ATTEMPT FAILED") {
+		t.Errorf("attempt 1 prompt unexpectedly carries retry feedback for an empty-mood failure\n  prompt:\n%s", prompts[1])
+	}
+}
+
+// TestWriter_Stage1_RetryFeedback_NotInjectedOnNonLengthMiss verifies that a
+// validation failure unrelated to rune count (here: too few sentence
+// terminals) does NOT populate retry feedback — the feedback signal is
+// length-specific and must not falsely claim a "previous length miss"
+// when the LLM's actual error was something else.
+func TestWriter_Stage1_RetryFeedback_NotInjectedOnNonLengthMiss(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// 320 runes (above incident floor 288, below cap 720) but only 5
+	// sentence terminals — fails the stage-1 sentence-terminal floor (≥ 8).
+	// Each clause: 63 '가' syllable runes + '.' = 64 runes; × 5 = 320 runes.
+	sparseMono := strings.Repeat(strings.Repeat("가", 63)+".", 5)
+	sparseResp, _ := json.Marshal(map[string]any{
+		"act_id":     domain.ActIncident,
+		"monologue":  sparseMono,
+		"mood":       "tense",
+		"key_points": []string{"first", "second"},
+	})
+
+	gen := newTwoStageFakeGen()
+	gen.enqueue(stageKeyWriter, domain.ActIncident, string(sparseResp), "")
+	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, validBeatsResponse(domain.ActIncident), "")
+	queueAllValidActsExcept(gen, domain.ActIncident)
+
+	state := freshWriterState()
+	if err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state); err != nil {
+		t.Fatalf("writer should succeed on retry, got: %v", err)
+	}
+
+	gen.mu.Lock()
+	prompts := append([]string(nil), gen.prompts[stageKeyWriter][domain.ActIncident]...)
+	gen.mu.Unlock()
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 stage-1 prompts for incident, got %d", len(prompts))
+	}
+	if strings.Contains(prompts[1], "PREVIOUS ATTEMPT FAILED") {
+		t.Errorf("attempt 1 prompt unexpectedly carries retry feedback for a non-length miss\n  prompt:\n%s", prompts[1])
+	}
+}
+
+// TestWriter_Stage1_RetryFeedback_CoexistsWithQualityFeedback verifies I/O
+// matrix row 5: when both cross-stage `{quality_feedback}` (set via
+// state.PriorCriticFeedback before the writer runs) and within-stage
+// `{retry_feedback}` (populated by an attempt-0 length miss) are non-empty,
+// attempt 1's prompt carries both signals in their distinct sections.
+func TestWriter_Stage1_RetryFeedback_CoexistsWithQualityFeedback(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	const sentinelCritic = "CRITIC_FEEDBACK_SENTINEL_XYZZY"
+
+	underFloorMono := strings.Repeat(strings.Repeat("가", 9)+".", 20) // 200 runes, 20 terminals
+	underFloorResp, _ := json.Marshal(map[string]any{
+		"act_id":     domain.ActIncident,
+		"monologue":  underFloorMono,
+		"mood":       "tense",
+		"key_points": []string{"first", "second"},
+	})
+
+	gen := newTwoStageFakeGen()
+	gen.enqueue(stageKeyWriter, domain.ActIncident, string(underFloorResp), "")
+	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, validBeatsResponse(domain.ActIncident), "")
+	queueAllValidActsExcept(gen, domain.ActIncident)
+
+	state := freshWriterState()
+	state.PriorCriticFeedback = sentinelCritic
+	if err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state); err != nil {
+		t.Fatalf("writer should succeed on retry, got: %v", err)
+	}
+
+	gen.mu.Lock()
+	prompts := append([]string(nil), gen.prompts[stageKeyWriter][domain.ActIncident]...)
+	gen.mu.Unlock()
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 stage-1 prompts for incident, got %d", len(prompts))
+	}
+	// Attempt 0: critic feedback populated, retry feedback empty.
+	if !strings.Contains(prompts[0], sentinelCritic) {
+		t.Errorf("attempt 0 prompt missing critic-feedback sentinel")
+	}
+	if strings.Contains(prompts[0], "PREVIOUS ATTEMPT FAILED") {
+		t.Errorf("attempt 0 prompt unexpectedly carries retry feedback")
+	}
+	// Attempt 1: BOTH signals present.
+	if !strings.Contains(prompts[1], sentinelCritic) {
+		t.Errorf("attempt 1 prompt missing critic-feedback sentinel — quality_feedback should persist alongside retry_feedback")
+	}
+	if !strings.Contains(prompts[1], "PREVIOUS ATTEMPT FAILED") || !strings.Contains(prompts[1], "BELOW the floor of 288") {
+		t.Errorf("attempt 1 prompt missing retry feedback alongside critic feedback")
+	}
+}
+
+// TestWriter_Stage1_RetryFeedback_ClearedOnSubsequentNonLengthMiss verifies
+// that a length-miss followed by a non-length validator failure does NOT
+// leak the stale length-miss banner into the next attempt's prompt. Without
+// this guard the LLM would be told "BELOW the floor" referring to two
+// attempts ago even after the in-between attempt was in-band on length.
+func TestWriter_Stage1_RetryFeedback_ClearedOnSubsequentNonLengthMiss(t *testing.T) {
+	testutil.BlockExternalHTTP(t)
+
+	// Attempt 0: 200 runes, under floor (288). 20 terminals.
+	underFloorMono := strings.Repeat(strings.Repeat("가", 9)+".", 20)
+	underFloorResp, _ := json.Marshal(map[string]any{
+		"act_id":     domain.ActIncident,
+		"monologue":  underFloorMono,
+		"mood":       "tense",
+		"key_points": []string{"first", "second"},
+	})
+	// Attempt 1: 320 runes (in-band) but only 5 sentence terminals (fails
+	// the sentence-terminal floor — non-length validator failure).
+	sparseInBandMono := strings.Repeat(strings.Repeat("가", 63)+".", 5)
+	sparseResp, _ := json.Marshal(map[string]any{
+		"act_id":     domain.ActIncident,
+		"monologue":  sparseInBandMono,
+		"mood":       "tense",
+		"key_points": []string{"first", "second"},
+	})
+
+	gen := newTwoStageFakeGen()
+	gen.enqueue(stageKeyWriter, domain.ActIncident, string(underFloorResp), "")
+	gen.enqueue(stageKeyWriter, domain.ActIncident, string(sparseResp), "")
+	gen.enqueue(stageKeyWriter, domain.ActIncident, validMonologueResponse(domain.ActIncident), "")
+	gen.enqueue(stageKeySegmenter, domain.ActIncident, validBeatsResponse(domain.ActIncident), "")
+	queueAllValidActsExcept(gen, domain.ActIncident)
+
+	state := freshWriterState()
+	if err := newTestWriter(gen, mustValidator(t, "writer_output.schema.json"), mustTerms(t))(context.Background(), state); err != nil {
+		t.Fatalf("writer should succeed on third attempt, got: %v", err)
+	}
+
+	gen.mu.Lock()
+	prompts := append([]string(nil), gen.prompts[stageKeyWriter][domain.ActIncident]...)
+	gen.mu.Unlock()
+	if len(prompts) != 3 {
+		t.Fatalf("expected 3 stage-1 prompts, got %d", len(prompts))
+	}
+	// Attempt 1 should carry the length-miss feedback from attempt 0.
+	if !strings.Contains(prompts[1], "BELOW the floor of 288") {
+		t.Errorf("attempt 1 prompt missing length-miss feedback from attempt 0")
+	}
+	// Attempt 2 must NOT carry stale length-miss feedback — attempt 1's
+	// monologue was in-band, so the length signal no longer applies.
+	if strings.Contains(prompts[2], "PREVIOUS ATTEMPT FAILED") {
+		t.Errorf("attempt 2 prompt unexpectedly carries stale length-miss banner from attempt 0\n  prompt:\n%s", prompts[2])
+	}
+}
