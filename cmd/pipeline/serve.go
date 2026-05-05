@@ -907,10 +907,17 @@ func runServe(cmd *cobra.Command, port int, devMode bool) error {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		Addr:        addr,
+		Handler:     mux,
+		ReadTimeout: 30 * time.Second,
+		// WriteTimeout must accommodate the longest synchronous endpoint:
+		// POST /api/runs/{id}/characters/canonical waits for ComfyUI's
+		// FLUX.2 Klein 4B image-edit (~60–70s) plus retry slack, capped by
+		// the ComfyUI client's 300s polling deadline + the limiter's
+		// 10-minute AcquireTimeout. 10 minutes covers the worst case.
+		// Same ceiling applies to SSE /status/stream — clients reconnect
+		// transparently, so a longer ceiling just means fewer reconnects.
+		WriteTimeout: 10 * time.Minute,
 		IdleTimeout:  120 * time.Second,
 	}
 
