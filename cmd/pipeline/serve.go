@@ -190,6 +190,7 @@ func buildPhaseBRunner(
 		Logger:            logger,
 		AuditLogger:       auditLogger,
 		RefImageFetcher:   pipeline.FetchReferenceImageAsDataURL,
+		SceneStylePrompt:  cfg.SceneStylePrompt,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build image track: %w", err)
@@ -345,6 +346,10 @@ func buildPhaseARunner(
 	if err != nil {
 		return nil, fmt.Errorf("build phase a runner: load prompts: %w", err)
 	}
+	// SceneStylePrompt is set after LoadPromptAssets so the loader stays
+	// file-IO-only. visual_breakdowner's renderer substitutes it into the
+	// `{scene_style_prompt}` placeholder; empty value is a documented no-op.
+	prompts.SceneStylePrompt = cfg.SceneStylePrompt
 	terms, err := agents.LoadForbiddenTerms(projectRoot)
 	if err != nil {
 		return nil, fmt.Errorf("build phase a runner: load forbidden terms: %w", err)
