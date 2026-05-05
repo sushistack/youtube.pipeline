@@ -207,11 +207,19 @@ var ActMonologueRuneCap = map[string]int{
 // retry headroom without forcing length above golden density. Validation
 // rejects below floor and burns the writer retry budget if the LLM does not
 // expand.
+//
+// Revelation lowered from the mechanical 60%-of-cap (1248) to 900 after
+// SCP-049 dogfood (2026-05-05) showed chronic under-flow: the LLM emitted
+// 932–936 runes consistently across retries, exhausting the budget. The
+// 60%-of-cap value was a shortcut that diverged from the stated "near hada
+// baseline" philosophy; 900 still sits well above the historical floor-less
+// low of ~437 runes (21% of cap), so under-utilization regression risk is
+// bounded.
 var ActMonologueRuneFloor = map[string]int{
-	ActIncident:   288,  // hada-realistic; cap=720 gives wide band for retries
-	ActMystery:    960,  // 1600 × 0.6
-	ActRevelation: 1248, // 2080 × 0.6
-	ActUnresolved: 672,  // unchanged after the cap raise to 1400 — same
+	ActIncident:   288, // hada-realistic; cap=720 gives wide band for retries
+	ActMystery:    960, // 1600 × 0.6
+	ActRevelation: 900, // lowered from 1248; SCP-049 dogfood under-flow
+	ActUnresolved: 672, // unchanged after the cap raise to 1400 — same
 	// philosophy as the incident widening: the wider band gives retry
 	// headroom without forcing length above golden density. Floor still
 	// well above hada Act 4's ~280-rune baseline.
